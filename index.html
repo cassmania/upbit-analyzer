@@ -3,133 +3,275 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>업비트 코인 분석 — 지지·저항 + 다중 타임프레임</title>
+<title>업비트 코인 분석 — 실시간 차트 · 지지저항</title>
+<meta name="description" content="업비트 KRW 마켓 실시간 차트와 다중 타임프레임 지지·저항 분석">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
+/* Obsidian Precision — 딥 네이비 다크. 순검정 대신 채도 낮은 남색으로 부드러운 전환 유지 */
 :root{
-  --bg:#0e1117; --bg2:#161b22; --bg3:#1c2230; --line:#2a3140;
-  --text:#e6edf3; --dim:#8b949e;
-  --red:#f6465d; --green:#0ecb81; --yellow:#f0b90b; --blue:#5b9cf6;
-  --purple:#a371f7; --gray:#7d8590;
-}
-@media (prefers-color-scheme: light){
-  :root{ --bg:#f6f8fa; --bg2:#fff; --bg3:#f0f3f6; --line:#d8dee4;
-         --text:#1f2328; --dim:#636c76; }
+  --bg:#0b1326;
+  --surface-lowest:#060e20;
+  --surface-low:#131b2e;
+  --surface:#171f33;
+  --surface-high:#222a3d;
+  --surface-highest:#2d3449;
+  --on-surface:#dae2fd;
+  --on-variant:#9aa3bd;
+  --outline:#2a3350;
+  --outline-strong:#3b4568;
+
+  --primary:#ffffff;
+  --accent:#6366f1;        /* 인디고 — 주요 액션에만 아껴 쓴다 */
+  --accent-soft:rgba(99,102,241,.14);
+  --up:#0ecb81;
+  --down:#f6465d;
+  --gold:#e0b44a;
+  --warn:#f0b90b;
+
+  --r-sm:.25rem; --r-md:.5rem; --r-lg:.75rem; --r-xl:1rem;
+  --gutter:32px; --maxw:1240px;
+  --font-h:'Manrope',-apple-system,'Malgun Gothic',sans-serif;
+  --font-b:'Inter','Malgun Gothic',-apple-system,sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;}
-a{color:var(--blue)}
-.wrap{max-width:1240px;margin:0 auto;padding:16px}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--on-surface);
+  font-family:var(--font-b); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+/* 얇고 어두운 스크롤바 — UI에 묻히게 */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--surface-lowest)}
+::-webkit-scrollbar-thumb{background:var(--surface-highest);border-radius:99px;border:2px solid var(--surface-lowest)}
+::-webkit-scrollbar-thumb:hover{background:var(--outline-strong)}
 
-header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
-  padding:12px 16px;background:var(--bg2);border:1px solid var(--line);
-  border-radius:10px;margin-bottom:14px}
-h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.3px}
-.badge{font-size:11px;padding:2px 8px;border-radius:20px;
-  background:var(--bg3);color:var(--dim);border:1px solid var(--line)}
-.spacer{flex:1}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
 
-select,input,button{font:inherit;background:var(--bg3);color:var(--text);
-  border:1px solid var(--line);border-radius:7px;padding:7px 10px}
-button{cursor:pointer}
-button:hover{border-color:var(--blue)}
-button.primary{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:700}
-button.primary:disabled{opacity:.55;cursor:default}
-input[type=search]{min-width:170px}
+/* ---------- 상단 바 ---------- */
+.nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(11,19,38,.82);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--outline);
+}
+.nav-in{display:flex;align-items:center;gap:18px;height:62px;max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.brand{font-family:var(--font-h);font-weight:800;font-size:17px;letter-spacing:-.02em;white-space:nowrap}
+.brand span{color:var(--accent)}
+.chip{
+  font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 9px;border-radius:var(--r-sm);
+  background:var(--accent-soft);color:#a5a8f5;border:1px solid rgba(99,102,241,.24);
+  white-space:nowrap;
+}
+.nav .sp{flex:1}
+.live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--on-variant);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:99px;background:var(--outline-strong)}
+.dot.on{background:var(--up);box-shadow:0 0 0 0 rgba(14,203,129,.6);animation:pulse 2s infinite}
+@keyframes pulse{
+  70%{box-shadow:0 0 0 7px rgba(14,203,129,0)}
+  100%{box-shadow:0 0 0 0 rgba(14,203,129,0)}
+}
 
-.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
-.hint{font-size:12px;color:var(--dim)}
+/* ---------- 히어로 ---------- */
+.hero{padding:56px 0 34px;border-bottom:1px solid var(--outline)}
+.eyebrow{
+  font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--on-variant);margin-bottom:14px;
+}
+h1{
+  font-family:var(--font-h);font-weight:700;font-size:clamp(30px,4.4vw,52px);
+  line-height:1.12;letter-spacing:-.022em;margin:0 0 16px;
+}
+.lede{font-size:17px;line-height:1.7;color:var(--on-variant);max-width:620px;margin:0}
 
-/* 시세 헤더 */
-.quote{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:10px;margin-bottom:14px}
-.qbox{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
-.qlabel{font-size:11px;color:var(--dim);margin-bottom:3px}
-.qval{font-size:19px;font-weight:700;letter-spacing:-.4px}
-.qsub{font-size:11px;color:var(--dim);margin-top:2px}
+/* ---------- 컨트롤 ---------- */
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:22px 0}
+input,select,button{font:inherit;font-size:14px}
+input[type=search],select{
+  background:var(--surface-lowest);color:var(--on-surface);
+  border:1px solid var(--outline);border-radius:var(--r-sm);padding:9px 12px;
+  transition:border-color .18s;
+}
+input[type=search]{min-width:180px}
+select{min-width:210px;cursor:pointer}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.btn{
+  padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
+  background:transparent;color:var(--on-surface);
+  border:1px solid rgba(255,255,255,.2);transition:all .18s;
+}
+.btn:hover{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.04)}
+.btn.solid{background:var(--primary);color:#12141f;border-color:var(--primary);font-family:var(--font-h)}
+.btn.solid:hover{background:#e6e6e6}
+.btn.solid:disabled{opacity:.5;cursor:default}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tfbar{display:inline-flex;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
+.tfbar button{
+  background:transparent;border:0;color:var(--on-variant);padding:8px 15px;
+  cursor:pointer;font-weight:600;font-size:13px;transition:all .16s;
+}
+.tfbar button+button{border-left:1px solid var(--outline)}
+.tfbar button:hover{color:var(--on-surface);background:rgba(255,255,255,.04)}
+.tfbar button.act{background:var(--surface-high);color:#fff}
+.hint{font-size:12px;color:var(--on-variant)}
 
-/* 시간봉 요약표 */
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-th{font-size:11px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+/* ---------- 시세 스트립 ---------- */
+.quotes{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  gap:1px;background:var(--outline);
+  border:1px solid var(--outline);border-radius:var(--r-md);overflow:hidden;margin-bottom:var(--gutter);
+}
+.qb{background:var(--surface-low);padding:14px 16px}
+.qk{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--on-variant);margin-bottom:5px}
+.qv{font-family:var(--font-h);font-size:21px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.qs{font-size:11.5px;color:var(--on-variant);margin-top:3px;font-variant-numeric:tabular-nums}
+
+/* ---------- 섹션 ---------- */
+section{margin-bottom:var(--gutter)}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012em;margin:0}
+.tag{
+  font-size:11px;font-weight:500;color:var(--on-variant);
+  padding:3px 9px;border-radius:var(--r-sm);
+  background:var(--surface);border:1px solid var(--outline);
+}
+.card{
+  background:var(--surface-low);border:1px solid var(--outline);
+  border-radius:var(--r-md);overflow:hidden;
+}
+.card-pad{padding:18px 20px}
+
+/* ---------- 차트 ---------- */
+.chart-shell{position:relative;height:440px;background:var(--surface-lowest)}
+#chart{position:absolute;inset:0}
+.chart-legend{
+  position:absolute;top:12px;left:14px;z-index:5;pointer-events:none;
+  font-size:11.5px;line-height:1.85;font-variant-numeric:tabular-nums;
+  background:rgba(6,14,32,.74);backdrop-filter:blur(8px);
+  border:1px solid var(--outline);border-radius:var(--r-sm);padding:8px 11px;
+}
+.chart-legend b{font-family:var(--font-h)}
+.lg-row{display:flex;gap:9px}
+.lg-row span:first-child{color:var(--on-variant);min-width:34px}
+.chart-note{
+  padding:10px 20px;border-top:1px solid var(--outline);
+  font-size:11.5px;color:var(--on-variant);display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+}
+.swatch{display:inline-flex;align-items:center;gap:6px}
+.sw{width:15px;height:2px;border-radius:2px}
+.sw.dash{background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 7px);height:2px}
+
+/* ---------- 표 ---------- */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--outline)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .14s}
+tbody tr:hover{background:rgba(255,255,255,.022)}
+th{
+  font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--on-variant);background:var(--surface-lowest);
+}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gutter)}
+@media(max-width:860px){.grid2{grid-template-columns:1fr;gap:18px}}
 
-section{background:var(--bg2);border:1px solid var(--line);border-radius:10px;
-  padding:14px 16px;margin-bottom:14px}
-section h2{font-size:14px;margin:0 0 10px;font-weight:700;
-  display:flex;align-items:center;gap:7px}
-section h2 .tag{font-size:10px;font-weight:600;color:var(--dim);
-  background:var(--bg3);padding:2px 7px;border-radius:20px;border:1px solid var(--line)}
-
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media (max-width:800px){ .grid2{grid-template-columns:1fr} }
-
-.up{color:var(--green)} .down{color:var(--red)} .neu{color:var(--yellow)}
-.dim{color:var(--dim)}
+/* ---------- 유틸 ---------- */
+.up{color:var(--up)} .down{color:var(--down)} .neu{color:var(--warn)} .dim{color:var(--on-variant)}
 .mono{font-variant-numeric:tabular-nums}
-
-.pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;
-  border-radius:20px;white-space:nowrap}
-.p4{background:rgba(14,203,129,.16);color:var(--green)}
-.p3{background:rgba(91,156,246,.16);color:var(--blue)}
-.p2{background:rgba(240,185,11,.16);color:var(--yellow)}
-.p1{background:rgba(125,133,144,.16);color:var(--gray)}
-
-.reason{font-size:11px;color:var(--dim);margin-top:2px;word-break:keep-all}
-
-.warn{background:rgba(240,185,11,.09);border:1px solid rgba(240,185,11,.3);
-  border-radius:8px;padding:9px 12px;font-size:12px;color:var(--yellow);margin-top:10px}
-.err{background:rgba(246,70,93,.09);border:1px solid rgba(246,70,93,.35);
-  border-radius:8px;padding:10px 13px;color:var(--red);font-size:13px}
-
-.chartbox{position:relative;height:300px;background:var(--bg3);
-  border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.chartbox canvas{display:block;width:100%;height:100%}
-
-.sig{display:inline-block;font-size:11px;padding:2px 7px;margin:2px 3px 2px 0;
-  border-radius:5px;background:var(--bg3);border:1px solid var(--line)}
-
-footer{color:var(--dim);font-size:11px;text-align:center;padding:18px 0 30px;line-height:1.7}
-
-.loading{text-align:center;padding:34px;color:var(--dim)}
-.spin{display:inline-block;width:15px;height:15px;border:2px solid var(--line);
-  border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;
-  vertical-align:-2px;margin-right:7px}
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r-sm);white-space:nowrap;letter-spacing:.02em}
+.p4{background:rgba(14,203,129,.15);color:var(--up);border:1px solid rgba(14,203,129,.28)}
+.p3{background:rgba(99,102,241,.15);color:#a5a8f5;border:1px solid rgba(99,102,241,.3)}
+.p2{background:rgba(240,185,11,.13);color:var(--warn);border:1px solid rgba(240,185,11,.26)}
+.p1{background:rgba(154,163,189,.11);color:var(--on-variant);border:1px solid var(--outline)}
+.reason{font-size:11px;color:var(--on-variant);margin-top:3px;word-break:keep-all;line-height:1.5}
+.sig{
+  display:inline-block;font-size:11px;padding:3px 8px;margin:2px 3px 2px 0;
+  border-radius:var(--r-sm);background:var(--surface);border:1px solid var(--outline);color:var(--on-variant);
+}
+.warn{
+  background:rgba(240,185,11,.07);border:1px solid rgba(240,185,11,.26);
+  border-radius:var(--r-sm);padding:11px 14px;font-size:12.5px;color:#f5cf6b;margin-top:12px;line-height:1.65;
+}
+.err{
+  background:rgba(246,70,93,.08);border:1px solid rgba(246,70,93,.3);
+  border-radius:var(--r-md);padding:16px 18px;color:#ff8a9b;font-size:14px;
+}
+.loading{text-align:center;padding:70px 20px;color:var(--on-variant)}
+.spin{
+  display:inline-block;width:16px;height:16px;border:2px solid var(--outline);
+  border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+  vertical-align:-3px;margin-right:9px;
+}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---------- 시나리오 ---------- */
+.scn{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--outline);align-items:flex-start}
+.scn:last-of-type{border-bottom:0}
+.scn-i{font-family:var(--font-h);font-weight:700;font-size:15px;flex-shrink:0;min-width:15px}
+
+footer{
+  border-top:1px solid var(--outline);margin-top:20px;padding:30px 0 44px;
+  color:var(--on-variant);font-size:11.5px;line-height:1.85;
+}
+footer b{color:#c9d2ee}
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header>
-  <h1>업비트 코인 분석</h1>
-  <span class="badge">coin-ta-brief 로직</span>
-  <span class="badge">1h / 4h / 12h / 1d</span>
-  <span class="spacer"></span>
-  <span class="hint" id="updated">—</span>
+<nav class="nav">
+  <div class="nav-in">
+    <div class="brand">UPBIT<span>·</span>TA</div>
+    <span class="chip">coin-ta-brief</span>
+    <div class="sp"></div>
+    <div class="live"><span class="dot" id="wsdot"></span><span id="wstxt">연결 대기</span></div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
+    <h1>업비트 실시간 차트와<br>겹쳐서 읽는 지지·저항</h1>
+    <p class="lede">
+      1시간·4시간·12시간·일봉의 매물대와 스윙을 한 화면에 겹쳐,
+      여러 봉이 동시에 가리키는 가격대를 두꺼운 벽으로 표시합니다.
+    </p>
+  </div>
 </header>
 
-<div class="controls">
-  <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
-  <select id="market"></select>
-  <button class="primary" id="run">분석</button>
-  <button id="auto">자동갱신 OFF</button>
-  <span class="hint">업비트 공개 API · 무인증 · 200봉</span>
-</div>
+<main class="wrap">
+  <div class="controls">
+    <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
+    <select id="market"></select>
+    <div class="tfbar" id="tfbar">
+      <button data-tf="1h">1시간</button>
+      <button data-tf="4h" class="act">4시간</button>
+      <button data-tf="12h">12시간</button>
+      <button data-tf="1d">일봉</button>
+    </div>
+    <button class="btn solid" id="run">분석</button>
+    <button class="btn" id="auto">자동갱신 OFF</button>
+    <span class="hint">업비트 공개 API · 무인증 · 200봉</span>
+  </div>
 
-<div id="out"></div>
+  <div id="out"></div>
+</main>
 
 <footer>
-  시세·캔들: 업비트 공개 API · 펀딩비/미결제약정: 바이낸스 USDT-M 선물(해당 종목 상장 시)<br>
-  계산 로직은 coin-ta-brief 스킬(analyze.py)을 이식한 것이며, <b>기술적 수치 계산 결과이지 투자 권유가 아닙니다.</b><br>
-  청산맵·온체인(MVRV/SOPR)·매크로(DXY)는 무료 API 미제공 — 표시하지 않습니다.
+  <div class="wrap">
+    시세·캔들 <b>업비트 공개 API</b> · 실시간 체결 <b>업비트 WebSocket</b> ·
+    펀딩비/미결제약정 <b>바이낸스 USDT-M 선물</b>(해당 종목 상장 시)<br>
+    계산 로직은 coin-ta-brief 스킬(analyze.py)을 이식한 것이며,
+    <b>기술적 수치 계산 결과이지 투자 권유가 아닙니다.</b><br>
+    청산맵·온체인(MVRV/SOPR)·매크로(DXY)는 무료 API 미제공 — 표시하지 않습니다.
+  </div>
 </footer>
-
-</div>
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.0.0" charset="utf-8"></script>
-<script src="app.js?v=1.0.0" charset="utf-8"></script>
+<script src="app.js?v=2.0.0" charset="utf-8"></script>
 </body>
 </html>
