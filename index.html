@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업비트 코인 분석 — 지지·저항 + 다중 타임프레임</title>
+<style>
+:root{
+  --bg:#0e1117; --bg2:#161b22; --bg3:#1c2230; --line:#2a3140;
+  --text:#e6edf3; --dim:#8b949e;
+  --red:#f6465d; --green:#0ecb81; --yellow:#f0b90b; --blue:#5b9cf6;
+  --purple:#a371f7; --gray:#7d8590;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f6f8fa; --bg2:#fff; --bg3:#f0f3f6; --line:#d8dee4;
+         --text:#1f2328; --dim:#636c76; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;}
+a{color:var(--blue)}
+.wrap{max-width:1240px;margin:0 auto;padding:16px}
+
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:12px 16px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:10px;margin-bottom:14px}
+h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.3px}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;
+  background:var(--bg3);color:var(--dim);border:1px solid var(--line)}
+.spacer{flex:1}
+
+select,input,button{font:inherit;background:var(--bg3);color:var(--text);
+  border:1px solid var(--line);border-radius:7px;padding:7px 10px}
+button{cursor:pointer}
+button:hover{border-color:var(--blue)}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:700}
+button.primary:disabled{opacity:.55;cursor:default}
+input[type=search]{min-width:170px}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.hint{font-size:12px;color:var(--dim)}
+
+/* 시세 헤더 */
+.quote{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin-bottom:14px}
+.qbox{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.qlabel{font-size:11px;color:var(--dim);margin-bottom:3px}
+.qval{font-size:19px;font-weight:700;letter-spacing:-.4px}
+.qsub{font-size:11px;color:var(--dim);margin-top:2px}
+
+/* 시간봉 요약표 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+section{background:var(--bg2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:14px}
+section h2{font-size:14px;margin:0 0 10px;font-weight:700;
+  display:flex;align-items:center;gap:7px}
+section h2 .tag{font-size:10px;font-weight:600;color:var(--dim);
+  background:var(--bg3);padding:2px 7px;border-radius:20px;border:1px solid var(--line)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:800px){ .grid2{grid-template-columns:1fr} }
+
+.up{color:var(--green)} .down{color:var(--red)} .neu{color:var(--yellow)}
+.dim{color:var(--dim)}
+.mono{font-variant-numeric:tabular-nums}
+
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;
+  border-radius:20px;white-space:nowrap}
+.p4{background:rgba(14,203,129,.16);color:var(--green)}
+.p3{background:rgba(91,156,246,.16);color:var(--blue)}
+.p2{background:rgba(240,185,11,.16);color:var(--yellow)}
+.p1{background:rgba(125,133,144,.16);color:var(--gray)}
+
+.reason{font-size:11px;color:var(--dim);margin-top:2px;word-break:keep-all}
+
+.warn{background:rgba(240,185,11,.09);border:1px solid rgba(240,185,11,.3);
+  border-radius:8px;padding:9px 12px;font-size:12px;color:var(--yellow);margin-top:10px}
+.err{background:rgba(246,70,93,.09);border:1px solid rgba(246,70,93,.35);
+  border-radius:8px;padding:10px 13px;color:var(--red);font-size:13px}
+
+.chartbox{position:relative;height:300px;background:var(--bg3);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.chartbox canvas{display:block;width:100%;height:100%}
+
+.sig{display:inline-block;font-size:11px;padding:2px 7px;margin:2px 3px 2px 0;
+  border-radius:5px;background:var(--bg3);border:1px solid var(--line)}
+
+footer{color:var(--dim);font-size:11px;text-align:center;padding:18px 0 30px;line-height:1.7}
+
+.loading{text-align:center;padding:34px;color:var(--dim)}
+.spin{display:inline-block;width:15px;height:15px;border:2px solid var(--line);
+  border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;
+  vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>업비트 코인 분석</h1>
+  <span class="badge">coin-ta-brief 로직</span>
+  <span class="badge">1h / 4h / 12h / 1d</span>
+  <span class="spacer"></span>
+  <span class="hint" id="updated">—</span>
+</header>
+
+<div class="controls">
+  <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
+  <select id="market"></select>
+  <button class="primary" id="run">분석</button>
+  <button id="auto">자동갱신 OFF</button>
+  <span class="hint">업비트 공개 API · 무인증 · 200봉</span>
+</div>
+
+<div id="out"></div>
+
+<footer>
+  시세·캔들: 업비트 공개 API · 펀딩비/미결제약정: 바이낸스 USDT-M 선물(해당 종목 상장 시)<br>
+  계산 로직은 coin-ta-brief 스킬(analyze.py)을 이식한 것이며, <b>기술적 수치 계산 결과이지 투자 권유가 아닙니다.</b><br>
+  청산맵·온체인(MVRV/SOPR)·매크로(DXY)는 무료 API 미제공 — 표시하지 않습니다.
+</footer>
+
+</div>
+
+<script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
+<script src="level_analyzer.js?v=1.0.0" charset="utf-8"></script>
+<script src="app.js?v=1.0.0" charset="utf-8"></script>
+</body>
+</html>
