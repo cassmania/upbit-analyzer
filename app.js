@@ -36,7 +36,7 @@
         timer: null, busy: false,
         ws: null, wsAlive: false,
         tfCandles: null, levels: null, dp: 0, lastPrice: 0,
-        usdPrice: null, usdkrw: null   // 바이낸스 USDT 시세와 환율 (현재가 $ 병기용)
+        usdPrice: null, usdtKrw: null, bankFx: null   // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
@@ -174,18 +174,39 @@
         var g = function (u) {
             return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
         };
-        return Promise.all([g(b + "/premiumIndex?symbol=" + s), g(b + "/openInterest?symbol=" + s), g(b + "/ticker/price?symbol=" + s)])
+        // 김프는 현물 기준이 표준이라 현물가도 같이 받는다. 선물가는 펀딩·OI 맥락용.
+        var spot = fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + s)
+            .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        return Promise.all([g(b + "/premiumIndex?symbol=" + s), g(b + "/openInterest?symbol=" + s), g(b + "/ticker/price?symbol=" + s), spot])
             .then(function (r) {
-                if (!r[0] && !r[1]) return null;
+                if (!r[0] && !r[1] && !r[3]) return null;
                 return {
                     funding: r[0] && r[0].lastFundingRate !== undefined ? parseFloat(r[0].lastFundingRate) * 100 : null,
                     oi: r[1] && r[1].openInterest ? parseFloat(r[1].openInterest) : null,
-                    usdPrice: r[2] && r[2].price ? parseFloat(r[2].price) : null
+                    usdPrice: r[2] && r[2].price ? parseFloat(r[2].price) : null,
+                    spotPrice: r[3] && r[3].price ? parseFloat(r[3].price) : null
                 };
             }).catch(function () { return null; });
     }
 
-    function fetchUsdKrw() {
+    /**
+     * 김치 프리미엄 기준 환율.
+     *
+     * 김프가·코인게코 등 표준 계산은 은행 환율이 아니라 **업비트 USDT 시세**를 쓴다.
+     * 김프의 정의가 "달러로 환산했을 때의 차이"가 아니라
+     * "USDT로 사서 국내로 옮겼을 때의 차이"이기 때문이다 — 실제 차익거래 경로와 맞다.
+     *
+     * 은행 환율을 쓰면 USDT 자체의 프리미엄(보통 -0.8% 안팎)이 통째로 빠져
+     * 다른 사이트와 수치가 어긋난다.
+     */
+    function fetchUsdtKrw() {
+        return getJSON(upbitUrl("ticker", { markets: "KRW-USDT" }))
+            .then(function (d) { return d && d[0] ? d[0].trade_price : null; })
+            .catch(function () { return null; });
+    }
+
+    /** 참고 표시용 은행 환율. 김프 계산에는 쓰지 않는다. */
+    function fetchBankFx() {
         return fetch("https://open.er-api.com/v6/latest/USD")
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) { return d && d.rates && d.rates.KRW ? d.rates.KRW : null; })
@@ -258,8 +279,8 @@
         // 원화가 움직이면 환율로 환산한 달러값도 같이 갱신한다.
         // 바이낸스 USDT 시세 자체는 여기서 갱신하지 않는다(별도 소스라 30초 주기 재조회 몫).
         var us = $("q-usdsub");
-        if (us && state.usdkrw) {
-            us.textContent = fmtUsd(price / state.usdkrw) + " · 환율 환산";
+        if (us && state.usdtKrw) {
+            us.textContent = fmtUsd(price / state.usdtKrw) + " · USDT 환산";
         }
 
         if (!candleSeries || !state.tfCandles) return;
@@ -413,7 +434,7 @@
 
     // ---------------------------------------------------------------- 렌더
 
-    function render(market, data, fut, usdkrw) {
+    function render(market, data, fut, usdtKrw, bankFx) {
         var t = data.ticker;
         var price = t.trade_price;
         var dp = decimals(price);
@@ -421,7 +442,8 @@
         state.tfCandles = data.tf;
         state.lastPrice = price;
         state.usdPrice = fut && fut.usdPrice ? fut.usdPrice : null;
-        state.usdkrw = usdkrw || null;
+        state.usdtKrw = usdtKrw || null;     // 김프 기준 환율 (업비트 USDT)
+        state.bankFx = bankFx || null;       // 참고용 은행 환율
 
         var name = (state.markets.filter(function (m) { return m.market === market; })[0] || {}).korean_name || market;
         var sym = market.replace("KRW-", "");
@@ -447,7 +469,7 @@
         state.levels = lv;
 
         var html = [];
-        html.push(renderQuotes(t, price, dp, name, sym, fut, usdkrw));
+        html.push(renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
         html.push(renderChartSection(sym));
         html.push(renderSummary(results));
         html.push(renderLevels(lv, dp));
@@ -468,10 +490,10 @@
             + ">" + v + '</div><div class="qs">' + (s || "") + "</div></div>";
     }
 
-    function renderQuotes(t, price, dp, name, sym, fut, usdkrw) {
+    function renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) {
         var chg = t.signed_change_rate * 100;
         var out = ['<div class="quotes">'];
-        var usdSub = fut && fut.usdPrice ? fmtUsd(fut.usdPrice) + " · " + esc(name) : "₩ · " + esc(name) + " (" + sym + ")";
+        var usdSub = usdtKrw ? fmtUsd(price / usdtKrw) + " · USDT 환산" : "₩ · " + esc(name) + " (" + sym + ")";
         out.push(qb("현재가", '<span class="' + cls(chg) + '">' + fmt(price, dp) + "</span>",
             '<span id="q-usdsub">' + usdSub + "</span>"));
         out.push(qb("24시간 변동", '<span class="' + cls(chg) + '">' + pct(chg) + "</span>",
@@ -484,14 +506,19 @@
                 fut.funding === null ? "데이터 없음" : (fut.funding >= 0 ? "롱 우위" : "숏 과열 — 숏스퀴즈 조건")));
             out.push(qb("미결제약정 <span class='dim'>· 바이낸스</span>",
                 fut.oi === null ? "—" : fmt(fut.oi, 0), fut.oi === null ? "데이터 없음" : sym + " 계약"));
-            if (fut.usdPrice) {
-                out.push(qb("USDT 가격 <span class='dim'>· 바이낸스</span>",
-                    '<span id="q-usd">' + fmtUsd(fut.usdPrice) + "</span>",
-                    usdkrw ? "환산 " + fmt(fut.usdPrice * usdkrw, dp) + "원" : "환율 데이터 없음"));
+            // 김프 표준은 현물가 기준이다. 현물이 없으면 선물로 대체하고 그 사실을 표기한다.
+            var refUsd = fut.spotPrice || fut.usdPrice;
+            var isSpot = !!fut.spotPrice;
+            if (refUsd) {
+                out.push(qb("USDT 가격 <span class='dim'>· 바이낸스" + (isSpot ? " 현물" : " 선물") + "</span>",
+                    '<span id="q-usd">' + fmtUsd(refUsd) + "</span>",
+                    usdtKrw ? "환산 " + fmt(refUsd * usdtKrw, dp) + "원" : "환율 데이터 없음"));
             }
-            if (fut.usdPrice && usdkrw) {
-                var kp = (price / (fut.usdPrice * usdkrw) - 1) * 100;
-                out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>", "환율 " + fmt(usdkrw, 1) + "원 기준"));
+            if (refUsd && usdtKrw) {
+                var kp = (price / (refUsd * usdtKrw) - 1) * 100;
+                out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>",
+                    "USDT " + fmt(usdtKrw, 1) + "원 기준"
+                    + (bankFx ? " · 은행 " + fmt(bankFx, 1) + "원" : "")));
             }
         } else {
             out.push(qb("펀딩비 · 미결제약정", '<span class="dim" style="font-size:17px">데이터 없음</span>', "바이낸스 USDT-M 미상장"));
@@ -642,9 +669,9 @@
         $("out").innerHTML = '<div class="loading"><span class="spin"></span>' + esc(sym) + " 분석 중…</div>";
 
         fetchAll(market)
-            .then(function (data) { return Promise.all([data, fetchFutures(sym), fetchUsdKrw()]); })
+            .then(function (data) { return Promise.all([data, fetchFutures(sym), fetchUsdtKrw(), fetchBankFx()]); })
             .then(function (r) {
-                render(market, r[0], r[1], r[2]);
+                render(market, r[0], r[1], r[2], r[3]);
                 connectWS(market);
             })
             .catch(function (e) {
