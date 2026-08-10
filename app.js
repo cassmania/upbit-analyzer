@@ -7,7 +7,22 @@
 (function () {
     "use strict";
 
-    var UPBIT = "https://api.upbit.com/v1";
+    // 업비트는 전 엔드포인트에 CORS 헤더를 주지 않는다. 브라우저에서 직접 부르면
+    // 무조건 막히므로 같은 도메인의 서버리스 함수(/api/upbit)를 거친다.
+    // localhost에서는 프록시가 없을 수 있어 직접 호출로 떨어뜨린다.
+    var DIRECT = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+
+    /** upbitUrl("candles/days", {market:"KRW-BTC", count:200}) */
+    function upbitUrl(path, params) {
+        var sp = new URLSearchParams();
+        if (!DIRECT) sp.set("path", path);
+        Object.keys(params || {}).forEach(function (k) {
+            if (params[k] !== undefined && params[k] !== null) sp.set(k, params[k]);
+        });
+        return DIRECT
+            ? "https://api.upbit.com/v1/" + path + "?" + sp.toString()
+            : "/api/upbit?" + sp.toString();
+    }
 
     // 업비트 캔들 엔드포인트는 봉마다 경로가 다르다.
     var TFS = [
@@ -63,7 +78,7 @@
     // ---------------------------------------------------------------- 데이터
 
     function loadMarkets() {
-        return getJSON(UPBIT + "/market/all?isDetails=false").then(function (all) {
+        return getJSON(upbitUrl("market/all", { isDetails: false })).then(function (all) {
             state.markets = all.filter(function (m) { return m.market.indexOf("KRW-") === 0; })
                 .sort(function (a, b) { return a.korean_name.localeCompare(b.korean_name, "ko"); });
             renderMarketSelect("");
@@ -117,10 +132,10 @@
 
     function fetchAll(market) {
         var jobs = [
-            getJSON(UPBIT + "/ticker?markets=" + market),
-            getJSON(UPBIT + "/candles/minutes/60?market=" + market + "&count=200").then(toCandles),
-            getJSON(UPBIT + "/candles/minutes/240?market=" + market + "&count=200").then(toCandles),
-            getJSON(UPBIT + "/candles/days?market=" + market + "&count=200").then(toCandles)
+            getJSON(upbitUrl("ticker", { markets: market })),
+            getJSON(upbitUrl("candles/minutes/60", { market: market, count: 200 })).then(toCandles),
+            getJSON(upbitUrl("candles/minutes/240", { market: market, count: 200 })).then(toCandles),
+            getJSON(upbitUrl("candles/days", { market: market, count: 200 })).then(toCandles)
         ];
         return Promise.all(jobs).then(function (r) {
             var h1 = r[1], h4 = r[2], d1 = r[3];
