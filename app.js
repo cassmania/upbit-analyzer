@@ -19,6 +19,8 @@
     var EXCHANGES = {
         upbit: {
             name: "업비트",
+            kind: "upbit",
+            quote: "KRW",
             rest: "https://api.upbit.com/v1/",
             ws: "wss://api.upbit.com/websocket/v1",
             proxy: "/api/upbit",      // CORS 차단 -> 프록시 필요
@@ -26,10 +28,23 @@
         },
         bithumb: {
             name: "빗썸",
+            kind: "upbit",
             rest: "https://api.bithumb.com/v1/",
             ws: "wss://ws-api.bithumb.com/websocket/v1",
             proxy: null,              // CORS 허용 -> 브라우저에서 직접
-            hasYear: false            // candles/years 404
+            hasYear: false,           // candles/years 404
+            quote: "KRW"
+        },
+        binance: {
+            name: "바이낸스",
+            kind: "binance",          // 응답이 배열이라 별도 어댑터를 쓴다
+            rest: "https://api.binance.com/api/v3/",
+            ws: "wss://stream.binance.com:9443/ws/",
+            proxy: null,              // CORS 허용
+            hasYear: false,           // 년봉 없음. 월봉이 최장
+            quote: "USDT",
+            // 바이낸스 봉 표기. 8h·12h가 네이티브라 합성이 필요 없다.
+            iv: { "1h": "1h", "4h": "4h", "8h": "8h", "12h": "12h", "1d": "1d", "1w": "1w", "1M": "1M" }
         }
     };
 
@@ -51,9 +66,99 @@
                     : e.rest + path + "?" + sp.toString();
     }
 
-    /** 이 거래소에서 쓸 수 있는 봉만. 빗썸은 년봉이 없다. */
+    /**
+     * 이 거래소에서 쓸 수 있는 봉만.
+     * 빗썸·바이낸스는 년봉이 없다. 바이낸스는 8h·12h가 네이티브라 합성을 건너뛴다.
+     */
     function activeTfs() {
-        return TFS.filter(function (t) { return t.key !== "1y" || ex().hasYear; });
+        var e = ex();
+        return TFS.filter(function (t) {
+            if (t.key === "1y" && !e.hasYear) return false;
+            return true;
+        });
+    }
+
+    /** 이 거래소에서 API로 직접 받을 봉 (나머지는 합성) */
+    function directTfs() {
+        var e = ex();
+        if (e.kind === "binance") {
+            // 바이낸스는 전 봉이 네이티브다. 합성 대상이 없다.
+            return activeTfs().filter(function (t) { return e.iv[t.key]; });
+        }
+        return activeTfs().filter(function (t) { return t.path; });
+    }
+
+    /** 합성이 필요한 봉 (업비트/빗썸의 8h·12h) */
+    function groupedTfs() {
+        if (ex().kind === "binance") return [];
+        return activeTfs().filter(function (t) { return t.group; });
+    }
+
+    // ---------------------------------------------------------------- 바이낸스 어댑터
+
+    /**
+     * 바이낸스는 업비트와 응답 형식이 완전히 다르다.
+     *   - klines: 객체가 아니라 배열 [열림시각, 시가, 고가, 저가, 종가, 거래량, ...]
+     *   - ticker: lastPrice/priceChangePercent 등 다른 키
+     *   - 심볼: KRW-BTC가 아니라 BTCUSDT
+     * 여기서 전부 업비트 형태로 바꿔 나머지 코드가 거래소를 몰라도 되게 한다.
+     */
+    function bnSymbol(market) {
+        // 내부 표기는 "USDT-BTC"로 통일한다(업비트 KRW-BTC와 같은 모양).
+        var p = market.split("-");
+        return (p[1] || p[0]) + (p[0] || "USDT");
+    }
+
+    function bnKlines(market, tfKey, count) {
+        var iv = ex().iv[tfKey];
+        if (!iv) return Promise.resolve([]);
+        var u = ex().rest + "klines?symbol=" + bnSymbol(market) + "&interval=" + iv + "&limit=" + count;
+        return getJSON(u).then(function (raw) {
+            if (!Array.isArray(raw)) return [];
+            // 바이낸스는 오래된 것부터 준다. 업비트는 최신순이라 toCandles가 뒤집는데,
+            // 여기서는 이미 시간순이므로 그대로 매핑한다.
+            return raw.map(function (k) {
+                return {
+                    time: Math.floor(k[0] / 1000),
+                    kst: new Date(k[0]).toISOString(),
+                    o: parseFloat(k[1]), h: parseFloat(k[2]),
+                    l: parseFloat(k[3]), c: parseFloat(k[4]), v: parseFloat(k[5])
+                };
+            });
+        }).catch(function () { return []; });
+    }
+
+    /** 바이낸스 24hr ticker -> 업비트 ticker 형태 */
+    function bnTicker(market) {
+        return getJSON(ex().rest + "ticker/24hr?symbol=" + bnSymbol(market)).then(function (d) {
+            var chg = parseFloat(d.priceChangePercent) / 100;
+            return {
+                market: market,
+                trade_price: parseFloat(d.lastPrice),
+                signed_change_rate: chg,
+                change_rate: Math.abs(chg),
+                high_price: parseFloat(d.highPrice),
+                low_price: parseFloat(d.lowPrice),
+                acc_trade_price_24h: parseFloat(d.quoteVolume),
+                acc_trade_volume_24h: parseFloat(d.volume),
+                prev_closing_price: parseFloat(d.prevClosePrice)
+            };
+        });
+    }
+
+    /** 바이낸스 USDT 마켓 목록 -> 업비트 market/all 형태 */
+    function bnMarkets() {
+        return getJSON(ex().rest + "exchangeInfo").then(function (d) {
+            return (d.symbols || [])
+                .filter(function (x) { return x.quoteAsset === "USDT" && x.status === "TRADING"; })
+                .map(function (x) {
+                    return {
+                        market: "USDT-" + x.baseAsset,
+                        korean_name: x.baseAsset,
+                        english_name: x.baseAsset
+                    };
+                });
+        });
     }
 
     /**
@@ -100,8 +205,13 @@
 
     // ---------------------------------------------------------------- 유틸
 
+    /**
+     * 표시 자릿수. 원화와 USDT는 스케일이 달라 기준을 나눈다.
+     * 원화 BTC는 9천만이라 소수점이 필요 없지만, USDT BTC는 6만이라 2자리가 필요하다.
+     */
     function decimals(v) {
         var a = Math.abs(v);
+        if ((ex().quote || "KRW") !== "KRW") return usdDecimals(v);
         if (a >= 1000) return 0;
         if (a >= 100) return 1;
         if (a >= 1) return 2;
@@ -147,12 +257,22 @@
     // ---------------------------------------------------------------- 데이터
 
     function loadMarkets() {
-        return getJSON(apiUrl("market/all", { isDetails: false })).then(function (all) {
-            state.markets = all.filter(function (m) { return m.market.indexOf("KRW-") === 0; })
-                .sort(function (a, b) { return a.korean_name.localeCompare(b.korean_name, "ko"); });
+        var e = ex();
+        var p = e.kind === "binance"
+            ? bnMarkets()
+            : getJSON(apiUrl("market/all", { isDetails: false })).then(function (all) {
+                return all.filter(function (m) { return m.market.indexOf("KRW-") === 0; });
+            });
+        return p.then(function (list) {
+            state.markets = list.sort(function (a, b) {
+                return a.korean_name.localeCompare(b.korean_name, "ko");
+            });
             renderMarketSelect("");
         });
     }
+
+    /** 기축통화 접두사를 뗀 코인 심볼 */
+    function coinOf(market) { return (market || "").split("-")[1] || market; }
 
     function renderMarketSelect(filter) {
         var sel = $("market");
@@ -165,7 +285,7 @@
         });
         sel.innerHTML = list.map(function (m) {
             return '<option value="' + m.market + '">' + esc(m.korean_name)
-                + " (" + m.market.replace("KRW-", "") + ")</option>";
+                + " (" + coinOf(m.market) + ")</option>";
         }).join("");
         if (list.some(function (m) { return m.market === state.sel; })) sel.value = state.sel;
         else if (list.length) state.sel = sel.value = list[0].market;
@@ -210,25 +330,30 @@
      * 뒤에서 "데이터 부족"으로 표시한다 — 전체를 실패시키지 않는다.
      */
     function fetchAll(market) {
-        var direct = activeTfs().filter(function (t) { return t.path; });
-        var calls = [getJSON(apiUrl("ticker", { markets: market }))];
+        var e = ex();
+        var direct = directTfs();
 
+        var tickerCall = e.kind === "binance"
+            ? bnTicker(market)
+            : getJSON(apiUrl("ticker", { markets: market })).then(function (d) { return d[0]; });
+
+        var calls = [tickerCall];
         direct.forEach(function (t) {
-            calls.push(
-                getJSON(apiUrl(t.path, { market: market, count: 200 }))
+            calls.push(e.kind === "binance"
+                ? bnKlines(market, t.key, 200)
+                : getJSON(apiUrl(t.path, { market: market, count: 200 }))
                     .then(toCandles)
-                    .catch(function () { return []; })   // 이력 짧은 종목은 여기서 흡수
-            );
+                    .catch(function () { return []; }));   // 이력 짧은 종목은 여기서 흡수
         });
 
         return Promise.all(calls).then(function (r) {
             var tf = {};
             direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
-            // 합성봉은 원본 봉에서 묶는다
-            activeTfs().filter(function (t) { return t.group; }).forEach(function (t) {
+            // 합성봉(업비트·빗썸의 8h·12h). 바이낸스는 네이티브라 목록이 비어 있다.
+            groupedTfs().forEach(function (t) {
                 tf[t.key] = groupCandles(tf[t.from] || [], t.group);
             });
-            return { ticker: r[0][0], tf: tf };
+            return { ticker: r[0], tf: tf };
         });
     }
 
@@ -246,11 +371,14 @@
             return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
         };
         // 김프는 현물 기준이 표준이라 현물가도 같이 받는다. 선물가는 펀딩·OI 맥락용.
-        var spot = fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + s)
-            .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        // 바이낸스를 보고 있으면 현재가가 이미 그 현물가라 다시 받을 이유가 없다.
+        var spot = (ex().quote || "KRW") === "KRW"
+            ? fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + s)
+                .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+            : Promise.resolve(null);
         return Promise.all([g(b + "/premiumIndex?symbol=" + s), g(b + "/openInterest?symbol=" + s), g(b + "/ticker/price?symbol=" + s), spot])
             .then(function (r) {
-                if (!r[0] && !r[1] && !r[3]) return null;
+                if (!r[0] && !r[1] && !r[2] && !r[3]) return null;
                 return {
                     funding: r[0] && r[0].lastFundingRate !== undefined ? parseFloat(r[0].lastFundingRate) * 100 : null,
                     oi: r[1] && r[1].openInterest ? parseFloat(r[1].openInterest) : null,
@@ -271,6 +399,9 @@
      * 다른 사이트와 수치가 어긋난다.
      */
     function fetchUsdtKrw() {
+        // USDT 거래소(바이낸스)에는 KRW-USDT 마켓이 없다. 김프 자체가 성립하지 않으므로
+        // 호출하지 않는다. 그냥 부르면 잘못된 경로로 나가 CORS 에러만 남는다.
+        if ((ex().quote || "KRW") !== "KRW") return Promise.resolve(null);
         return getJSON(apiUrl("ticker", { markets: "KRW-USDT" }))
             .then(function (d) { return d && d[0] ? d[0].trade_price : null; })
             .catch(function () { return null; });
@@ -278,6 +409,7 @@
 
     /** 참고 표시용 은행 환율. 김프 계산에는 쓰지 않는다. */
     function fetchBankFx() {
+        if ((ex().quote || "KRW") !== "KRW") return Promise.resolve(null);
         return fetch("https://open.er-api.com/v6/latest/USD")
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) { return d && d.rates && d.rates.KRW ? d.rates.KRW : null; })
@@ -293,25 +425,49 @@
      */
     function connectWS(market) {
         closeWS();
+        var e = ex();
+        var 바이낸스 = e.kind === "binance";
         var ws;
-        try { ws = new WebSocket(ex().ws); }
-        catch (e) { setWsState(false, "연결 실패"); return; }
+        // 바이낸스는 구독 메시지 없이 URL에 스트림을 박는다(btcusdt@ticker).
+        var url = 바이낸스 ? e.ws + bnSymbol(market).toLowerCase() + "@ticker" : e.ws;
+        try { ws = new WebSocket(url); }
+        catch (err) { setWsState(false, "연결 실패"); return; }
         ws.binaryType = "arraybuffer";
         state.ws = ws;
 
         ws.onopen = function () {
             setWsState(true, "실시간");
+            if (바이낸스) return;   // URL 구독이라 보낼 게 없다
             ws.send(JSON.stringify([
-                { ticket: "upbit-ta-" + market },
+                { ticket: "kr-ta-" + market },
                 { type: "ticker", codes: [market] },
                 { format: "DEFAULT" }
             ]));
         };
         ws.onmessage = function (ev) {
             var d;
-            try { d = JSON.parse(new TextDecoder("utf-8").decode(ev.data)); }
-            catch (e) { return; }
-            if (!d || d.code !== state.sel) return;   // 종목 전환 직후 이전 소켓 잔여 메시지 차단
+            try {
+                var txt = typeof ev.data === "string" ? ev.data
+                    : new TextDecoder("utf-8").decode(ev.data);
+                d = JSON.parse(txt);
+            } catch (err) { return; }
+            if (!d) return;
+
+            if (바이낸스) {
+                // 바이낸스 틱을 업비트 형태로 바꿔 onTick에 넘긴다
+                if (d.s !== bnSymbol(state.sel)) return;
+                onTick({
+                    code: state.sel,
+                    trade_price: parseFloat(d.c),
+                    signed_change_rate: parseFloat(d.P) / 100,
+                    high_price: parseFloat(d.h),
+                    low_price: parseFloat(d.l),
+                    acc_trade_price_24h: parseFloat(d.q),
+                    acc_trade_volume_24h: parseFloat(d.v)
+                });
+                return;
+            }
+            if (d.code !== state.sel) return;   // 종목 전환 직후 이전 소켓 잔여 메시지 차단
             onTick(d);
         };
         ws.onclose = function () { setWsState(false, "연결 끊김"); };
@@ -341,7 +497,10 @@
         var el = $("q-price");
         if (el) {
             var chg = d.signed_change_rate * 100;
-            el.innerHTML = '<span class="' + cls(chg) + '">' + fmt(price, state.dp) + "</span>";
+            // 통화에 맞춰 표기한다. USDT 거래소에서 원화 포맷을 쓰면 $가 빠진다.
+            var 원화틱 = (ex().quote || "KRW") === "KRW";
+            el.innerHTML = '<span class="' + cls(chg) + '">'
+                + (원화틱 ? fmt(price, state.dp) : fmtUsd(price)) + "</span>";
         }
         var ch = $("q-change");
         if (ch) {
@@ -351,7 +510,7 @@
         // 원화가 움직이면 환율로 환산한 달러값도 같이 갱신한다.
         // 바이낸스 USDT 시세 자체는 여기서 갱신하지 않는다(별도 소스라 30초 주기 재조회 몫).
         var us = $("q-usdsub");
-        if (us && state.usdtKrw) {
+        if (us && state.usdtKrw && (ex().quote || "KRW") === "KRW") {
             us.textContent = fmtUsd(price / state.usdtKrw) + " · USDT 환산";
         }
 
@@ -554,7 +713,7 @@
         state.bankFx = bankFx || null;       // 참고용 은행 환율
 
         var name = (state.markets.filter(function (m) { return m.market === market; })[0] || {}).korean_name || market;
-        var sym = market.replace("KRW-", "");
+        var sym = coinOf(market);
 
         // 지표 계산
         var results = {};
@@ -746,16 +905,21 @@
         if (!r || !lv) return "분석 결과가 없습니다. 먼저 분석을 실행하세요.";
 
         var t = r.ticker, price = t.trade_price, dp = state.dp;
-        var sym = r.market.replace("KRW-", "");
+        var sym = coinOf(r.market);
         var name = (state.markets.filter(function (m) { return m.market === r.market; })[0] || {}).korean_name || sym;
-        var f = function (v) { return fmt(v, dp); };
+        // 통화에 맞춘 포맷. 바이낸스는 $를 붙여야 원화와 헷갈리지 않는다.
+        var 원화브리핑0 = (ex().quote || "KRW") === "KRW";
+        var f = function (v) { return 원화브리핑0 ? fmt(v, dp) : fmtUsd(v); };
         var L = [];
 
-        L.push("## " + name + "(" + sym + ") 지지·저항 — 현재 " + f(price) + "원");
+        var 원화브리핑 = 원화브리핑0;
+        // 바이낸스는 한글명이 없어 코인명이 곧 심볼이다. 중복 표기를 피한다.
+        var 제목 = name === sym ? sym : name + "(" + sym + ")";
+        L.push("## " + 제목 + " 지지·저항 — 현재 " + f(price) + (원화브리핑 ? "원" : ""));
         L.push("");
 
         var head = ex().name + " " + f(price) + " · 24h " + pct(t.signed_change_rate * 100);
-        if (state.usdtKrw) head += " · USDT 환산 " + fmtUsd(price / state.usdtKrw);
+        if (state.usdtKrw && 원화브리핑) head += " · USDT 환산 " + fmtUsd(price / state.usdtKrw);
         L.push(head);
 
         if (r.futures) {
@@ -764,7 +928,7 @@
                 fu.push("펀딩 " + r.futures.funding.toFixed(4) + "%");
             }
             if (r.futures.oi) fu.push("OI " + fmt(r.futures.oi, 0));
-            if (r.futures.spotPrice && state.usdtKrw) {
+            if (r.futures.spotPrice && state.usdtKrw && 원화브리핑) {
                 fu.push("김프 " + pct((price / (r.futures.spotPrice * state.usdtKrw) - 1) * 100));
             }
             if (fu.length) L.push(fu.join(" · ") + "  (바이낸스)");
@@ -915,13 +1079,24 @@
     function renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) {
         var chg = t.signed_change_rate * 100;
         var out = ['<div class="quotes">'];
-        var usdSub = usdtKrw ? fmtUsd(price / usdtKrw) + " · USDT 환산" : "₩ · " + esc(name) + " (" + sym + ")";
-        out.push(qb("현재가", '<span class="' + cls(chg) + '">' + fmt(price, dp) + "</span>",
+        var 원화 = (ex().quote || "KRW") === "KRW";
+
+        // 원화 거래소는 달러 환산을 병기한다. 바이낸스는 이미 USDT라 병기할 게 없다.
+        var usdSub = 원화
+            ? (usdtKrw ? fmtUsd(price / usdtKrw) + " · USDT 환산" : "₩ · " + esc(name) + " (" + sym + ")")
+            : esc(name) + " · " + ex().name;
+        out.push(qb("현재가", '<span class="' + cls(chg) + '">'
+            + (원화 ? fmt(price, dp) : fmtUsd(price)) + "</span>",
             '<span id="q-usdsub">' + usdSub + "</span>"));
         out.push(qb("24시간 변동", '<span class="' + cls(chg) + '">' + pct(chg) + "</span>",
-            "고 " + fmt(t.high_price, dp) + " / 저 " + fmt(t.low_price, dp)));
-        out.push(qb("24시간 거래대금", (t.acc_trade_price_24h / 1e8).toFixed(1) + '<span style="font-size:13px;font-weight:600"> 억</span>',
-            "체결량 " + fmt(t.acc_trade_volume_24h, 2)));
+            "고 " + (원화 ? fmt(t.high_price, dp) : fmtUsd(t.high_price))
+            + " / 저 " + (원화 ? fmt(t.low_price, dp) : fmtUsd(t.low_price))));
+
+        // 거래대금 단위: 원화는 억, USDT는 백만 달러
+        var 대금 = 원화
+            ? (t.acc_trade_price_24h / 1e8).toFixed(1) + '<span style="font-size:13px;font-weight:600"> 억</span>'
+            : (t.acc_trade_price_24h / 1e6).toFixed(1) + '<span style="font-size:13px;font-weight:600"> M$</span>';
+        out.push(qb("24시간 거래대금", 대금, "체결량 " + fmt(t.acc_trade_volume_24h, 2)));
         if (fut) {
             out.push(qb("펀딩비 <span class='dim'>· 바이낸스</span>",
                 fut.funding === null ? "—" : '<span class="' + (fut.funding >= 0 ? "up" : "down") + '">' + fut.funding.toFixed(4) + "%</span>",
@@ -931,12 +1106,14 @@
             // 김프 표준은 현물가 기준이다. 현물이 없으면 선물로 대체하고 그 사실을 표기한다.
             var refUsd = fut.spotPrice || fut.usdPrice;
             var isSpot = !!fut.spotPrice;
-            if (refUsd) {
+            // 이미 USDT로 보고 있으면 "USDT 가격" 칸은 현재가와 같은 값이라 뺀다
+            if (refUsd && 원화) {
                 out.push(qb("USDT 가격 <span class='dim'>· 바이낸스" + (isSpot ? " 현물" : " 선물") + "</span>",
                     '<span id="q-usd">' + fmtUsd(refUsd) + "</span>",
                     usdtKrw ? "환산 " + fmt(refUsd * usdtKrw, dp) + "원" : "환율 데이터 없음"));
             }
-            if (refUsd && usdtKrw) {
+            // 김치 프리미엄은 원화 시세가 있어야 성립한다
+            if (refUsd && usdtKrw && 원화) {
                 var kp = (price / (refUsd * usdtKrw) - 1) * 100;
                 out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>",
                     "USDT " + fmt(usdtKrw, 1) + "원 기준"
@@ -1101,7 +1278,7 @@
         state.busy = true;
         var market = $("market").value || state.sel;
         state.sel = market;
-        var sym = market.replace("KRW-", "");
+        var sym = coinOf(market);
         $("run").disabled = true;
         // 로딩 화면은 처음 그릴 때만. 자동갱신마다 띄우면 그 자체가 깜빡임이다.
         if (state.renderedFor !== market) {
@@ -1132,7 +1309,7 @@
             var head = document.querySelector("#chart-sec .sec-head h2");
             if (head) {
                 var lbl = (TFS.filter(function (x) { return x.key === tf; })[0] || {}).label || "";
-                head.textContent = state.sel.replace("KRW-", "") + " " + lbl + " 차트";
+                head.textContent = coinOf(state.sel) + " " + lbl + " 차트";
             }
             // 봉이 바뀌면 축 범위가 달라지므로 fitContent가 필요하다. 재생성이 맞다.
             buildChart(state.tfCandles[tf], state.levels, state.dp);
@@ -1192,7 +1369,9 @@
         syncTfButtons();
         syncApiHint();
 
-        var 원하던 = state.sel;
+        // 거래소마다 기축이 다르다(KRW-BTC <-> USDT-BTC). 코인 이름만 떼어 이어붙인다.
+        var 코인 = state.sel.split("-")[1] || "BTC";
+        var 원하던 = (ex().quote || "KRW") + "-" + 코인;
         $("out").innerHTML = '<div class="loading"><span class="spin"></span>'
             + esc(ex().name) + " 마켓을 불러오는 중…</div>";
 
@@ -1200,6 +1379,8 @@
             // 같은 종목이 새 거래소에도 있으면 그대로 이어본다
             if (state.markets.some(function (m) { return m.market === 원하던; })) {
                 state.sel = $("market").value = 원하던;
+            } else if (state.markets.length) {
+                state.sel = $("market").value = state.markets[0].market;
             }
             run();
         }).catch(function (e) {
