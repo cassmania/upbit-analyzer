@@ -3,8 +3,10 @@
 업비트 KRW 마켓 281종목을 다중 타임프레임(1h/4h/12h/1d)으로 분석한다.
 계산 로직은 `coin-ta-brief` 스킬(`analyze.py`)을 JS로 이식한 것이다.
 
-**로컬에서는 완전히 동작한다. GitHub Pages 배포본은 현재 데이터를 못 불러온다** —
-아래 "CORS 문제" 참고.
+**라이브**: https://upbit-analyzer.vercel.app/
+
+GitHub Pages(`cassmania.github.io/upbit-analyzer/`)는 **쓰지 않는다.**
+서버리스 함수를 못 돌려 CORS를 우회할 수 없다 — 아래 "CORS 문제" 참고.
 
 ## 구성
 
@@ -77,17 +79,17 @@ Python 스킬과 JS 엔진을 같은 데이터로 돌려 대조했다.
 - XRP: 4중 겹침 검출, 자릿수 처리 정상 (1,451원 → 정수 표시)
 - 두 종목 모두 불변식(저항>현재가>지지) 위반 0건, 콘솔 에러 0건
 
-## CORS 문제 (배포 미완)
+## CORS 문제와 해결 (완료)
 
 **업비트 API는 전 엔드포인트에 `Access-Control-Allow-Origin` 헤더를 주지 않는다.**
 2026-08-10 실측: `market/all`, `ticker`, `candles/minutes/*`, `candles/days` 전부 없음.
 
 따라서 브라우저에서 `api.upbit.com`을 직접 호출하는 정적 사이트는 원리적으로 불가능하다.
-GitHub Pages 배포본(`cassmania.github.io/upbit-analyzer/`)은 이 이유로 실패한다.
+GitHub Pages 배포본은 이 이유로 실패한다. **Vercel로 옮겨 해결했다.**
 
-localhost에서 되는 건 로컬 출처에 대한 브라우저 동작 차이일 뿐, 배포 환경에서는 재현되지 않는다.
+localhost에서 되는 건 로컬 출처에 대한 브라우저 동작 차이일 뿐, 정적 배포에서는 재현되지 않는다.
 
-### 준비된 해결책: `api/upbit.js`
+### 해결: `api/upbit.js`
 
 서버리스 프록시를 만들어 뒀다. 경로 화이트리스트를 둬서 임의 URL을 대신 때려주는
 오픈 프록시가 되지 않게 했고, 5초 캐시로 업비트 호출 제한(초당 10회)을 던다.
@@ -96,17 +98,29 @@ localhost에서 되는 건 로컬 출처에 대한 브라우저 동작 차이일
 - `localhost` / `127.0.0.1` → 업비트 직접 호출
 - 그 외 → `/api/upbit?path=...` 경유
 
-**배포하려면 Vercel 로그인이 필요하다.** 이 저장소를 Vercel에 연결하면
-`api/upbit.js`가 자동으로 함수가 되고 사이트 전체가 동작한다.
+**2026-08-10 Vercel 배포 완료.** GitHub 저장소를 Vercel에 연결하면
+`api/upbit.js`가 자동으로 서버리스 함수가 된다. 이후 main에 푸시할 때마다 자동 재배포된다.
 
-```bash
-npx vercel login     # 브라우저 인증
-npx vercel --prod
-```
+CLI(`npx vercel`)는 이 환경에서 한글 관련 오류로 로그인이 안 됐다
+(`Cannot convert argument to a ByteString ... value of 44608`).
+대시보드에서 Import하는 쪽이 확실하다.
 
 시도한 무료 CORS 프록시(corsproxy.io / allorigins / codetabs / thingproxy)는
 전부 실패하거나 유료 전환됐다. `r.jina.ai`만 응답하지만 마크다운으로 감싸 주고
 서드파티 의존이라 채택하지 않았다.
+
+### 배포 검증 (2026-08-10)
+
+| 항목 | 결과 |
+|---|---|
+| `/api/upbit?path=ticker` | 200, 업비트 JSON 그대로 |
+| `/api/upbit?path=candles/minutes/240&count=200` | 200, 캔들 200개 |
+| CORS 헤더 | `Access-Control-Allow-Origin: *` |
+| 화이트리스트 방어 | `path=orders` → 400 + 허용 목록 반환 |
+| BTC(91,432,000원) | 4중 겹침 검출, 불변식 위반 0 |
+| XEC(0.00947원) | 8자리 정밀도 유지, 4중 겹침, 불변식 위반 0 |
+| 바이낸스 미상장 종목(XEC) | 펀딩·OI "데이터 없음" 표기 |
+| 콘솔 에러 | 0건 |
 
 ## 로컬 실행
 
