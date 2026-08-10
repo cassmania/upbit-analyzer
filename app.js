@@ -624,6 +624,76 @@
         ts.setVisibleLogicalRange({ from: total - n, to: total });
     }
 
+    // ------------------------------------------------------------ 전체화면
+
+    /**
+     * 차트 카드를 전체화면으로 띄운다.
+     *
+     * 대상은 #chart가 아니라 카드 전체다. 캔버스만 띄우면 줌 툴바와
+     * 범례가 빠져 조작을 못 한다.
+     *
+     * lightweight-charts는 autoSize로 컨테이너를 따라가지만, 전체화면 전환은
+     * 리사이즈 이벤트가 늦게 와서 한 번 더 밀어줘야 크기가 맞는다.
+     */
+    function toggleFullscreen() {
+        var card = document.querySelector("#chart-sec .card");
+        if (!card) return;
+
+        // 이미 확대 상태면 해제
+        if (document.fullscreenElement) {
+            (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
+            return;
+        }
+        if (card.classList.contains("is-fs")) { setPseudoFs(false); return; }
+
+        var req = card.requestFullscreen || card.webkitRequestFullscreen;
+        if (!req) { setPseudoFs(true); return; }
+
+        // Fullscreen API는 iframe·임베디드 브라우저에서 권한 없이 거부된다
+        // ("Permissions check failed"). 그때는 페이지 안에서 꽉 채우는 모드로 대체한다.
+        var p;
+        try { p = req.call(card); } catch (e) { setPseudoFs(true); return; }
+        if (p && p.catch) p.catch(function () { setPseudoFs(true); });
+    }
+
+    /** 브라우저 전체화면을 못 쓸 때의 대체 — 뷰포트를 덮는 고정 레이어 */
+    function setPseudoFs(on) {
+        var card = document.querySelector("#chart-sec .card");
+        if (!card) return;
+        card.classList.toggle("is-fs", on);
+        card.classList.toggle("pseudo-fs", on);
+        document.body.style.overflow = on ? "hidden" : "";
+        var b = $("fsBtn");
+        if (b) {
+            b.textContent = on ? "⛶ 해제" : "⛶ 전체화면";
+            b.classList.toggle("on", on);
+        }
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                resizeChart();
+                if (chart) chart.timeScale().fitContent();
+            });
+        });
+    }
+
+    function onFsChange() {
+        var on = !!document.fullscreenElement;
+        var card = document.querySelector("#chart-sec .card");
+        if (card) card.classList.toggle("is-fs", on);
+        var b = $("fsBtn");
+        if (b) {
+            b.textContent = on ? "⛶ 해제" : "⛶ 전체화면";
+            b.classList.toggle("on", on);
+        }
+        // 전환 직후에는 컨테이너 크기가 아직 안 잡힌다. 두 프레임 뒤에 다시 맞춘다.
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                resizeChart();
+                if (chart) chart.timeScale().fitContent();
+            });
+        });
+    }
+
     // ------------------------------------------------------------ 브리핑 생성
 
     /**
@@ -857,6 +927,8 @@
             +   '<button type="button" data-recent="60">60봉</button>'
             +   '<button type="button" data-recent="120">120봉</button>'
             +   '<button type="button" data-recent="0" title="전체 (차트 더블클릭)">전체</button>'
+            +   '<span class="zoom-sep"></span>'
+            +   '<button type="button" id="fsBtn" class="fs-btn" title="전체화면 (F 또는 Esc로 해제)">⛶ 전체화면</button>'
             + "</div>"
             + '<div class="chart-shell">'
             + '<div id="chart"></div><div class="chart-legend" id="legend"></div>'
@@ -1086,12 +1158,36 @@
         // 줌 버튼은 렌더할 때마다 새로 생긴다. out에 한 번만 위임해 둔다.
         $("out").addEventListener("click", function (e) {
             var b = e.target.closest ? e.target.closest("[data-zoom],[data-recent]") : null;
-            if (!b) return;
+            if (!b || b.id === "fsBtn") return;
             if (b.hasAttribute("data-zoom")) {
                 zoomBy(b.getAttribute("data-zoom") === "in" ? 0.7 : 1.43);
             } else {
                 showRecent(parseInt(b.getAttribute("data-recent"), 10));
             }
+        });
+
+        // 전체화면 버튼도 렌더마다 새로 생긴다
+        $("out").addEventListener("click", function (e) {
+            if (e.target.closest && e.target.closest("#fsBtn")) toggleFullscreen();
+        });
+        document.addEventListener("fullscreenchange", onFsChange);
+        document.addEventListener("webkitfullscreenchange", onFsChange);
+
+        // 유사 전체화면은 브라우저가 Esc를 처리해주지 않으니 직접 받는다
+        document.addEventListener("keydown", function (e) {
+            if (e.key !== "Escape") return;
+            var card = document.querySelector("#chart-sec .card");
+            if (card && card.classList.contains("pseudo-fs")) setPseudoFs(false);
+        });
+
+        // F로 토글. 입력창에 타이핑 중일 때는 무시한다.
+        document.addEventListener("keydown", function (e) {
+            if (e.key !== "f" && e.key !== "F") return;
+            var t = e.target.tagName;
+            if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            e.preventDefault();
+            toggleFullscreen();
         });
         $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });

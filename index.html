@@ -181,6 +181,22 @@ h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012
 .zoom-bar button:active{background:var(--surface-high);color:#fff}
 .zoom-sep{width:1px;height:16px;background:var(--outline);margin:0 4px}
 
+/* 전체화면 버튼 — 빨강으로 눈에 띄게 */
+.zoom-bar .fs-btn{
+  margin-left:auto;
+  border-color:rgba(246,70,93,.55);
+  color:#ff8f9e;
+  background:rgba(246,70,93,.12);
+  font-weight:700;
+}
+.zoom-bar .fs-btn:hover{
+  border-color:var(--down);
+  background:rgba(246,70,93,.26);
+  color:#fff;
+}
+.zoom-bar .fs-btn.on{background:var(--down);border-color:var(--down);color:#fff}
+
+
 .chart-shell{position:relative;height:440px;background:var(--surface-lowest)}
 #chart{position:absolute;inset:0;cursor:crosshair}
 .chart-legend{
@@ -254,6 +270,35 @@ footer{
   color:var(--on-variant);font-size:11.5px;line-height:1.85;
 }
 footer b{color:#c9d2ee}
+
+/* ---------- 전체화면 ----------
+   .chart-shell{height:440px} 뒤에 와야 이긴다. 순서가 곧 우선순위다.
+   클래스(is-fs)와 :fullscreen을 함께 걸어, 클래스 토글이 한 프레임 늦어도
+   레이아웃이 먼저 잡히게 한다. */
+#chart-sec .card.is-fs,
+#chart-sec .card:fullscreen,
+#chart-sec .card:-webkit-full-screen{
+  display:flex !important;
+  flex-direction:column;
+  width:100vw;height:100vh;max-width:none;
+  border:0;border-radius:0;background:var(--bg);
+}
+#chart-sec .card.is-fs .chart-shell,
+#chart-sec .card:fullscreen .chart-shell,
+#chart-sec .card:-webkit-full-screen .chart-shell{
+  flex:1 1 auto !important;
+  height:auto !important;
+  min-height:0;
+}
+#chart-sec .card.is-fs .zoom-bar,
+#chart-sec .card.is-fs .chart-note,
+#chart-sec .card:fullscreen .zoom-bar,
+#chart-sec .card:fullscreen .chart-note{flex:0 0 auto}
+
+/* Fullscreen API가 막힌 환경(임베디드 브라우저 등)의 대체 레이어 */
+#chart-sec .card.pseudo-fs{
+  position:fixed;inset:0;z-index:200;
+}
 </style>
 </head>
 <body>
@@ -334,6 +379,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=2.3.0" charset="utf-8"></script>
+<script src="app.js?v=2.5.0" charset="utf-8"></script>
 </body>
 </html>
