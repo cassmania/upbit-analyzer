@@ -109,15 +109,34 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .btn.solid:hover{background:#e6e6e6}
 .btn.solid:disabled{opacity:.5;cursor:default}
 .btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.tfbar{display:inline-flex;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
+.tfbar{display:inline-flex;flex-wrap:wrap;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
 .tfbar button{
-  background:transparent;border:0;color:var(--on-variant);padding:8px 15px;
+  background:transparent;border:0;color:var(--on-variant);padding:8px 13px;
   cursor:pointer;font-weight:600;font-size:13px;transition:all .16s;
 }
 .tfbar button+button{border-left:1px solid var(--outline)}
 .tfbar button:hover{color:var(--on-surface);background:rgba(255,255,255,.04)}
 .tfbar button.act{background:var(--surface-high);color:#fff}
 .hint{font-size:12px;color:var(--on-variant)}
+
+/* ---------- 브리핑 패널 ---------- */
+.btn.accent{border-color:rgba(99,102,241,.5);color:#a5a8f5;background:var(--accent-soft)}
+.btn.accent:hover{border-color:var(--accent);background:rgba(99,102,241,.22);color:#fff}
+.btn.sm{padding:5px 12px;font-size:12px}
+.brief-box{margin:0 0 var(--gutter)}
+.brief-head{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 14px;border-bottom:1px solid var(--outline);background:var(--surface);
+}
+.brief-head .sp{flex:1}
+#briefText{
+  width:100%;min-height:420px;resize:vertical;display:block;
+  background:var(--surface-lowest);color:var(--on-surface);
+  border:0;padding:16px 18px;
+  font-family:ui-monospace,'Cascadia Mono',Consolas,'Malgun Gothic',monospace;
+  font-size:12.5px;line-height:1.75;white-space:pre;overflow:auto;
+}
+#briefText:focus{outline:none}
 
 /* ---------- 시세 스트립 ---------- */
 .quotes{
@@ -266,11 +285,16 @@ footer b{color:#c9d2ee}
     <div class="tfbar" id="tfbar">
       <button data-tf="1h">1시간</button>
       <button data-tf="4h" class="act">4시간</button>
+      <button data-tf="8h">8시간</button>
       <button data-tf="12h">12시간</button>
       <button data-tf="1d">일봉</button>
+      <button data-tf="1w">주봉</button>
+      <button data-tf="1M">월봉</button>
+      <button data-tf="1y">년봉</button>
     </div>
     <button class="btn solid" id="run">분석</button>
     <button class="btn" id="auto">자동갱신 OFF</button>
+    <button class="btn accent" id="briefBtn" title="coin-ta-brief 스킬 형식으로 브리핑 뽑기">브리핑 생성</button>
     <select id="interval" title="지표·레벨 재계산 주기 (시세는 WebSocket으로 항상 실시간)">
       <option value="1">1초</option>
       <option value="3">3초</option>
@@ -282,6 +306,18 @@ footer b{color:#c9d2ee}
   </div>
 
   <div class="warn" id="rateHint" style="display:none;margin:0 0 20px"></div>
+
+  <!-- coin-ta-brief 스킬 형식 브리핑. 복사해서 메모·채팅에 붙일 수 있다 -->
+  <div class="card brief-box" id="brief" style="display:none">
+    <div class="brief-head">
+      <b>coin-ta-brief 브리핑</b>
+      <span class="tag">마크다운</span>
+      <span class="sp"></span>
+      <button class="btn sm" id="briefCopy">복사</button>
+      <button class="btn sm" id="briefClose">닫기</button>
+    </div>
+    <textarea id="briefText" spellcheck="false" readonly></textarea>
+  </div>
 
   <div id="out"></div>
 </main>
@@ -297,7 +333,7 @@ footer b{color:#c9d2ee}
 </footer>
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
-<script src="level_analyzer.js?v=1.0.0" charset="utf-8"></script>
-<script src="app.js?v=2.2.0" charset="utf-8"></script>
+<script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
+<script src="app.js?v=2.3.0" charset="utf-8"></script>
 </body>
 </html>

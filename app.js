@@ -24,12 +24,33 @@
             : "/api/upbit?" + sp.toString();
     }
 
+    /**
+     * 타임프레임 정의.
+     *
+     * 업비트 분봉은 1/3/5/10/15/30/60/240만 있다(480·720은 400을 준다).
+     * 8시간·12시간은 4시간봉을 각각 2개·3개씩 묶어 합성한다.
+     * 주·월·년봉은 전용 엔드포인트가 실제로 있다.
+     *
+     * group: 합성 배수 (없으면 API 직접 조회)
+     * levels: 지지·저항 계산에 넣을지 여부.
+     *   년봉은 상장 이래 10개 남짓이라 매물대·스윙을 뽑을 표본이 안 된다.
+     *   차트로 보는 건 되지만 레벨 계산에서는 뺀다.
+     */
     var TFS = [
-        { key: "1h", label: "1시간", path: "candles/minutes/60", sec: 3600 },
-        { key: "4h", label: "4시간", path: "candles/minutes/240", sec: 14400 },
-        { key: "12h", label: "12시간", path: null, sec: 43200 },   // 4h×3 합성
-        { key: "1d", label: "일봉", path: "candles/days", sec: 86400 }
+        { key: "1h",  label: "1시간",  path: "candles/minutes/60",  sec: 3600,     levels: true },
+        { key: "4h",  label: "4시간",  path: "candles/minutes/240", sec: 14400,    levels: true },
+        { key: "8h",  label: "8시간",  path: null, from: "4h", group: 2, sec: 28800,  levels: true },
+        { key: "12h", label: "12시간", path: null, from: "4h", group: 3, sec: 43200,  levels: true },
+        { key: "1d",  label: "일봉",   path: "candles/days",   sec: 86400,     levels: true },
+        { key: "1w",  label: "주봉",   path: "candles/weeks",  sec: 604800,    levels: true },
+        { key: "1M",  label: "월봉",   path: "candles/months", sec: 2592000,   levels: true },
+        { key: "1y",  label: "년봉",   path: "candles/years",  sec: 31536000,  levels: false }
     ];
+
+    /** 레벨 계산에 넣을 봉만. 년봉처럼 표본이 부족한 건 제외된다. */
+    function levelTfs() {
+        return TFS.filter(function (t) { return t.levels; });
+    }
 
     var state = {
         markets: [], sel: "KRW-BTC", chartTf: "4h",
@@ -148,17 +169,33 @@
         return out;
     }
 
+    /**
+     * 8개 봉을 한 번에 받는다. 합성봉(8h·12h)은 4시간봉에서 만들므로 호출하지 않는다.
+     * 실제 API 호출은 ticker + 6개 캔들 = 7회.
+     *
+     * 장기봉은 종목마다 이력이 짧을 수 있다. 실패하거나 비면 빈 배열로 두고
+     * 뒤에서 "데이터 부족"으로 표시한다 — 전체를 실패시키지 않는다.
+     */
     function fetchAll(market) {
-        return Promise.all([
-            getJSON(upbitUrl("ticker", { markets: market })),
-            getJSON(upbitUrl("candles/minutes/60", { market: market, count: 200 })).then(toCandles),
-            getJSON(upbitUrl("candles/minutes/240", { market: market, count: 200 })).then(toCandles),
-            getJSON(upbitUrl("candles/days", { market: market, count: 200 })).then(toCandles)
-        ]).then(function (r) {
-            return {
-                ticker: r[0][0],
-                tf: { "1h": r[1], "4h": r[2], "12h": groupCandles(r[2], 3), "1d": r[3] }
-            };
+        var direct = TFS.filter(function (t) { return t.path; });
+        var calls = [getJSON(upbitUrl("ticker", { markets: market }))];
+
+        direct.forEach(function (t) {
+            calls.push(
+                getJSON(upbitUrl(t.path, { market: market, count: 200 }))
+                    .then(toCandles)
+                    .catch(function () { return []; })   // 이력 짧은 종목은 여기서 흡수
+            );
+        });
+
+        return Promise.all(calls).then(function (r) {
+            var tf = {};
+            direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
+            // 합성봉은 원본 봉에서 묶는다
+            TFS.filter(function (t) { return t.group; }).forEach(function (t) {
+                tf[t.key] = groupCandles(tf[t.from] || [], t.group);
+            });
+            return { ticker: r[0][0], tf: tf };
         });
     }
 
@@ -494,12 +531,12 @@
                 : { error: "캔들 부족 (" + (c ? c.length : 0) + "봉)" };
         });
 
-        // 겹침 레벨
+        // 지지·저항. levels:false인 봉(년봉)은 표본이 부족해 넣지 않는다.
         var conv = {};
-        Object.keys(data.tf).forEach(function (k) {
-            var c = data.tf[k];
+        levelTfs().forEach(function (tf) {
+            var c = data.tf[tf.key];
             if (c && c.length >= 20) {
-                conv[k] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
+                conv[tf.key] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
             }
         });
         var lv = LevelEngine.analyze(conv, price, { limit: 7 });
@@ -585,6 +622,176 @@
         var ts = chart.timeScale();
         if (!n || n >= total) { ts.fitContent(); return; }
         ts.setVisibleLogicalRange({ from: total - n, to: total });
+    }
+
+    // ------------------------------------------------------------ 브리핑 생성
+
+    /**
+     * coin-ta-brief 스킬의 A형(지지·저항 중심) 출력을 마크다운으로 만든다.
+     *
+     * 화면에 같은 수치가 이미 있지만, 스킬 형식 텍스트는 그대로 복사해
+     * 메모·채팅에 붙이거나 다른 분석과 나란히 두기 좋다.
+     *
+     * 스킬 6절 규칙을 지킨다: 없는 데이터는 "데이터 없음"이라 쓰고 지어내지 않는다.
+     * 뉴스·언락은 웹 검색이 필요해 브라우저에서 만들 수 없으므로 그대로 밝힌다.
+     */
+    function buildBrief() {
+        var r = window.분석결과, lv = window.레벨결과;
+        if (!r || !lv) return "분석 결과가 없습니다. 먼저 분석을 실행하세요.";
+
+        var t = r.ticker, price = t.trade_price, dp = state.dp;
+        var sym = r.market.replace("KRW-", "");
+        var name = (state.markets.filter(function (m) { return m.market === r.market; })[0] || {}).korean_name || sym;
+        var f = function (v) { return fmt(v, dp); };
+        var L = [];
+
+        L.push("## " + name + "(" + sym + ") 지지·저항 — 현재 " + f(price) + "원");
+        L.push("");
+
+        var head = "업비트 " + f(price) + " · 24h " + pct(t.signed_change_rate * 100);
+        if (state.usdtKrw) head += " · USDT 환산 " + fmtUsd(price / state.usdtKrw);
+        L.push(head);
+
+        if (r.futures) {
+            var fu = [];
+            if (r.futures.funding !== null && r.futures.funding !== undefined) {
+                fu.push("펀딩 " + r.futures.funding.toFixed(4) + "%");
+            }
+            if (r.futures.oi) fu.push("OI " + fmt(r.futures.oi, 0));
+            if (r.futures.spotPrice && state.usdtKrw) {
+                fu.push("김프 " + pct((price / (r.futures.spotPrice * state.usdtKrw) - 1) * 100));
+            }
+            if (fu.length) L.push(fu.join(" · ") + "  (바이낸스)");
+        } else {
+            L.push("바이낸스 선물 미상장 — 펀딩·OI·김프 데이터 없음");
+        }
+        L.push("");
+
+        var 표 = function (제목, 행들, 방향) {
+            L.push("### " + 제목);
+            if (!행들.length) {
+                L.push("- " + (방향 === "up" ? "구간 최고 위 — 저항 공백" : "구간 최저 아래 — 지지 공백"));
+                L.push("");
+                return;
+            }
+            L.push("| 레벨 | 거리 | 근거 |");
+            L.push("|---|---|---|");
+            행들.forEach(function (x) {
+                var 강조 = x.strength.rank >= 3 ? "**" : "";
+                L.push("| " + 강조 + f(x.price) + 강조
+                    + " | " + (x.거리pct >= 0 ? "+" : "") + x.거리pct.toFixed(2) + "%"
+                    + " | " + x.strength.label + " · " + x.reason + " |");
+            });
+            L.push("");
+        };
+        표("저항 (위로)", lv.resistance, "up");
+        표("지지 (아래)", lv.support, "down");
+
+        if (lv.마지노선) {
+            L.push("**마지노선** " + f(lv.마지노선.price)
+                + " (" + lv.마지노선.tf + " 최저, 현재가 대비 "
+                + (((price - lv.마지노선.price) / price) * 100).toFixed(1) + "% 아래)");
+            L.push("이탈 시 이 구간에 지지가 없습니다.");
+            L.push("");
+        }
+
+        L.push("### 시간봉별");
+        L.push("| 봉 | 추세 | 수렴 | RSI | 슈퍼트렌드 | 거래량 |");
+        L.push("|---|---|---|---|---|---|");
+        TFS.forEach(function (tf) {
+            var d = r.results[tf.key];
+            if (!d || d.error) {
+                L.push("| " + tf.label + " | " + (d ? d.error : "데이터 없음") + " | — | — | — | — |");
+                return;
+            }
+            L.push("| " + tf.label
+                + " | " + d.trend.bias
+                + " | " + (d.confluence.net_pct >= 0 ? "+" : "") + d.confluence.net_pct + "%"
+                + " | " + d.oscillators.rsi14.toFixed(1)
+                + " | " + d.trend.supertrend.trend
+                + " | " + d.volume.reliability.split("(")[0]
+                + " |");
+        });
+        L.push("");
+
+        // 스킬 기준: net_pct 절대값 40 이상만 방향성 신뢰
+        var 강 = TFS.filter(function (tf) {
+            var d = r.results[tf.key];
+            return d && !d.error && Math.abs(d.confluence.net_pct) >= 40;
+        });
+        if (강.length) {
+            L.push("**방향성 신뢰 구간(±40 이상)**: " + 강.map(function (tf) {
+                var d = r.results[tf.key];
+                return tf.label + " " + (d.confluence.net_pct > 0 ? "강세" : "약세")
+                    + " " + d.confluence.net_pct + "%";
+            }).join(" · "));
+        } else {
+            L.push("**전 봉 수렴도 ±40 미만 — 방향성 신뢰 구간 미달, 관망 구간**");
+        }
+        L.push("");
+
+        L.push("### 시나리오");
+        if (lv.직상) {
+            var 다음R = lv.resistance[1];
+            L.push("- **" + f(lv.직상.price) + " 돌파 + 유지** → "
+                + (다음R ? f(다음R.price) : "위쪽 벽 소진"));
+        }
+        if (lv.직하) {
+            var 다음S = lv.support[1];
+            L.push("- **" + f(lv.직하.price) + " 이탈** → "
+                + (다음S ? f(다음S.price)
+                    : (lv.마지노선 ? f(lv.마지노선.price) + "(마지노선)까지 공백" : "지지 공백")));
+        }
+        if (lv.경고 && lv.경고.length) {
+            lv.경고.forEach(function (w) { L.push("- (!) " + w); });
+        }
+        L.push("");
+
+        L.push("### 움직임 원인 / 락업·언락");
+        L.push("웹 검색이 필요한 항목이라 이 페이지에서는 조사할 수 없습니다.");
+        L.push("터미널에서 coin-ta-brief 스킬을 쓰면 뉴스·언락 일정까지 포함됩니다.");
+        L.push("");
+
+        var 봉목록 = TFS.filter(function (tf) {
+            var d = r.results[tf.key];
+            return d && !d.error;
+        }).map(function (tf) { return tf.label; }).join("/");
+        var 제외 = TFS.filter(function (x) { return !x.levels; })
+            .map(function (x) { return x.label; }).join(", ");
+        L.push("---");
+        L.push("계산 봉: " + 봉목록 + " · 각 200봉 · 업비트 공개 API");
+        if (제외) L.push("지지·저항 계산 제외: " + 제외 + " (표본 부족)");
+        L.push("기술적 수치 계산 결과이며 투자 권유가 아닙니다.");
+
+        return L.join("\n");
+    }
+
+    function openBrief() {
+        var box = $("brief");
+        if (!box) return;
+        $("briefText").value = buildBrief();
+        box.style.display = "";
+        box.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
+    function copyBrief() {
+        var ta = $("briefText");
+        if (!ta) return;
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) {}
+        if (ok) { flashCopied(); return; }
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(ta.value).then(flashCopied, function () {});
+        }
+    }
+
+    function flashCopied() {
+        var b = $("briefCopy");
+        if (!b) return;
+        var 원래 = b.textContent;
+        b.textContent = "복사됨";
+        setTimeout(function () { b.textContent = 원래; }, 1400);
     }
 
     /** 컨테이너 안쪽만 갈아끼운다. 컨테이너 자체는 유지돼 레이아웃이 흔들리지 않는다. */
@@ -870,6 +1077,11 @@
     document.addEventListener("DOMContentLoaded", function () {
         $("run").addEventListener("click", run);
         $("auto").addEventListener("click", toggleAuto);
+        $("briefBtn").addEventListener("click", openBrief);
+        $("briefCopy").addEventListener("click", copyBrief);
+        $("briefClose").addEventListener("click", function () {
+            $("brief").style.display = "none";
+        });
 
         // 줌 버튼은 렌더할 때마다 새로 생긴다. out에 한 번만 위임해 둔다.
         $("out").addEventListener("click", function (e) {

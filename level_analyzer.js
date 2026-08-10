@@ -18,7 +18,10 @@
     "use strict";
 
     // 타임프레임별 가중치. 상위 봉의 벽이 더 두껍다.
-    var TF_WEIGHT = { "1h": 1.0, "2h": 1.1, "4h": 1.3, "6h": 1.4, "8h": 1.5, "12h": 1.7, "1d": 2.0, "3d": 2.2, "1w": 2.4 };
+    var TF_WEIGHT = {
+        "1h": 1.0, "2h": 1.1, "4h": 1.3, "6h": 1.4, "8h": 1.5, "12h": 1.7,
+        "1d": 2.0, "3d": 2.2, "1w": 2.4, "1M": 2.7, "1y": 3.0
+    };
 
     // 근거 종류별 가중치. 스킬 우선순위를 그대로 수치화한다.
     var KIND_WEIGHT = {
@@ -34,6 +37,10 @@
     var MERGE_TOL = 0.0022;   // 0.22%
     // 현재가와 이만큼 안 떨어진 후보는 벽으로 치지 않는다(현재가에 붙은 노이즈 제거).
     var NEAR_GUARD = 0.0008;  // 0.08%
+    // 마지노선·천장으로 인정할 최대 거리. 월봉·주봉을 넣으면 상장 초기 가격까지
+    // 후보에 들어와, 현재가 대비 -96% 같은 값이 "최후 방어선"으로 잡힌다.
+    var FLOOR_MAX_GAP = 0.45;   // 현재가 -45%까지
+    var CEIL_MAX_GAP = 1.20;    // 현재가 +120%까지 (상방은 여유를 더 준다)
 
     function isFiniteNum(v) { return typeof v === "number" && isFinite(v); }
 
@@ -238,7 +245,7 @@
             if (!byTf[r.tf]) byTf[r.tf] = [];
             if (byTf[r.tf].indexOf(r.label) === -1) byTf[r.tf].push(r.label);
         }
-        var order = ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"];
+        var order = ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M", "1y"];
         var parts = [];
         for (var j = 0; j < order.length; j++) {
             if (byTf[order[j]]) parts.push(order[j] + " " + byTf[order[j]].join("/"));
@@ -325,13 +332,36 @@
             res.sort(function (a, b) { return a.price - b.price; });   // 가까운 위부터
             sup.sort(function (a, b) { return b.price - a.price; });   // 가까운 아래부터
 
-            // 가장 낮은 마지노선 = 전체 구조의 최후 방어선
-            var 마지노선 = null, 천장 = null;
-            for (var f = 0; f < floors.length; f++) {
-                if (!마지노선 || floors[f].price < 마지노선.price) 마지노선 = floors[f];
+            // 마지노선 = 최후 방어선. 현재가에서 너무 먼 값은 방어선 구실을 못한다.
+            //
+            // 월봉 200개는 상장 초기까지 닿는다. 그 시절 최저가(현재가 대비 -96% 같은 값)를
+            // 마지노선이라 부르면 "이탈 시 지지 공백"이라는 의미가 사라진다.
+            // FLOOR_MAX_GAP 안쪽에서 가장 낮은 것을 고르고, 전부 벗어나면
+            // 그중 현재가에 가장 가까운 것으로 대체한다.
+            var 후보바닥 = floors.filter(function (x) {
+                return x.price >= price * (1 - FLOOR_MAX_GAP);
+            });
+            if (!후보바닥.length && floors.length) {
+                후보바닥 = [floors.reduce(function (a, b) {
+                    return b.price > a.price ? b : a;   // 가장 덜 먼 것
+                })];
             }
-            for (var c = 0; c < ceils.length; c++) {
-                if (!천장 || ceils[c].price > 천장.price) 천장 = ceils[c];
+            var 마지노선 = null, 천장 = null;
+            for (var f = 0; f < 후보바닥.length; f++) {
+                if (!마지노선 || 후보바닥[f].price < 마지노선.price) 마지노선 = 후보바닥[f];
+            }
+
+            // 천장도 같은 이유로 제한한다
+            var 후보천장 = ceils.filter(function (x) {
+                return x.price <= price * (1 + CEIL_MAX_GAP);
+            });
+            if (!후보천장.length && ceils.length) {
+                후보천장 = [ceils.reduce(function (a, b) {
+                    return b.price < a.price ? b : a;
+                })];
+            }
+            for (var c = 0; c < 후보천장.length; c++) {
+                if (!천장 || 후보천장[c].price > 천장.price) 천장 = 후보천장[c];
             }
 
             var 경고 = [];

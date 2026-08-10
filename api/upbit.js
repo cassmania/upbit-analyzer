@@ -22,7 +22,8 @@ const ALLOW = new Set([
     "candles/minutes/240",
     "candles/days",
     "candles/weeks",
-    "candles/months"
+    "candles/months",
+    "candles/years"
 ]);
 
 // 업비트에 넘길 쿼리 파라미터만 통과시킨다.
