@@ -36,7 +36,8 @@
         timer: null, busy: false,
         ws: null, wsAlive: false,
         tfCandles: null, levels: null, dp: 0, lastPrice: 0,
-        usdPrice: null, usdtKrw: null, bankFx: null   // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
+        usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
+        renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
@@ -308,6 +309,25 @@
 
     // ---------------------------------------------------------------- 차트
 
+    /**
+     * 차트에 데이터만 밀어넣는다. 차트를 파괴하지 않으므로 깜빡이지 않는다.
+     * 자동갱신은 전부 이 경로를 탄다.
+     */
+    function updateChartData(candles, levels, dp) {
+        if (!chart || !candleSeries) return false;
+        candleSeries.setData(candles.map(function (c) {
+            return { time: c.time, open: c.o, high: c.h, low: c.l, close: c.c };
+        }));
+        if (volumeSeries) {
+            volumeSeries.setData(candles.map(function (c) {
+                return { time: c.time, value: c.v, color: c.c >= c.o ? "rgba(14,203,129,.34)" : "rgba(246,70,93,.34)" };
+            }));
+        }
+        drawLevelLines(levels, dp);
+        updateLegend(candles[candles.length - 1]);
+        return true;   // 보고 있던 확대/스크롤 위치는 건드리지 않는다
+    }
+
     function buildChart(candles, levels, dp) {
         var host = $("chart");
         if (!host || !window.LightweightCharts) return;
@@ -468,20 +488,42 @@
         var lv = LevelEngine.analyze(conv, price, { limit: 7 });
         state.levels = lv;
 
-        var html = [];
-        html.push(renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
-        html.push(renderChartSection(sym));
-        html.push(renderSummary(results));
-        html.push(renderLevels(lv, dp));
-        html.push(renderDetail(results, dp));
-        html.push(renderScenario(lv, dp));
-        $("out").innerHTML = html.join("");
+        // 같은 종목·같은 봉을 다시 그릴 때는 DOM을 통째로 갈아끼우지 않는다.
+        // innerHTML 교체 + 차트 재생성이 자동갱신마다 화면을 깜빡이게 만든다.
+        var sameView = state.renderedFor === market && $("chart") && chart;
 
-        buildChart(data.tf[state.chartTf], lv, dp);
+        if (sameView) {
+            // 시세 스트립과 분석 표만 내용 교체. 차트는 데이터만 밀어넣는다.
+            replaceSection("sec-quotes", renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
+            replaceSection("sec-summary", renderSummary(results));
+            replaceSection("sec-levels", renderLevels(lv, dp));
+            replaceSection("sec-detail", renderDetail(results, dp));
+            replaceSection("sec-scenario", renderScenario(lv, dp));
+            if (!updateChartData(data.tf[state.chartTf], lv, dp)) {
+                buildChart(data.tf[state.chartTf], lv, dp);
+            }
+        } else {
+            var html = [];
+            html.push('<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>");
+            html.push(renderChartSection(sym));
+            html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
+            html.push('<div id="sec-levels">' + renderLevels(lv, dp) + "</div>");
+            html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
+            html.push('<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>");
+            $("out").innerHTML = html.join("");
+            buildChart(data.tf[state.chartTf], lv, dp);
+            state.renderedFor = market;
+        }
         $("updatedAt") && ($("updatedAt").textContent = new Date().toLocaleTimeString("ko-KR"));
 
         window.분석결과 = { market: market, results: results, ticker: t, futures: fut };
         window.레벨결과 = lv;
+    }
+
+    /** 컨테이너 안쪽만 갈아끼운다. 컨테이너 자체는 유지돼 레이아웃이 흔들리지 않는다. */
+    function replaceSection(id, html) {
+        var el = $(id);
+        if (el) el.innerHTML = html;
     }
 
     function qb(k, v, s) {
@@ -529,7 +571,7 @@
 
     function renderChartSection(sym) {
         var lbl = (TFS.filter(function (x) { return x.key === state.chartTf; })[0] || {}).label || "";
-        return '<section><div class="sec-head"><h2>' + esc(sym) + " " + lbl + ' 차트</h2>'
+        return '<section id="chart-sec"><div class="sec-head"><h2>' + esc(sym) + " " + lbl + ' 차트</h2>'
             + '<span class="tag">실시간 체결 반영</span>'
             + '<span class="tag" id="updatedAt">—</span></div>'
             + '<div class="card"><div class="chart-shell">'
@@ -666,7 +708,11 @@
         state.sel = market;
         var sym = market.replace("KRW-", "");
         $("run").disabled = true;
-        $("out").innerHTML = '<div class="loading"><span class="spin"></span>' + esc(sym) + " 분석 중…</div>";
+        // 로딩 화면은 처음 그릴 때만. 자동갱신마다 띄우면 그 자체가 깜빡임이다.
+        if (state.renderedFor !== market) {
+            state.renderedFor = null;
+            $("out").innerHTML = '<div class="loading"><span class="spin"></span>' + esc(sym) + " 분석 중…</div>";
+        }
 
         fetchAll(market)
             .then(function (data) { return Promise.all([data, fetchFutures(sym), fetchUsdtKrw(), fetchBankFx()]); })
@@ -688,11 +734,12 @@
             b.classList.toggle("act", b.getAttribute("data-tf") === tf);
         });
         if (state.tfCandles && state.tfCandles[tf]) {
-            var head = document.querySelector("section .sec-head h2");
+            var head = document.querySelector("#chart-sec .sec-head h2");
             if (head) {
                 var lbl = (TFS.filter(function (x) { return x.key === tf; })[0] || {}).label || "";
                 head.textContent = state.sel.replace("KRW-", "") + " " + lbl + " 차트";
             }
+            // 봉이 바뀌면 축 범위가 달라지므로 fitContent가 필요하다. 재생성이 맞다.
             buildChart(state.tfCandles[tf], state.levels, state.dp);
         }
     }
