@@ -253,11 +253,11 @@
     /** 겹침 수를 등급 문자열로. 스킬의 "4중 겹침 = 최강"을 그대로 표기한다. */
     function strength(group) {
         var n = group.tfCount;
-        if (n >= 4) return { label: "최강 " + n + "중 겹침", rank: 4 };
-        if (n === 3) return { label: "강 3중 겹침", rank: 3 };
-        if (n === 2) return { label: "중 2중 겹침", rank: 2 };
-        if (group.hasPOC || group.hasFloor) return { label: "단일봉 핵심", rank: 2 };
-        return { label: "단일봉", rank: 1 };
+        if (n >= 4) return { label: "최강 · " + n + "개 봉 일치", rank: 4 };
+        if (n === 3) return { label: "강 · 3개 봉 일치", rank: 3 };
+        if (n === 2) return { label: "중 · 2개 봉 일치", rank: 2 };
+        if (group.hasPOC || group.hasFloor) return { label: "단일 봉 · 핵심", rank: 2 };
+        return { label: "단일 봉", rank: 1 };
     }
 
     var LevelEngine = {

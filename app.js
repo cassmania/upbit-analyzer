@@ -35,7 +35,8 @@
         markets: [], sel: "KRW-BTC", chartTf: "4h",
         timer: null, busy: false,
         ws: null, wsAlive: false,
-        tfCandles: null, levels: null, dp: 0, lastPrice: 0
+        tfCandles: null, levels: null, dp: 0, lastPrice: 0,
+        usdPrice: null, usdkrw: null   // 바이낸스 USDT 시세와 환율 (현재가 $ 병기용)
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
@@ -57,6 +58,20 @@
         if (dp === undefined) dp = decimals(v);
         return Number(v).toLocaleString("ko-KR", { minimumFractionDigits: dp, maximumFractionDigits: dp });
     }
+    /** USDT 가격 자릿수. 원화와 스케일이 달라 따로 잡는다. */
+    function usdDecimals(v) {
+        var a = Math.abs(v);
+        if (a >= 1000) return 2;
+        if (a >= 1) return 3;
+        if (a >= 0.01) return 5;
+        return 8;
+    }
+    function fmtUsd(v) {
+        if (v === null || v === undefined || !isFinite(v)) return "—";
+        var d = usdDecimals(v);
+        return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
+
     function pct(v) {
         if (v === null || v === undefined || !isFinite(v)) return "—";
         return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
@@ -240,6 +255,12 @@
             var c2 = d.signed_change_rate * 100;
             ch.innerHTML = '<span class="' + cls(c2) + '">' + pct(c2) + "</span>";
         }
+        // 원화가 움직이면 환율로 환산한 달러값도 같이 갱신한다.
+        // 바이낸스 USDT 시세 자체는 여기서 갱신하지 않는다(별도 소스라 30초 주기 재조회 몫).
+        var us = $("q-usdsub");
+        if (us && state.usdkrw) {
+            us.textContent = fmtUsd(price / state.usdkrw) + " · 환율 환산";
+        }
 
         if (!candleSeries || !state.tfCandles) return;
         var arr = state.tfCandles[state.chartTf];
@@ -363,10 +384,10 @@
         }
 
         (lv.resistance || []).slice(0, 5).forEach(function (x) {
-            add(x.price, x.strength.rank, x.tfCount >= 2 ? x.tfCount + "중 저항" : "저항", "res");
+            add(x.price, x.strength.rank, x.tfCount >= 2 ? "저항 " + x.tfCount + "봉" : "저항", "res");
         });
         (lv.support || []).slice(0, 5).forEach(function (x) {
-            add(x.price, x.strength.rank, x.tfCount >= 2 ? x.tfCount + "중 지지" : "지지", "sup");
+            add(x.price, x.strength.rank, x.tfCount >= 2 ? "지지 " + x.tfCount + "봉" : "지지", "sup");
         });
         if (lv.마지노선) add(lv.마지노선.price, 4, "마지노선 " + lv.마지노선.tf, "floor");
     }
@@ -399,6 +420,8 @@
         state.dp = dp;
         state.tfCandles = data.tf;
         state.lastPrice = price;
+        state.usdPrice = fut && fut.usdPrice ? fut.usdPrice : null;
+        state.usdkrw = usdkrw || null;
 
         var name = (state.markets.filter(function (m) { return m.market === market; })[0] || {}).korean_name || market;
         var sym = market.replace("KRW-", "");
@@ -448,7 +471,9 @@
     function renderQuotes(t, price, dp, name, sym, fut, usdkrw) {
         var chg = t.signed_change_rate * 100;
         var out = ['<div class="quotes">'];
-        out.push(qb("현재가", '<span class="' + cls(chg) + '">' + fmt(price, dp) + "</span>", "₩ · " + esc(name) + " (" + sym + ")"));
+        var usdSub = fut && fut.usdPrice ? fmtUsd(fut.usdPrice) + " · " + esc(name) : "₩ · " + esc(name) + " (" + sym + ")";
+        out.push(qb("현재가", '<span class="' + cls(chg) + '">' + fmt(price, dp) + "</span>",
+            '<span id="q-usdsub">' + usdSub + "</span>"));
         out.push(qb("24시간 변동", '<span class="' + cls(chg) + '">' + pct(chg) + "</span>",
             "고 " + fmt(t.high_price, dp) + " / 저 " + fmt(t.low_price, dp)));
         out.push(qb("24시간 거래대금", (t.acc_trade_price_24h / 1e8).toFixed(1) + '<span style="font-size:13px;font-weight:600"> 억</span>',
@@ -459,6 +484,11 @@
                 fut.funding === null ? "데이터 없음" : (fut.funding >= 0 ? "롱 우위" : "숏 과열 — 숏스퀴즈 조건")));
             out.push(qb("미결제약정 <span class='dim'>· 바이낸스</span>",
                 fut.oi === null ? "—" : fmt(fut.oi, 0), fut.oi === null ? "데이터 없음" : sym + " 계약"));
+            if (fut.usdPrice) {
+                out.push(qb("USDT 가격 <span class='dim'>· 바이낸스</span>",
+                    '<span id="q-usd">' + fmtUsd(fut.usdPrice) + "</span>",
+                    usdkrw ? "환산 " + fmt(fut.usdPrice * usdkrw, dp) + "원" : "환율 데이터 없음"));
+            }
             if (fut.usdPrice && usdkrw) {
                 var kp = (price / (fut.usdPrice * usdkrw) - 1) * 100;
                 out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>", "환율 " + fmt(usdkrw, 1) + "원 기준"));
@@ -482,7 +512,7 @@
             + '<span class="swatch"><i class="sw" style="background:rgba(246,70,93,.9)"></i> 저항</span>'
             + '<span class="swatch"><i class="sw" style="background:rgba(14,203,129,.9)"></i> 지지</span>'
             + '<span class="swatch"><i class="sw" style="background:rgba(224,180,74,.9)"></i> 마지노선</span>'
-            + '<span class="dim">실선 = 3중 이상 겹침 · 파선 = 1~2중. 선이 굵고 진할수록 두꺼운 벽</span>'
+            + '<span class="dim">실선 = 3개 봉 이상이 지목 · 파선 = 1~2개. 선이 굵을수록 두꺼운 벽</span>'
             + "</div></div></section>";
     }
 
@@ -533,7 +563,7 @@
               + ((state.lastPrice - lv.마지노선.price) / state.lastPrice * 100).toFixed(1) + "% 아래)</span>" : "—";
 
         return '<section><div class="sec-head"><h2>지지 · 저항</h2>'
-            + '<span class="tag">겹치는 봉이 많을수록 두꺼운 벽</span></div>'
+            + '<span class="tag">같은 가격을 지목한 봉이 많을수록 두꺼운 벽</span></div>'
             + '<div class="grid2">'
             + '<div class="card"><div class="scroll"><table><thead><tr><th>저항 (위로)</th><th>거리</th><th>강도 / 근거</th></tr></thead>'
             + "<tbody>" + rows(lv.resistance, "down") + "</tbody></table></div></div>"
@@ -640,16 +670,47 @@
         }
     }
 
+    /**
+     * 자동갱신은 지표·레벨 재계산용이다. 시세 자체는 WebSocket이 항상 실시간으로 넣는다.
+     *
+     * 한 번 갱신에 업비트를 4번 호출한다(ticker + 1h/4h/1d 캔들).
+     * 업비트 제한은 초당 10회라 1초 간격이면 초당 4회 — 한 탭이면 안전하지만
+     * 여러 탭을 띄우면 넘긴다. 짧은 주기를 고르면 경고를 띄운다.
+     */
+    function autoIntervalMs() {
+        var v = parseInt(($("interval") || {}).value, 10);
+        return (isFinite(v) && v > 0 ? v : 10) * 1000;
+    }
+
+    function startAuto() {
+        if (state.timer) clearInterval(state.timer);
+        var ms = autoIntervalMs();
+        state.timer = setInterval(run, ms);
+        var b = $("auto");
+        b.textContent = "자동갱신 ON · " + (ms / 1000) + "초";
+        b.classList.add("on");
+        showRateHint(ms);
+    }
+
+    function showRateHint(ms) {
+        var el = $("rateHint");
+        if (!el) return;
+        if (ms <= 3000) {
+            el.textContent = "⚠ 갱신 1회당 업비트 4회 호출 — 여러 탭을 함께 열면 호출 제한(초당 10회)에 걸릴 수 있습니다.";
+            el.style.display = "";
+        } else {
+            el.style.display = "none";
+        }
+    }
+
     function toggleAuto() {
         var b = $("auto");
         if (state.timer) {
             clearInterval(state.timer); state.timer = null;
             b.textContent = "자동갱신 OFF"; b.classList.remove("on");
+            showRateHint(Infinity);
         } else {
-            // 실시간 시세는 WebSocket이 맡는다. 이 타이머는 지표·레벨 재계산용이라
-            // 30초로 넉넉히 둔다(업비트 제한 초당 10회).
-            state.timer = setInterval(run, 30000);
-            b.textContent = "자동갱신 ON · 30초"; b.classList.add("on");
+            startAuto();
             run();
         }
     }
@@ -659,6 +720,9 @@
         $("auto").addEventListener("click", toggleAuto);
         $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
+        $("interval").addEventListener("change", function () {
+            if (state.timer) startAuto();   // 켜져 있을 때만 주기를 갈아끼운다
+        });
         [].forEach.call(document.querySelectorAll("#tfbar button"), function (b) {
             b.addEventListener("click", function () { switchTf(b.getAttribute("data-tf")); });
         });

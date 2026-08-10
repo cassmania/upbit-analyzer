@@ -97,6 +97,7 @@ input[type=search],select{
 }
 input[type=search]{min-width:180px}
 select{min-width:210px;cursor:pointer}
+#interval{min-width:auto;width:auto;padding-right:8px}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
 .btn{
   padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
@@ -234,10 +235,10 @@ footer b{color:#c9d2ee}
 <header class="hero">
   <div class="wrap">
     <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
-    <h1>업비트 실시간 차트와<br>겹쳐서 읽는 지지·저항</h1>
+    <h1>업비트 실시간 차트 분석</h1>
     <p class="lede">
-      1시간·4시간·12시간·일봉의 매물대와 스윙을 한 화면에 겹쳐,
-      여러 봉이 동시에 가리키는 가격대를 두꺼운 벽으로 표시합니다.
+      1시간·4시간·12시간·일봉을 함께 계산해, 여러 봉이 동시에
+      같은 가격대를 지목하면 그만큼 두꺼운 벽으로 표시합니다.
     </p>
   </div>
 </header>
@@ -254,8 +255,17 @@ footer b{color:#c9d2ee}
     </div>
     <button class="btn solid" id="run">분석</button>
     <button class="btn" id="auto">자동갱신 OFF</button>
+    <select id="interval" title="지표·레벨 재계산 주기 (시세는 WebSocket으로 항상 실시간)">
+      <option value="1">1초</option>
+      <option value="3">3초</option>
+      <option value="5">5초</option>
+      <option value="10" selected>10초</option>
+      <option value="30">30초</option>
+    </select>
     <span class="hint">업비트 공개 API · 무인증 · 200봉</span>
   </div>
+
+  <div class="warn" id="rateHint" style="display:none;margin:0 0 20px"></div>
 
   <div id="out"></div>
 </main>
