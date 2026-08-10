@@ -362,8 +362,24 @@
             localization: {
                 locale: "ko-KR",
                 priceFormatter: function (p) { return fmt(p, dp); }
+            },
+            // 확대·이동. 맨휠 확대는 차트 위에서 페이지 스크롤을 먹어 답답해진다.
+            // Ctrl(⌘)+휠일 때만 확대하고, 드래그 이동과 축 드래그는 항상 켜 둔다.
+            handleScroll: {
+                mouseWheel: false,
+                pressedMouseMove: true,
+                horzTouchDrag: true,
+                vertTouchDrag: false
+            },
+            handleScale: {
+                mouseWheel: false,
+                pinch: true,
+                axisPressedMouseMove: { time: true, price: true },
+                axisDoubleClickReset: true
             }
         });
+
+        window.차트 = chart;   // 디버깅·외부 제어용
 
         candleSeries = chart.addCandlestickSeries({
             upColor: C("--up", "#0ecb81"), downColor: C("--down", "#f6465d"),
@@ -388,6 +404,7 @@
         drawLevelLines(levels, dp);
         chart.timeScale().fitContent();
         updateLegend(candles[candles.length - 1]);
+        bindZoom(host);
 
         // 크로스헤어로 짚은 봉 값을 범례에 띄운다
         chart.subscribeCrosshairMove(function (p) {
@@ -520,6 +537,56 @@
         window.레벨결과 = lv;
     }
 
+    /**
+     * 확대 조작을 붙인다. 차트를 다시 만들어도 host는 같은 노드라 한 번만 배선한다.
+     *
+     * 맨휠을 확대에 쓰면 차트 위에서 페이지가 안 내려간다.
+     * Ctrl/⌘ + 휠일 때만 확대하고, 맨휠은 페이지 스크롤로 흘려보낸다.
+     * (Ctrl+휠은 브라우저 기본 확대이기도 해서 preventDefault가 필요하다.)
+     */
+    function bindZoom(host) {
+        if (!host || host.dataset.zoomBound === "1") return;
+        host.dataset.zoomBound = "1";
+
+        host.addEventListener("wheel", function (e) {
+            if (!chart) return;
+            if (!(e.ctrlKey || e.metaKey)) return;   // 맨휠은 페이지 스크롤에 양보
+            e.preventDefault();
+            zoomBy(e.deltaY < 0 ? 0.8 : 1.25);
+        }, { passive: false });
+
+        host.addEventListener("dblclick", function () {
+            if (chart) chart.timeScale().fitContent();   // 전체 구간으로 복귀
+        });
+    }
+
+    /**
+     * 보이는 봉 개수를 factor배로 바꾼다. factor<1이면 확대(봉이 적게 보임).
+     * 화면 가운데를 축으로 잡아야 보던 구간이 튀지 않는다.
+     */
+    function zoomBy(factor) {
+        if (!chart) return;
+        var ts = chart.timeScale();
+        var r = ts.getVisibleLogicalRange();
+        if (!r) return;
+        var span = r.to - r.from;
+        var mid = (r.to + r.from) / 2;
+        var next = span * factor;
+        if (next < 8) next = 8;          // 더 확대하면 캔들 몇 개만 남아 쓸모없다
+        if (next > 1500) next = 1500;
+        ts.setVisibleLogicalRange({ from: mid - next / 2, to: mid + next / 2 });
+    }
+
+    /** 최근 n봉만 보여준다. n이 없거나 전체보다 크면 전체 구간. */
+    function showRecent(n) {
+        if (!chart || !state.tfCandles) return;
+        var total = (state.tfCandles[state.chartTf] || []).length;
+        if (!total) return;
+        var ts = chart.timeScale();
+        if (!n || n >= total) { ts.fitContent(); return; }
+        ts.setVisibleLogicalRange({ from: total - n, to: total });
+    }
+
     /** 컨테이너 안쪽만 갈아끼운다. 컨테이너 자체는 유지돼 레이아웃이 흔들리지 않는다. */
     function replaceSection(id, html) {
         var el = $(id);
@@ -574,7 +641,17 @@
         return '<section id="chart-sec"><div class="sec-head"><h2>' + esc(sym) + " " + lbl + ' 차트</h2>'
             + '<span class="tag">실시간 체결 반영</span>'
             + '<span class="tag" id="updatedAt">—</span></div>'
-            + '<div class="card"><div class="chart-shell">'
+            + '<div class="card">'
+            + '<div class="zoom-bar">'
+            +   '<button type="button" data-zoom="in" title="확대 (Ctrl+휠 위)">＋</button>'
+            +   '<button type="button" data-zoom="out" title="축소 (Ctrl+휠 아래)">－</button>'
+            +   '<span class="zoom-sep"></span>'
+            +   '<button type="button" data-recent="30">30봉</button>'
+            +   '<button type="button" data-recent="60">60봉</button>'
+            +   '<button type="button" data-recent="120">120봉</button>'
+            +   '<button type="button" data-recent="0" title="전체 (차트 더블클릭)">전체</button>'
+            + "</div>"
+            + '<div class="chart-shell">'
             + '<div id="chart"></div><div class="chart-legend" id="legend"></div>'
             + "</div>"
             + '<div class="chart-note">'
@@ -582,6 +659,7 @@
             + '<span class="swatch"><i class="sw" style="background:rgba(14,203,129,.9)"></i> 지지</span>'
             + '<span class="swatch"><i class="sw" style="background:rgba(224,180,74,.9)"></i> 마지노선</span>'
             + '<span class="dim">실선 = 3개 봉 이상이 지목 · 파선 = 1~2개. 선이 굵을수록 두꺼운 벽</span>'
+            + '<span class="dim">확대: Ctrl+휠 · 드래그로 이동 · 더블클릭 전체</span>'
             + "</div></div></section>";
     }
 
@@ -792,6 +870,17 @@
     document.addEventListener("DOMContentLoaded", function () {
         $("run").addEventListener("click", run);
         $("auto").addEventListener("click", toggleAuto);
+
+        // 줌 버튼은 렌더할 때마다 새로 생긴다. out에 한 번만 위임해 둔다.
+        $("out").addEventListener("click", function (e) {
+            var b = e.target.closest ? e.target.closest("[data-zoom],[data-recent]") : null;
+            if (!b) return;
+            if (b.hasAttribute("data-zoom")) {
+                zoomBy(b.getAttribute("data-zoom") === "in" ? 0.7 : 1.43);
+            } else {
+                showRecent(parseInt(b.getAttribute("data-recent"), 10));
+            }
+        });
         $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
         $("interval").addEventListener("change", function () {

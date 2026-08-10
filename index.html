@@ -146,8 +146,24 @@ h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012
 .card-pad{padding:18px 20px}
 
 /* ---------- 차트 ---------- */
+/* 줌 툴바 — 차트 바로 위. 헤더에 넣으면 좁은 화면에서 밀려난다 */
+.zoom-bar{
+  display:flex;align-items:center;gap:4px;flex-wrap:wrap;
+  padding:8px 12px;border-bottom:1px solid var(--outline);
+  background:var(--surface);
+}
+.zoom-bar button{
+  background:transparent;border:1px solid var(--outline);color:var(--on-variant);
+  padding:4px 11px;cursor:pointer;font-size:12px;font-weight:600;
+  font-family:var(--font-b);border-radius:var(--r-sm);
+  transition:all .14s;line-height:1.5;
+}
+.zoom-bar button:hover{color:var(--on-surface);border-color:var(--outline-strong);background:rgba(255,255,255,.05)}
+.zoom-bar button:active{background:var(--surface-high);color:#fff}
+.zoom-sep{width:1px;height:16px;background:var(--outline);margin:0 4px}
+
 .chart-shell{position:relative;height:440px;background:var(--surface-lowest)}
-#chart{position:absolute;inset:0}
+#chart{position:absolute;inset:0;cursor:crosshair}
 .chart-legend{
   position:absolute;top:12px;left:14px;z-index:5;pointer-events:none;
   font-size:11.5px;line-height:1.85;font-variant-numeric:tabular-nums;
@@ -282,6 +298,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.0.0" charset="utf-8"></script>
-<script src="app.js?v=2.0.0" charset="utf-8"></script>
+<script src="app.js?v=2.2.0" charset="utf-8"></script>
 </body>
 </html>
