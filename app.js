@@ -1,5 +1,5 @@
 /**
- * app.js — 업비트 데이터 조달 + 실시간 차트 + 렌더
+ * app.js — 업비트/빗썸 데이터 조달 + 실시간 차트 + 렌더
  *
  * 지표 계산은 ta_engine.js(스킬 이식), 겹침 판정은 level_analyzer.js가 맡는다.
  * 이 파일은 API/WebSocket 조달과 화면 그리기만 한다.
@@ -7,29 +7,61 @@
 (function () {
     "use strict";
 
-    // 업비트 REST는 전 엔드포인트에 CORS 헤더를 주지 않는다. 브라우저에서 직접 부르면
-    // 무조건 막히므로 같은 도메인의 서버리스 함수(/api/upbit)를 거친다.
-    // localhost에는 그 함수가 없으니 직접 호출로 떨어뜨린다.
-    // (WebSocket은 CORS 대상이 아니라 어디서든 직접 연결된다.)
-    var DIRECT = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    /**
+     * 거래소 설정.
+     *
+     * 빗썸 API는 업비트와 경로·응답 키·WebSocket 프로토콜이 사실상 같다(실측 2026-08-11).
+     * 결정적 차이는 두 가지뿐이다:
+     *   - CORS: 업비트는 전 엔드포인트 차단, 빗썸은 Access-Control-Allow-Origin: * 허용.
+     *     그래서 업비트만 서버리스 프록시(/api/upbit)를 거친다.
+     *   - 년봉: 업비트는 candles/years가 있고, 빗썸은 404.
+     */
+    var EXCHANGES = {
+        upbit: {
+            name: "업비트",
+            rest: "https://api.upbit.com/v1/",
+            ws: "wss://api.upbit.com/websocket/v1",
+            proxy: "/api/upbit",      // CORS 차단 -> 프록시 필요
+            hasYear: true
+        },
+        bithumb: {
+            name: "빗썸",
+            rest: "https://api.bithumb.com/v1/",
+            ws: "wss://ws-api.bithumb.com/websocket/v1",
+            proxy: null,              // CORS 허용 -> 브라우저에서 직접
+            hasYear: false            // candles/years 404
+        }
+    };
 
-    function upbitUrl(path, params) {
+    // localhost에는 서버리스 함수가 없으니 프록시를 못 쓴다.
+    // (그 경우 업비트는 브라우저 CORS에 막히지만, 로컬 확인용이라 그대로 둔다.)
+    var LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+
+    function ex() { return EXCHANGES[state.exchange] || EXCHANGES.upbit; }
+
+    function apiUrl(path, params) {
+        var e = ex();
+        var 프록시 = e.proxy && !LOCAL;
         var sp = new URLSearchParams();
-        if (!DIRECT) sp.set("path", path);
+        if (프록시) sp.set("path", path);
         Object.keys(params || {}).forEach(function (k) {
             if (params[k] !== undefined && params[k] !== null) sp.set(k, params[k]);
         });
-        return DIRECT
-            ? "https://api.upbit.com/v1/" + path + "?" + sp.toString()
-            : "/api/upbit?" + sp.toString();
+        return 프록시 ? e.proxy + "?" + sp.toString()
+                    : e.rest + path + "?" + sp.toString();
+    }
+
+    /** 이 거래소에서 쓸 수 있는 봉만. 빗썸은 년봉이 없다. */
+    function activeTfs() {
+        return TFS.filter(function (t) { return t.key !== "1y" || ex().hasYear; });
     }
 
     /**
      * 타임프레임 정의.
      *
-     * 업비트 분봉은 1/3/5/10/15/30/60/240만 있다(480·720은 400을 준다).
+     * 업비트·빗썸 모두 분봉은 1/3/5/10/15/30/60/240만 있다(480·720은 400).
      * 8시간·12시간은 4시간봉을 각각 2개·3개씩 묶어 합성한다.
-     * 주·월·년봉은 전용 엔드포인트가 실제로 있다.
+     * 주·월봉은 양쪽 다 있다. 년봉은 업비트만 있고 빗썸은 404다(activeTfs가 걸러낸다).
      *
      * group: 합성 배수 (없으면 API 직접 조회)
      * levels: 지지·저항 계산에 넣을지 여부.
@@ -53,6 +85,7 @@
     }
 
     var state = {
+        exchange: "upbit",
         markets: [], sel: "KRW-BTC", chartTf: "4h",
         timer: null, busy: false,
         ws: null, wsAlive: false,
@@ -114,7 +147,7 @@
     // ---------------------------------------------------------------- 데이터
 
     function loadMarkets() {
-        return getJSON(upbitUrl("market/all", { isDetails: false })).then(function (all) {
+        return getJSON(apiUrl("market/all", { isDetails: false })).then(function (all) {
             state.markets = all.filter(function (m) { return m.market.indexOf("KRW-") === 0; })
                 .sort(function (a, b) { return a.korean_name.localeCompare(b.korean_name, "ko"); });
             renderMarketSelect("");
@@ -177,12 +210,12 @@
      * 뒤에서 "데이터 부족"으로 표시한다 — 전체를 실패시키지 않는다.
      */
     function fetchAll(market) {
-        var direct = TFS.filter(function (t) { return t.path; });
-        var calls = [getJSON(upbitUrl("ticker", { markets: market }))];
+        var direct = activeTfs().filter(function (t) { return t.path; });
+        var calls = [getJSON(apiUrl("ticker", { markets: market }))];
 
         direct.forEach(function (t) {
             calls.push(
-                getJSON(upbitUrl(t.path, { market: market, count: 200 }))
+                getJSON(apiUrl(t.path, { market: market, count: 200 }))
                     .then(toCandles)
                     .catch(function () { return []; })   // 이력 짧은 종목은 여기서 흡수
             );
@@ -192,7 +225,7 @@
             var tf = {};
             direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
             // 합성봉은 원본 봉에서 묶는다
-            TFS.filter(function (t) { return t.group; }).forEach(function (t) {
+            activeTfs().filter(function (t) { return t.group; }).forEach(function (t) {
                 tf[t.key] = groupCandles(tf[t.from] || [], t.group);
             });
             return { ticker: r[0][0], tf: tf };
@@ -238,7 +271,7 @@
      * 다른 사이트와 수치가 어긋난다.
      */
     function fetchUsdtKrw() {
-        return getJSON(upbitUrl("ticker", { markets: "KRW-USDT" }))
+        return getJSON(apiUrl("ticker", { markets: "KRW-USDT" }))
             .then(function (d) { return d && d[0] ? d[0].trade_price : null; })
             .catch(function () { return null; });
     }
@@ -254,13 +287,14 @@
     // ---------------------------------------------------------------- 실시간 WebSocket
 
     /**
-     * 업비트 WebSocket은 CORS 대상이 아니라 브라우저에서 직접 붙는다.
-     * REST 프록시와 달리 우회가 필요 없다.
+     * WebSocket은 CORS 대상이 아니라 브라우저에서 직접 붙는다.
+     * REST 프록시와 달리 우회가 필요 없다. 빗썸도 업비트와 같은 프로토콜을 쓴다
+     * (ticket/type/format 배열을 보내면 ticker가 흘러온다 — 실측 확인).
      */
     function connectWS(market) {
         closeWS();
         var ws;
-        try { ws = new WebSocket("wss://api.upbit.com/websocket/v1"); }
+        try { ws = new WebSocket(ex().ws); }
         catch (e) { setWsState(false, "연결 실패"); return; }
         ws.binaryType = "arraybuffer";
         state.ws = ws;
@@ -524,7 +558,7 @@
 
         // 지표 계산
         var results = {};
-        TFS.forEach(function (tf) {
+        activeTfs().forEach(function (tf) {
             var c = data.tf[tf.key];
             results[tf.key] = (c && c.length >= 30)
                 ? TAEngine.analyzeTf(c.map(function (x) { return { o: x.o, h: x.h, l: x.l, c: x.c, v: x.v }; }))
@@ -533,7 +567,9 @@
 
         // 지지·저항. levels:false인 봉(년봉)은 표본이 부족해 넣지 않는다.
         var conv = {};
-        levelTfs().forEach(function (tf) {
+        levelTfs().filter(function (t) {
+            return t.key !== "1y" || ex().hasYear;
+        }).forEach(function (tf) {
             var c = data.tf[tf.key];
             if (c && c.length >= 20) {
                 conv[tf.key] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
@@ -718,7 +754,7 @@
         L.push("## " + name + "(" + sym + ") 지지·저항 — 현재 " + f(price) + "원");
         L.push("");
 
-        var head = "업비트 " + f(price) + " · 24h " + pct(t.signed_change_rate * 100);
+        var head = ex().name + " " + f(price) + " · 24h " + pct(t.signed_change_rate * 100);
         if (state.usdtKrw) head += " · USDT 환산 " + fmtUsd(price / state.usdtKrw);
         L.push(head);
 
@@ -768,7 +804,7 @@
         L.push("### 시간봉별");
         L.push("| 봉 | 추세 | 수렴 | RSI | 슈퍼트렌드 | 거래량 |");
         L.push("|---|---|---|---|---|---|");
-        TFS.forEach(function (tf) {
+        activeTfs().forEach(function (tf) {
             var d = r.results[tf.key];
             if (!d || d.error) {
                 L.push("| " + tf.label + " | " + (d ? d.error : "데이터 없음") + " | — | — | — | — |");
@@ -785,7 +821,7 @@
         L.push("");
 
         // 스킬 기준: net_pct 절대값 40 이상만 방향성 신뢰
-        var 강 = TFS.filter(function (tf) {
+        var 강 = activeTfs().filter(function (tf) {
             var d = r.results[tf.key];
             return d && !d.error && Math.abs(d.confluence.net_pct) >= 40;
         });
@@ -822,14 +858,14 @@
         L.push("터미널에서 coin-ta-brief 스킬을 쓰면 뉴스·언락 일정까지 포함됩니다.");
         L.push("");
 
-        var 봉목록 = TFS.filter(function (tf) {
+        var 봉목록 = activeTfs().filter(function (tf) {
             var d = r.results[tf.key];
             return d && !d.error;
         }).map(function (tf) { return tf.label; }).join("/");
-        var 제외 = TFS.filter(function (x) { return !x.levels; })
+        var 제외 = activeTfs().filter(function (x) { return !x.levels; })
             .map(function (x) { return x.label; }).join(", ");
         L.push("---");
-        L.push("계산 봉: " + 봉목록 + " · 각 200봉 · 업비트 공개 API");
+        L.push("계산 봉: " + 봉목록 + " · 각 200봉 · " + ex().name + " 공개 API");
         if (제외) L.push("지지·저항 계산 제외: " + 제외 + " (표본 부족)");
         L.push("기술적 수치 계산 결과이며 투자 권유가 아닙니다.");
 
@@ -943,8 +979,10 @@
     }
 
     function renderSummary(results) {
-        var rows = TFS.map(function (tf) {
+        var rows = activeTfs().map(function (tf) {
             var r = results[tf.key];
+            // 거래소가 지원하지 않는 봉은 아예 없을 수 있다(빗썸엔 년봉이 없다)
+            if (!r) return "";
             if (r.error) return "<tr><td><b>" + tf.label + '</b></td><td colspan="5" class="dim">' + esc(r.error) + "</td></tr>";
             var cf = r.confluence;
             var netCls = cf.net_pct >= 40 ? "up" : cf.net_pct <= -40 ? "down" : "neu";
@@ -1003,9 +1041,9 @@
     }
 
     function renderDetail(results, dp) {
-        var blocks = TFS.map(function (tf) {
+        var blocks = activeTfs().map(function (tf) {
             var r = results[tf.key];
-            if (r.error) return "";
+            if (!r || r.error) return "";
             var o = r.oscillators, bb = r.bollinger, v = r.volume;
             var L = [];
             function row(k, val) { return '<tr><td class="dim">' + k + '</td><td class="num mono">' + val + "</td></tr>"; }
@@ -1080,7 +1118,7 @@
             .catch(function (e) {
                 $("out").innerHTML = '<div class="err"><b>데이터를 불러오지 못했습니다.</b><br>'
                     + esc(e && e.message ? e.message : String(e))
-                    + '<div class="dim" style="margin-top:8px;font-size:12.5px">업비트 API 호출 제한(초당 10회)에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.</div></div>';
+                    + '<div class="dim" style="margin-top:8px;font-size:12.5px">' + ex().name + ' API 호출 제한(초당 10회)에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.</div></div>';
             })
             .then(function () { state.busy = false; $("run").disabled = false; });
     }
@@ -1127,11 +1165,60 @@
         var el = $("rateHint");
         if (!el) return;
         if (ms <= 3000) {
-            el.textContent = "⚠ 갱신 1회당 업비트 4회 호출 — 여러 탭을 함께 열면 호출 제한(초당 10회)에 걸릴 수 있습니다.";
+            el.textContent = "⚠ 갱신 1회당 " + ex().name + " 여러 번 호출 — 탭을 함께 열면 호출 제한(초당 10회)에 걸릴 수 있습니다.";
             el.style.display = "";
         } else {
             el.style.display = "none";
         }
+    }
+
+    /**
+     * 거래소를 바꾼다.
+     *
+     * 종목 구성이 다르다(업비트 281 / 빗썸 478). 같은 심볼이 양쪽에 있으면 유지하고,
+     * 없으면 첫 종목으로 떨어뜨린다. 그래야 BTC를 보다 전환했을 때 BTC가 이어진다.
+     */
+    function switchExchange(key) {
+        if (!EXCHANGES[key]) return;
+        state.exchange = key;
+        state.renderedFor = null;      // 전체 렌더로 되돌린다
+        closeWS();
+
+        [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
+            b.classList.toggle("act", b.getAttribute("data-ex") === key);
+        });
+        // 빗썸에는 년봉이 없다. 년봉을 보던 중이었다면 월봉으로 내린다.
+        if (!ex().hasYear && state.chartTf === "1y") switchTf("1M");
+        syncTfButtons();
+        syncApiHint();
+
+        var 원하던 = state.sel;
+        $("out").innerHTML = '<div class="loading"><span class="spin"></span>'
+            + esc(ex().name) + " 마켓을 불러오는 중…</div>";
+
+        loadMarkets().then(function () {
+            // 같은 종목이 새 거래소에도 있으면 그대로 이어본다
+            if (state.markets.some(function (m) { return m.market === 원하던; })) {
+                state.sel = $("market").value = 원하던;
+            }
+            run();
+        }).catch(function (e) {
+            $("out").innerHTML = '<div class="err">마켓 목록을 불러오지 못했습니다: ' + esc(e.message) + "</div>";
+        });
+    }
+
+    function syncApiHint() {
+        var el = $("apiHint");
+        if (el) el.textContent = ex().name + " 공개 API · 무인증 · 200봉";
+    }
+
+    /** 거래소가 지원하지 않는 봉 버튼은 숨긴다. */
+    function syncTfButtons() {
+        var 가능 = {};
+        activeTfs().forEach(function (t) { 가능[t.key] = true; });
+        [].forEach.call(document.querySelectorAll("#tfbar button"), function (b) {
+            b.style.display = 가능[b.getAttribute("data-tf")] ? "" : "none";
+        });
     }
 
     function toggleAuto() {
@@ -1191,6 +1278,15 @@
         });
         $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
+
+        // 거래소 전환. 마켓 목록·상장 종목이 다르므로 목록부터 새로 받는다.
+        [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
+            b.addEventListener("click", function () {
+                var key = b.getAttribute("data-ex");
+                if (key === state.exchange) return;
+                switchExchange(key);
+            });
+        });
         $("interval").addEventListener("change", function () {
             if (state.timer) startAuto();   // 켜져 있을 때만 주기를 갈아끼운다
         });
@@ -1205,6 +1301,8 @@
         });
         window.addEventListener("beforeunload", closeWS);
 
+        syncTfButtons();
+        syncApiHint();
         loadMarkets().then(run).catch(function (e) {
             $("out").innerHTML = '<div class="err">마켓 목록을 불러오지 못했습니다: ' + esc(e.message) + "</div>";
         });

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>업비트 코인 분석 — 실시간 차트 · 지지저항</title>
-<meta name="description" content="업비트 KRW 마켓 실시간 차트와 다중 타임프레임 지지·저항 분석">
+<title>코인 분석 — 업비트·빗썸 실시간 차트 · 지지저항</title>
+<meta name="description" content="업비트·빗썸 KRW 마켓 실시간 차트와 다중 타임프레임 지지·저항 분석">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -118,6 +118,17 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .tfbar button:hover{color:var(--on-surface);background:rgba(255,255,255,.04)}
 .tfbar button.act{background:var(--surface-high);color:#fff}
 .hint{font-size:12px;color:var(--on-variant)}
+
+/* 거래소 전환 — 봉 버튼과 헷갈리지 않게 액센트 색을 쓴다 */
+.exbar{display:inline-flex;border:1px solid var(--outline-strong);border-radius:var(--r-sm);overflow:hidden}
+.exbar button{
+  background:transparent;border:0;color:var(--on-variant);
+  padding:8px 16px;cursor:pointer;font-weight:700;font-size:13px;
+  font-family:var(--font-h);transition:all .16s;
+}
+.exbar button+button{border-left:1px solid var(--outline-strong)}
+.exbar button:hover{color:var(--on-surface);background:rgba(255,255,255,.05)}
+.exbar button.act{background:var(--accent);color:#fff}
 
 /* ---------- 브리핑 패널 ---------- */
 .btn.accent{border-color:rgba(99,102,241,.5);color:#a5a8f5;background:var(--accent-soft)}
@@ -305,7 +316,7 @@ footer b{color:#c9d2ee}
 
 <nav class="nav">
   <div class="nav-in">
-    <div class="brand">UPBIT<span>·</span>TA</div>
+    <div class="brand">KR<span>·</span>TA</div>
     <span class="chip">coin-ta-brief</span>
     <div class="sp"></div>
     <div class="live"><span class="dot" id="wsdot"></span><span id="wstxt">연결 대기</span></div>
@@ -315,7 +326,7 @@ footer b{color:#c9d2ee}
 <header class="hero">
   <div class="wrap">
     <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
-    <h1>업비트 실시간 차트 분석</h1>
+    <h1>업비트 · 빗썸 실시간 차트 분석</h1>
     <p class="lede">
       1시간·4시간·12시간·일봉을 함께 계산해, 여러 봉이 동시에
       같은 가격대를 지목하면 그만큼 두꺼운 벽으로 표시합니다.
@@ -325,6 +336,10 @@ footer b{color:#c9d2ee}
 
 <main class="wrap">
   <div class="controls">
+    <span class="exbar" id="exbar">
+      <button type="button" data-ex="upbit" class="act">업비트</button>
+      <button type="button" data-ex="bithumb">빗썸</button>
+    </span>
     <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
     <select id="market"></select>
     <div class="tfbar" id="tfbar">
@@ -347,7 +362,7 @@ footer b{color:#c9d2ee}
       <option value="10" selected>10초</option>
       <option value="30">30초</option>
     </select>
-    <span class="hint">업비트 공개 API · 무인증 · 200봉</span>
+    <span class="hint" id="apiHint">업비트 공개 API · 무인증 · 200봉</span>
   </div>
 
   <div class="warn" id="rateHint" style="display:none;margin:0 0 20px"></div>
@@ -379,6 +394,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=2.5.0" charset="utf-8"></script>
+<script src="app.js?v=3.0.0" charset="utf-8"></script>
 </body>
 </html>
