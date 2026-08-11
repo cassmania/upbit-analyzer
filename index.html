@@ -32,7 +32,7 @@
   --warn:#f0b90b;
 
   --r-sm:.25rem; --r-md:.5rem; --r-lg:.75rem; --r-xl:1rem;
-  --gutter:32px; --maxw:1240px;
+  --gutter:32px; --maxw:1560px;
   --font-h:'Manrope',-apple-system,'Malgun Gothic',sans-serif;
   --font-b:'Inter','Malgun Gothic',-apple-system,sans-serif;
 }
@@ -77,19 +77,19 @@ body{
 }
 
 /* ---------- 히어로 ---------- */
-.hero{padding:56px 0 34px;border-bottom:1px solid var(--outline)}
+.hero{padding:28px 0 20px;border-bottom:1px solid var(--outline)}
 .eyebrow{
-  font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--on-variant);margin-bottom:14px;
+  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--on-variant);margin-bottom:8px;
 }
 h1{
-  font-family:var(--font-h);font-weight:700;font-size:clamp(30px,4.4vw,52px);
-  line-height:1.12;letter-spacing:-.022em;margin:0 0 16px;
+  font-family:var(--font-h);font-weight:700;font-size:clamp(24px,2.6vw,34px);
+  line-height:1.15;letter-spacing:-.022em;margin:0 0 10px;
 }
-.lede{font-size:17px;line-height:1.7;color:var(--on-variant);max-width:620px;margin:0}
+.lede{font-size:14px;line-height:1.6;color:var(--on-variant);max-width:680px;margin:0}
 
 /* ---------- 컨트롤 ---------- */
-.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:22px 0}
+.controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:14px 0}
 input,select,button{font:inherit;font-size:14px}
 input[type=search],select{
   background:var(--surface-lowest);color:var(--on-surface);
@@ -158,7 +158,7 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
   position:fixed;
   top:180px;
   /* 화면 중앙에서 본문 절반(620px)만큼 왼쪽으로, 거기서 배너 폭+간격만큼 더 */
-  left:calc(50% - 620px - 188px);
+  left:calc(50% - 780px - 188px);
   width:168px;
   display:flex;flex-direction:column;gap:8px;
   z-index:30;
@@ -195,25 +195,25 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 }
 
 /* 왼쪽 여백이 배너를 담을 만큼 없으면 숨긴다.
-   1240(본문) + 188*2(양쪽 배너 자리) = 1616px */
-@media (max-width:1615px){
+   1560(본문) + 188*2(양쪽 배너 자리) = 1936px */
+@media (max-width:1935px){
   .reflane{display:none}
 }
 
 /* ---------- 시세 스트립 ---------- */
 .quotes{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
   gap:1px;background:var(--outline);
-  border:1px solid var(--outline);border-radius:var(--r-md);overflow:hidden;margin-bottom:var(--gutter);
+  border:1px solid var(--outline);border-radius:var(--r-md);overflow:hidden;margin-bottom:18px;
 }
-.qb{background:var(--surface-low);padding:14px 16px}
+.qb{background:var(--surface-low);padding:11px 14px}
 .qk{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--on-variant);margin-bottom:5px}
-.qv{font-family:var(--font-h);font-size:21px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.qv{font-family:var(--font-h);font-size:19px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .qs{font-size:11.5px;color:var(--on-variant);margin-top:3px;font-variant-numeric:tabular-nums}
 
 /* ---------- 섹션 ---------- */
 section{margin-bottom:var(--gutter)}
-.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:10px;flex-wrap:wrap}
 h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012em;margin:0}
 .tag{
   font-size:11px;font-weight:500;color:var(--on-variant);
@@ -261,7 +261,9 @@ h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012
 
 /* 차트만 밝은 배경이다. 캔들·이평·레벨선이 열몇 개씩 겹치는데
    어두운 바탕에서는 선끼리 묻혀서 구분이 안 된다. */
-.chart-shell{position:relative;height:440px;background:#ffffff}
+/* 1080p 화면에서 차트 하단까지 첫 화면에 들어오는 높이.
+   더 키우면 스크롤해야 지지·저항 표 끝이 보인다. */
+.chart-shell{position:relative;height:360px;background:#ffffff}
 #chart{position:absolute;inset:0;cursor:crosshair}
 .chart-legend{
   position:absolute;top:12px;left:14px;z-index:5;pointer-events:none;
@@ -298,6 +300,47 @@ th{
 td.num{text-align:right;font-variant-numeric:tabular-nums}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gutter)}
 @media(max-width:860px){.grid2{grid-template-columns:1fr;gap:18px}}
+
+/* 지표 상세는 봉이 8개라 2열이면 여전히 길다. 넓은 화면에서 3열로 편다. */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gutter)}
+@media(max-width:1200px){.grid3{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.grid3{grid-template-columns:1fr;gap:14px}}
+
+/* ---------- 2단 배치 ----------
+   차트(좌)와 지지·저항(우)을 나란히. 세로로 쌓으면 넓은 화면에서
+   우측 절반이 비는데도 스크롤만 길어진다. */
+.split{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:var(--gutter);align-items:start}
+.split-main,.split-side{min-width:0}
+.split-side section{margin-bottom:0}
+/* 사이드에서는 지지·저항 표를 위아래로 쌓는다(폭이 좁아 2열이 안 들어간다) */
+.split-side .grid2{grid-template-columns:1fr;gap:14px}
+/* 사이드 표는 차트 높이에 맞춰 스크롤. 페이지가 늘어나는 걸 막는다.
+   저항·지지 두 표가 세로로 쌓이므로 각각 절반씩 가져간다(차트 520px 기준). */
+.split-side .scroll{max-height:198px;overflow-y:auto}
+.split-side .scroll::-webkit-scrollbar{width:6px}
+@media(max-width:1180px){
+  .split{grid-template-columns:1fr;gap:18px}
+  .split-side .scroll{max-height:none}
+  .split-side section{margin-bottom:var(--gutter)}
+}
+
+/* ---------- 접이식 섹션 ---------- */
+.fold{border-top:1px solid var(--outline);padding-top:16px}
+.fold summary{
+  display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none;
+  padding:4px 0;user-select:none;
+}
+.fold summary::-webkit-details-marker{display:none}
+.fold-h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012em}
+.fold-hint{
+  margin-left:auto;font-size:12px;color:var(--on-variant);
+  display:inline-flex;align-items:center;gap:5px;
+}
+.fold-hint::after{content:"▾";font-size:11px;transition:transform .18s}
+.fold[open] .fold-hint::after{transform:rotate(180deg)}
+.fold[open] .fold-hint{font-size:0}
+.fold[open] .fold-hint::after{font-size:11px}
+.fold summary:hover .fold-hint{color:var(--on-surface)}
 
 /* ---------- 유틸 ---------- */
 .up{color:var(--up)} .down{color:var(--down)} .neu{color:var(--warn)} .dim{color:var(--on-variant)}
@@ -338,6 +381,52 @@ footer{
   color:var(--on-variant);font-size:11.5px;line-height:1.85;
 }
 footer b{color:#c9d2ee}
+
+/* ---------- 모바일 밀도 ----------
+   폰에서는 한 화면에 최대한 담는 게 우선이다. 히어로·여백·글자를 줄인다. */
+@media(max-width:640px){
+  .hero{padding:20px 0 16px}
+  h1{font-size:22px;line-height:1.2;margin-bottom:8px}
+  .eyebrow{font-size:10px;margin-bottom:8px}
+  .lede{font-size:13px;line-height:1.55}
+  .wrap{padding:0 14px}
+  .nav-in{padding:0 14px;height:52px}
+  .controls{gap:7px;padding:14px 0}
+  .btn{padding:7px 13px;font-size:13px}
+  .tfbar button{padding:7px 10px;font-size:12px}
+  .exbar button{padding:7px 11px;font-size:12px}
+  input[type=search]{min-width:130px;flex:1}
+  select{min-width:0;flex:1}
+  /* 시세는 2열 고정 — 1열이면 스크롤이 너무 길어진다 */
+  .quotes{grid-template-columns:1fr 1fr;gap:1px}
+  .qb{padding:8px 10px}
+  .qv{font-size:15px}
+  .qk{font-size:9.5px;margin-bottom:2px}
+  .qs{font-size:10px;margin-top:2px}
+
+  /* 검색창은 숨긴다 — 종목 드롭다운으로 충분하고, 폰에서 한 줄을 통째로 먹는다 */
+  #q{display:none}
+  #market{width:100%;flex:1 1 100%}
+  /* 봉 버튼은 가로 스크롤로 한 줄에 담는다. 줄바꿈되면 68px을 먹는다 */
+  .tfbar{flex-wrap:nowrap;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+  .tfbar::-webkit-scrollbar{display:none}
+  .tfbar button{white-space:nowrap;flex:none}
+  .exbar{flex:1 1 100%;justify-content:space-between}
+  .exbar button{flex:1;padding:7px 4px}
+  #apiHint{display:none}
+  section{margin-bottom:20px}
+  h2,.fold-h2{font-size:17px}
+  .chart-shell{height:340px}
+  th,td{padding:7px 8px;font-size:12px}
+  .card-pad{padding:12px}
+  footer{font-size:10px;padding:16px 0 24px}
+
+  /* 긴 표는 잘라서 스크롤한다. 폰에서 세로로 다 펼치면 화면 몇 개를 먹는다.
+     지지·저항은 위쪽 몇 개가 중요하고, 시간봉별 방향은 봉이 8개다. */
+  .split-side .scroll{max-height:260px;overflow-y:auto}
+  #sec-summary .scroll{max-height:340px;overflow-y:auto}
+  .scroll::-webkit-scrollbar{width:5px;height:5px}
+}
 
 /* ---------- 전체화면 ----------
    .chart-shell{height:440px} 뒤에 와야 이긴다. 순서가 곧 우선순위다.
@@ -475,6 +564,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=3.4.0" charset="utf-8"></script>
+<script src="app.js?v=3.5.1" charset="utf-8"></script>
 </body>
 </html>

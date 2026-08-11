@@ -877,21 +877,29 @@
         if (sameView) {
             // 시세 스트립과 분석 표만 내용 교체. 차트는 데이터만 밀어넣는다.
             replaceSection("sec-quotes", renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
-            replaceSection("sec-summary", renderSummary(results));
             replaceSection("sec-levels", renderLevels(lv, dp));
-            replaceSection("sec-detail", renderDetail(results, dp));
+            replaceSection("sec-summary", renderSummary(results));
             replaceSection("sec-scenario", renderScenario(lv, dp));
+            // 지표 상세는 접혀 있으면 갱신하지 않는다. 열려 있을 때만 다시 그린다.
+            var det = $("sec-detail");
+            if (det && det.querySelector("details[open]")) {
+                replaceSection("sec-detail", renderDetail(results, dp));
+            }
             if (!updateChartData(data.tf[state.chartTf], lv, dp)) {
                 buildChart(data.tf[state.chartTf], lv, dp);
             }
         } else {
             var html = [];
             html.push('<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>");
-            html.push(renderChartSection(sym));
+            // 넓은 화면에서는 차트(좌)와 지지·저항(우)을 나란히 둔다.
+            // 세로로 쌓으면 우측 절반이 통째로 비는데도 스크롤만 길어진다.
+            html.push('<div class="split">'
+                + '<div class="split-main">' + renderChartSection(sym) + "</div>"
+                + '<div class="split-side" id="sec-levels">' + renderLevels(lv, dp) + "</div>"
+                + "</div>");
             html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
-            html.push('<div id="sec-levels">' + renderLevels(lv, dp) + "</div>");
-            html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
             html.push('<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>");
+            html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
             $("out").innerHTML = html.join("");
             buildChart(data.tf[state.chartTf], lv, dp);
             state.renderedFor = market;
@@ -1379,7 +1387,14 @@
             return '<div class="card"><div class="card-pad" style="padding-bottom:6px"><b style="font-family:var(--font-h)">' + tf.label + "</b></div>"
                 + "<table>" + L.join("") + "</table></div>";
         }).filter(Boolean).join("");
-        return '<section><div class="sec-head"><h2>지표 상세</h2></div><div class="grid2">' + blocks + "</div></section>";
+        // 봉 8개 카드가 세로 길이의 절반을 먹는다. 기본은 접어두고 필요할 때만 편다.
+        var 개수 = blocks ? (blocks.match(/class="card"/g) || []).length : 0;
+        return '<section><details class="fold">'
+            + '<summary><span class="fold-h2">지표 상세</span>'
+            + '<span class="tag">' + 개수 + '개 봉</span>'
+            + '<span class="fold-hint">펼치기</span></summary>'
+            + '<div class="grid3" style="margin-top:14px">' + blocks + "</div>"
+            + "</details></section>";
     }
 
     function renderScenario(lv, dp) {
