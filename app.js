@@ -155,7 +155,19 @@
     /** 바이낸스 24hr ticker -> 업비트 ticker 형태 */
     function bnTicker(market) {
         return getJSON(apiUrl("ticker/24hr", { symbol: bnSymbol(market) })).then(function (d) {
-            var chg = parseFloat(d.priceChangePercent) / 100;
+            // 같은 키인데 단위가 다르다(실측): 바이낸스는 퍼센트(-1.52), MEXC는 비율(-0.0152).
+            // 문서에 없는 차이라 이름만 믿으면 100배 어긋난다. 종가·전일종가로 실제 비율을
+            // 계산해 어느 쪽인지 판별한다.
+            var raw = parseFloat(d.priceChangePercent);
+            var last = parseFloat(d.lastPrice), prev = parseFloat(d.prevClosePrice);
+            var chg;
+            if (isFinite(last) && isFinite(prev) && prev > 0) {
+                var 실제 = (last - prev) / prev;
+                // raw가 실제 비율에 가까우면 그대로, 100배에 가까우면 나눈다
+                chg = Math.abs(raw - 실제) <= Math.abs(raw - 실제 * 100) ? raw : raw / 100;
+            } else {
+                chg = raw / 100;   // 판별 불가 시 바이낸스 기준
+            }
             return {
                 market: market,
                 trade_price: parseFloat(d.lastPrice),
