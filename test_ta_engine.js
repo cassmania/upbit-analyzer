@@ -68,6 +68,27 @@ console.log('\n[2] RSI — 스킬 계산식 일치');
     assert.strictEqual(TA.rsi([1, 2, 3]), null);
 });
 
+// Wilder 원전 예제. 단순평균 방식으로 계산하면 이 값이 안 나온다.
+// 거래소·트레이딩뷰와 같은 값을 내는지 고정하는 회귀 테스트다.
+검증('Wilder 표준값과 일치 (원전 예제)', () => {
+    const c = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42,
+               45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28];
+    근사(TA.rsi(c, 14), 70.5, 0.2, 'RSI 첫값');
+    근사(TA.rsi(c.concat([46.00]), 14), 66.3, 0.2, 'RSI 다음값');
+});
+
+검증('rsiSeries 마지막 값은 rsi()와 같다', () => {
+    const c = 경로(100, 130, 40);
+    const s = TA.rsiSeries(c, 14);
+    assert.strictEqual(s[s.length - 1], TA.rsi(c, 14));
+});
+
+검증('완전 횡보면 RSI 50 (0/0 방어)', () => {
+    const flat = [];
+    for (let i = 0; i < 30; i++) flat.push(100);
+    assert.strictEqual(TA.rsi(flat), 50);
+});
+
 console.log('\n[3] 스토캐스틱 / CCI');
 
 검증('최고가 마감이면 %K 100', () => {
@@ -133,12 +154,29 @@ console.log('\n[5] ATR / 슈퍼트렌드 / VWAP');
     assert.ok(TA.atr(캔들(경로(100, 130, 40))) > 0);
 });
 
-검증('슈퍼트렌드는 종가 vs hl2로 판정 (스킬 원본 로직)', () => {
-    const c = 캔들(경로(100, 130, 40));
-    const last = c[c.length - 1];
-    const hl2 = (last.h + last.l) / 2;
-    const st = TA.supertrend(c);
-    assert.strictEqual(st.trend, last.c > hl2 ? '상승' : '하락');
+검증('슈퍼트렌드는 상승 추세를 상승으로 판정', () => {
+    const st = TA.supertrend(캔들(경로(100, 130, 40)));
+    assert.strictEqual(st.trend, '상승');
+});
+
+검증('슈퍼트렌드는 하락 추세를 하락으로 판정', () => {
+    const st = TA.supertrend(캔들(경로(130, 100, 40)));
+    assert.strictEqual(st.trend, '하락');
+});
+
+// 예전 구현은 마지막 봉 하나의 hl2만 봐서 봉 하나에 추세가 뒤집혔다.
+// 표준 슈퍼트렌드는 밴드를 상태로 이어가므로, 추세 안의 작은 되돌림
+// 한 번으로는 뒤집히지 않는다.
+검증('상승 추세 중 작은 음봉 하나로 뒤집히지 않는다', () => {
+    const 경 = 경로(100, 140, 40);
+    경[경.length - 1] = 경[경.length - 2] - 0.5;   // 마지막만 살짝 밀림
+    const st = TA.supertrend(캔들(경));
+    assert.strictEqual(st.trend, '상승');
+});
+
+검증('슈퍼트렌드 line은 유효한 추세선', () => {
+    const st = TA.supertrend(캔들(경로(100, 130, 40)));
+    assert.strictEqual(st.line, st.trend === '상승' ? st.up_band : st.dn_band);
 });
 
 검증('슈퍼트렌드 up_band < dn_band', () => {
@@ -191,6 +229,18 @@ console.log('\n[7] VPVR / 레벨 — 스킬과 동일해야 하는 핵심');
     const p = TA.vpvr(c);
     assert.ok(p.value_area_low <= p.poc + 1e-6, `VAL ${p.value_area_low} <= POC ${p.poc}`);
     assert.ok(p.poc <= p.value_area_high + 1e-6, `POC <= VAH ${p.value_area_high}`);
+});
+
+// 예전에는 거래량 상위 빈만 모아 min/max를 경계로 썼다. 빈이 떨어져 있으면
+// 사이의 저거래 구간까지 들어가 VA가 전체 범위(100%)로 벌어졌다.
+// POC에서 연속 확장하므로 70%를 조금 넘는 선에서 멈춰야 한다.
+검증('VA는 전체 범위를 다 먹지 않는다 (연속 확장)', () => {
+    // 양 끝에 거래량이 몰리고 가운데가 빈 형태 — 예전 방식이 가장 크게 틀리던 모양
+    const c = 캔들([...경로(100, 130, 30), ...경로(130, 100, 30)], { 무거운구간: [100, 104] });
+    const p = TA.vpvr(c);
+    const 범위 = 130 - 100;
+    const va = p.value_area_high - p.value_area_low;
+    assert.ok(va < 범위 * 0.95, `VA ${va.toFixed(2)}가 전체 범위 ${범위}를 거의 다 먹음`);
 });
 
 검증('HVN 최대 3개, 가격 오름차순', () => {

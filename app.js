@@ -247,7 +247,7 @@
     var state = {
         exchange: "upbit",
         markets: [], sel: "KRW-BTC", chartTf: "4h",
-        timer: null, busy: false,
+        timer: null, busy: false, auto: false,
         ws: null, wsAlive: false,
         tfCandles: null, levels: null, dp: 0, lastPrice: 0,
         usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
@@ -367,11 +367,23 @@
     /** 기축통화 접두사를 뗀 코인 심볼 */
     function coinOf(market) { return (market || "").split("-")[1] || market; }
 
+    /**
+     * 종목 목록을 그린다.
+     *
+     * 검색은 "보여줄 목록"만 좁힌다. 분석 대상(state.sel)은 절대 건드리지 않는다.
+     * 예전에는 필터에 안 걸리면 목록 첫 종목으로 state.sel을 밀어버려서,
+     * 검색창에 "eth"를 치는 것만으로 분석 중이던 BTC가 다른 코인으로 바뀌었다.
+     * 자동갱신이 켜져 있으면 고르지도 않은 종목을 계속 조회하게 된다.
+     *
+     * 그래서 선택 중인 종목은 필터에 안 걸려도 목록에 남긴다.
+     * 종목 변경은 오직 사용자가 select를 조작할 때(change 이벤트)만 일어난다.
+     */
     function renderMarketSelect(filter) {
         var sel = $("market");
         var f = (filter || "").trim().toLowerCase();
         var list = state.markets.filter(function (m) {
             if (!f) return true;
+            if (m.market === state.sel) return true;   // 선택 중인 종목은 항상 남긴다
             return m.market.toLowerCase().indexOf(f) !== -1
                 || m.korean_name.toLowerCase().indexOf(f) !== -1
                 || (m.english_name || "").toLowerCase().indexOf(f) !== -1;
@@ -380,8 +392,9 @@
             return '<option value="' + m.market + '">' + esc(m.korean_name)
                 + " (" + coinOf(m.market) + ")</option>";
         }).join("");
-        if (list.some(function (m) { return m.market === state.sel; })) sel.value = state.sel;
-        else if (list.length) state.sel = sel.value = list[0].market;
+        if (list.some(function (m) { return m.market === state.sel; })) {
+            sel.value = state.sel;
+        }
     }
 
     /** 업비트 캔들 -> 엔진 형식. 응답은 최신순이라 뒤집는다. time은 차트용 UNIX초. */
@@ -396,21 +409,41 @@
         });
     }
 
-    /** 업비트에 12시간봉이 없다. 4시간봉 3개를 묶어 합성한다. */
-    function groupCandles(src, n) {
-        var out = [];
-        for (var i = 0; i + n <= src.length; i += n) {
-            var win = src.slice(i, i + n);
-            var hi = -Infinity, lo = Infinity, vol = 0;
-            for (var j = 0; j < win.length; j++) {
-                if (win[j].h > hi) hi = win[j].h;
-                if (win[j].l < lo) lo = win[j].l;
-                vol += win[j].v;
+    /**
+     * 업비트에 12시간봉이 없다. 4시간봉 n개를 묶어 합성한다.
+     *
+     * 묶는 기준은 배열 위치가 아니라 **봉의 시각**이다.
+     *
+     * 예전에는 인덱스 0부터 n개씩 잘랐다. 문제가 둘이었다:
+     *   1. 200 % 3 = 2라 최신 4시간봉 2개(최대 8시간)가 통째로 버려졌다.
+     *      지금 형성 중인 봉이 12시간 합성봉에 영원히 안 들어갔다.
+     *   2. 봉이 하나 롤오버될 때마다 배열 시작점이 밀려 합성 경계가 매번 달라졌다.
+     *      같은 종목을 새로고침만 해도 12시간 지지·저항이 흔들렸다.
+     *
+     * UNIX 시각을 구간 길이로 내림하면 경계가 절대 시간에 고정된다.
+     * 12시간봉이면 항상 같은 시각에 열리고, 새로고침해도 값이 같다.
+     * 마지막 구간은 아직 안 끝났을 수 있지만 그대로 넣는다 — 형성 중인 봉을
+     * 보여주는 건 실제 거래소 차트와 같은 동작이다.
+     */
+    function groupCandles(src, n, secPerBar) {
+        if (!src || !src.length) return [];
+        var 구간 = (secPerBar || 0) * n;
+        if (!(구간 > 0)) return [];
+
+        var out = [], cur = null, curKey = null;
+        for (var i = 0; i < src.length; i++) {
+            var c = src[i];
+            var key = Math.floor(c.time / 구간) * 구간;
+            if (cur && key === curKey) {
+                if (c.h > cur.h) cur.h = c.h;
+                if (c.l < cur.l) cur.l = c.l;
+                cur.c = c.c;
+                cur.v += c.v;
+            } else {
+                cur = { time: key, kst: c.kst, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v };
+                curKey = key;
+                out.push(cur);
             }
-            out.push({
-                time: win[0].time, kst: win[0].kst,
-                o: win[0].o, h: hi, l: lo, c: win[win.length - 1].c, v: vol
-            });
         }
         return out;
     }
@@ -443,8 +476,10 @@
             var tf = {};
             direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
             // 합성봉(업비트·빗썸의 8h·12h, MEXC의 12h). 바이낸스는 네이티브라 목록이 비어 있다.
+            // 원본 봉의 길이를 넘겨야 합성 경계를 절대 시간에 고정할 수 있다.
             groupedTfs().forEach(function (t) {
-                tf[t.key] = groupCandles(tf[t.from] || [], t.group);
+                var 원본 = TFS.filter(function (x) { return x.key === t.from; })[0];
+                tf[t.key] = groupCandles(tf[t.from] || [], t.group, 원본 ? 원본.sec : 0);
             });
             return { ticker: r[0], tf: tf };
         });
@@ -857,11 +892,9 @@
                 : { error: "캔들 부족 (" + (c ? c.length : 0) + "봉)" };
         });
 
-        // 지지·저항. levels:false인 봉(년봉)은 표본이 부족해 넣지 않는다.
+        // 지지·저항. levels:false인 봉(년봉)은 표본이 부족해 levelTfs()가 이미 뺀다.
         var conv = {};
-        levelTfs().filter(function (t) {
-            return t.key !== "1y" || ex().hasYear;
-        }).forEach(function (tf) {
+        levelTfs().forEach(function (tf) {
             var c = data.tf[tf.key];
             if (c && c.length >= 20) {
                 conv[tf.key] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
@@ -1107,12 +1140,17 @@
                 L.push("| " + tf.label + " | " + (d ? d.error : "데이터 없음") + " | — | — | — | — |");
                 return;
             }
+            // 지표는 표본이 모자라거나 완전 횡보면 null이 된다.
+            // (ATR 0이면 슈퍼트렌드 null, 20봉 거래량이 0이면 신뢰도 null)
+            var rsi = d.oscillators.rsi14;
+            var st = d.trend.supertrend;
+            var vr = d.volume.reliability;
             L.push("| " + tf.label
                 + " | " + d.trend.bias
                 + " | " + (d.confluence.net_pct >= 0 ? "+" : "") + d.confluence.net_pct + "%"
-                + " | " + d.oscillators.rsi14.toFixed(1)
-                + " | " + d.trend.supertrend.trend
-                + " | " + d.volume.reliability.split("(")[0]
+                + " | " + (rsi === null || rsi === undefined ? "—" : rsi.toFixed(1))
+                + " | " + (st ? st.trend : "—")
+                + " | " + (vr ? vr.split("(")[0] : "—")
                 + " |");
         });
         L.push("");
@@ -1245,12 +1283,21 @@
                     '<span id="q-usd">' + fmtUsd(refUsd) + "</span>",
                     usdtKrw ? "환산 " + fmt(refUsd * usdtKrw, dp) + "원" : "환율 데이터 없음"));
             }
-            // 김치 프리미엄은 원화 시세가 있어야 성립한다
-            if (refUsd && usdtKrw && 원화) {
-                var kp = (price / (refUsd * usdtKrw) - 1) * 100;
-                out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>",
-                    "USDT " + fmt(usdtKrw, 1) + "원 기준"
-                    + (bankFx ? " · 은행 " + fmt(bankFx, 1) + "원" : "")));
+            // 김치 프리미엄은 원화 시세 + **현물** 달러가가 있어야 성립한다.
+            //
+            // 선물가로 계산하면 안 된다. 선물엔 베이시스(만기·펀딩에 따른 괴리)가
+            // 섞여 있어서, 그 값은 "국내 프리미엄"이 아니라 "국내 프리미엄 + 베이시스"다.
+            // 현물이 없으면 숫자를 지어내는 대신 없다고 밝힌다.
+            if (usdtKrw && 원화) {
+                if (fut.spotPrice) {
+                    var kp = (price / (fut.spotPrice * usdtKrw) - 1) * 100;
+                    out.push(qb("김치 프리미엄", '<span class="' + cls(kp) + '">' + pct(kp) + "</span>",
+                        "바이낸스 현물 · USDT " + fmt(usdtKrw, 1) + "원 기준"
+                        + (bankFx ? " · 은행 " + fmt(bankFx, 1) + "원" : "")));
+                } else {
+                    out.push(qb("김치 프리미엄", '<span class="dim" style="font-size:17px">데이터 없음</span>',
+                        "바이낸스 현물 미상장 — 선물가로는 계산하지 않습니다"));
+                }
             }
         } else {
             out.push(qb("펀딩비 · 미결제약정", '<span class="dim" style="font-size:17px">데이터 없음</span>', "바이낸스 USDT-M 미상장"));
@@ -1439,7 +1486,24 @@
                         : ex().name + ' API 호출 제한에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.')
                     + '</div></div>';
             })
-            .then(function () { state.busy = false; $("run").disabled = false; });
+            .then(function () {
+                state.busy = false;
+                $("run").disabled = false;
+                scheduleNext();
+            });
+    }
+
+    /**
+     * 다음 자동갱신을 예약한다.
+     *
+     * setInterval을 쓰면 응답이 주기보다 느릴 때 state.busy 가드에 걸려
+     * 갱신이 조용히 사라졌다. 사용자는 화면이 왜 안 바뀌는지 알 수 없다.
+     * 한 번 끝난 뒤에 다음을 예약하면 호출이 겹치지도, 사라지지도 않는다.
+     */
+    function scheduleNext() {
+        if (!state.auto) return;
+        if (state.timer) clearTimeout(state.timer);
+        state.timer = setTimeout(run, autoIntervalMs());
     }
 
     function switchTf(tf) {
@@ -1471,24 +1535,38 @@
     }
 
     function startAuto() {
-        if (state.timer) clearInterval(state.timer);
+        if (state.timer) clearTimeout(state.timer);
+        state.auto = true;
         var ms = autoIntervalMs();
-        state.timer = setInterval(run, ms);
         var b = $("auto");
         b.textContent = "자동갱신 ON · " + (ms / 1000) + "초";
         b.classList.add("on");
         showRateHint(ms);
+        scheduleNext();
     }
 
+    /**
+     * 호출 빈도 경고.
+     *
+     * 예전에는 3초 이하를 뭉뚱그려 같은 경고를 띄웠다. 실제 부담은 주기가 아니라
+     * "초당 호출 수"인데, 갱신 1회에 나가는 호출은 거래소마다 다르다
+     * (ticker 1 + 직접 조회하는 봉 수). 업비트 기준 7회다.
+     * 1초 주기면 초당 7회로 제한(10회)에 거의 붙는다 — 탭 두 개면 확실히 넘긴다.
+     *
+     * 실제 수치를 계산해서 보여준다.
+     */
     function showRateHint(ms) {
         var el = $("rateHint");
         if (!el) return;
-        if (ms <= 3000) {
-            el.textContent = "⚠ 갱신 1회당 " + ex().name + " 여러 번 호출 — 탭을 함께 열면 호출 제한(초당 10회)에 걸릴 수 있습니다.";
-            el.style.display = "";
-        } else {
-            el.style.display = "none";
-        }
+        if (!isFinite(ms) || ms <= 0) { el.style.display = "none"; return; }
+
+        var 회 = 1 + directTfs().length;          // ticker + 직접 조회 봉
+        var 초당 = 회 / (ms / 1000);
+        if (초당 < 2) { el.style.display = "none"; return; }
+
+        el.textContent = "⚠ 갱신 1회당 " + ex().name + " " + 회 + "회 호출 — 현재 주기면 초당 약 "
+            + 초당.toFixed(1) + "회입니다. 제한은 초당 10회라 탭을 여러 개 열면 걸립니다.";
+        el.style.display = "";
     }
 
     /**
@@ -1568,8 +1646,9 @@
 
     function toggleAuto() {
         var b = $("auto");
-        if (state.timer) {
-            clearInterval(state.timer); state.timer = null;
+        if (state.auto) {
+            state.auto = false;
+            if (state.timer) { clearTimeout(state.timer); state.timer = null; }
             b.textContent = "자동갱신 OFF"; b.classList.remove("on");
             showRateHint(Infinity);
         } else {
@@ -1633,7 +1712,7 @@
             });
         });
         $("interval").addEventListener("change", function () {
-            if (state.timer) startAuto();   // 켜져 있을 때만 주기를 갈아끼운다
+            if (state.auto) startAuto();   // 켜져 있을 때만 주기를 갈아끼운다
         });
         [].forEach.call(document.querySelectorAll("#tfbar button"), function (b) {
             b.addEventListener("click", function () { switchTf(b.getAttribute("data-tf")); });

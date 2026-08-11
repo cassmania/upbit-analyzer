@@ -41,23 +41,73 @@
 
     // ---------------------------------------------------------------- 오실레이터
 
+    /**
+     * RSI — Wilder 지수평활 방식.
+     *
+     * 예전에는 최근 n개 변화량의 단순평균을 썼다. 계산은 간단하지만
+     * 거래소·트레이딩뷰가 쓰는 표준(Wilder)과 값이 다르게 나온다.
+     * 화면에는 그냥 "RSI(14)"로 표기되니 사용자는 업비트 값과 같다고 믿는다.
+     *
+     * 표준대로 첫 n개는 단순평균으로 시드를 잡고, 이후는
+     * avg = (avg * (n-1) + 현재값) / n 으로 평활한다.
+     */
     function rsi(closes, n) {
         n = n || 14;
         if (closes.length < n + 1) return null;
+
         let g = 0, l = 0;
-        for (let i = closes.length - n; i < closes.length; i++) {
+        // 시드: 처음 n개 변화량의 단순평균
+        for (let i = 1; i <= n; i++) {
             const d = closes[i] - closes[i - 1];
             if (d > 0) g += d; else l += -d;
         }
-        if (l === 0) return 100.0;
-        const rs = (g / n) / (l / n);
+        let ag = g / n, al = l / n;
+
+        // 나머지 구간을 Wilder 평활로 이어간다
+        for (let i = n + 1; i < closes.length; i++) {
+            const d = closes[i] - closes[i - 1];
+            const up = d > 0 ? d : 0, dn = d < 0 ? -d : 0;
+            ag = (ag * (n - 1) + up) / n;
+            al = (al * (n - 1) + dn) / n;
+        }
+
+        if (al === 0) return ag === 0 ? 50.0 : 100.0;
+        const rs = ag / al;
         return Math.round((100 - 100 / (1 + rs)) * 10) / 10;
     }
 
+    /**
+     * 각 시점의 RSI 배열. 다이버전스 판정에 쓴다.
+     *
+     * 예전에는 매 인덱스마다 closes.slice(0, i+1)로 rsi()를 다시 불렀다.
+     * Wilder는 전 구간을 훑어야 해서 그대로 두면 O(n^2)이 된다.
+     * 평활 상태를 이어가며 한 번만 훑는다 — 값은 rsi()와 동일하다.
+     */
     function rsiSeries(closes, n) {
         n = n || 14;
-        const out = [];
-        for (let i = 0; i < closes.length; i++) out.push(rsi(closes.slice(0, i + 1), n));
+        const out = new Array(closes.length).fill(null);
+        if (closes.length < n + 1) return out;
+
+        let g = 0, l = 0;
+        for (let i = 1; i <= n; i++) {
+            const d = closes[i] - closes[i - 1];
+            if (d > 0) g += d; else l += -d;
+        }
+        let ag = g / n, al = l / n;
+
+        const calc = function () {
+            if (al === 0) return ag === 0 ? 50.0 : 100.0;
+            return Math.round((100 - 100 / (1 + ag / al)) * 10) / 10;
+        };
+        out[n] = calc();
+
+        for (let i = n + 1; i < closes.length; i++) {
+            const d = closes[i] - closes[i - 1];
+            const up = d > 0 ? d : 0, dn = d < 0 ? -d : 0;
+            ag = (ag * (n - 1) + up) / n;
+            al = (al * (n - 1) + dn) / n;
+            out[i] = calc();
+        }
         return out;
     }
 
@@ -135,19 +185,62 @@
         return trs.slice(-n).reduce((a, b) => a + b, 0) / n;
     }
 
+    /**
+     * 슈퍼트렌드 — 밴드를 상태로 이어가는 표준 방식.
+     *
+     * 예전 구현은 마지막 봉 하나의 hl2와 종가만 비교했다. 그건 슈퍼트렌드가 아니라
+     * "이번 봉이 중간값 위인가"일 뿐이라 봉 하나에 매번 뒤집혔고, 계산해둔 밴드는
+     * 판정에 쓰이지도 않았다. 이 값이 trend()의 추세 점수에 ±1로 들어가서
+     * 종합 판단까지 흔들었다.
+     *
+     * 표준 규칙:
+     *   기본 밴드 = hl2 ± mult*ATR
+     *   최종 밴드는 추세가 유지되는 동안 한 방향으로만 조인다(되돌리지 않는다).
+     *   종가가 반대편 최종 밴드를 넘으면 그때 추세가 뒤집힌다.
+     */
     function supertrend(candles, n, mult) {
         n = n || 10; mult = mult || 3.0;
         if (candles.length < n + 2) return null;
-        const a = atr(candles, n);
-        if (!a) return null;
-        const last = candles[candles.length - 1];
-        const hl2 = (last.h + last.l) / 2;
-        // 원본과 동일: 종가가 hl2 위면 상승. 밴드는 표시용.
+
+        // 각 시점 ATR(Wilder 평활). 밴드를 이어가려면 시계열이 필요하다.
+        const trs = [];
+        for (let i = 1; i < candles.length; i++) {
+            const h = candles[i].h, l = candles[i].l, pc = candles[i - 1].c;
+            trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+        }
+        if (trs.length < n) return null;
+
+        let a = 0;
+        for (let i = 0; i < n; i++) a += trs[i];
+        a /= n;
+        if (!(a > 0)) return null;
+
+        // trs[i]는 candles[i+1]의 TR이다. 첫 ATR은 candles[n]에 대응한다.
+        let upper = null, lower = null, up = true;
+        for (let i = n; i < candles.length; i++) {
+            if (i > n) a = (a * (n - 1) + trs[i - 1]) / n;
+
+            const c = candles[i];
+            const hl2 = (c.h + c.l) / 2;
+            const bUp = hl2 + mult * a;    // 하락 추세에서 위에 놓이는 밴드
+            const bLo = hl2 - mult * a;    // 상승 추세에서 아래에 놓이는 밴드
+            const prevC = candles[i - 1].c;
+
+            // 추세가 이어지는 동안 밴드는 가격 쪽으로만 조인다
+            upper = (upper === null || bUp < upper || prevC > upper) ? bUp : upper;
+            lower = (lower === null || bLo > lower || prevC < lower) ? bLo : lower;
+
+            if (up && c.c < lower) up = false;
+            else if (!up && c.c > upper) up = true;
+        }
+
         return {
-            trend: last.c > hl2 ? "상승" : "하락",
+            trend: up ? "상승" : "하락",
             atr: rp(a),
-            up_band: rp(hl2 - mult * a),
-            dn_band: rp(hl2 + mult * a)
+            // 지금 유효한 추세선. 상승이면 아래 밴드가 지지, 하락이면 위 밴드가 저항.
+            line: rp(up ? lower : upper),
+            up_band: rp(lower),
+            dn_band: rp(upper)
         };
     }
 
@@ -234,17 +327,28 @@
 
         const order = vol.map((_, i) => i).sort((a, b) => vol[b] - vol[a]);
         const pocI = order[0];
-        let acc = 0;
-        const va = [];
-        for (const i of order) {
-            va.push(i); acc += vol[i];
-            if (acc >= total * 0.7) break;
+
+        // Value Area는 POC에서 양옆으로 붙여가며 넓힌다.
+        //
+        // 예전에는 거래량 상위 빈부터 70%를 채운 뒤 그 빈들의 min/max를 경계로 썼다.
+        // 뽑힌 빈이 떨어져 있으면 사이의 저거래 구간까지 통째로 VA에 들어가,
+        // VA가 전체 범위의 100%로 나오는 일이 실제로 있었다.
+        //
+        // 표준은 POC 기준으로 위/아래 중 거래량이 큰 쪽을 하나씩 흡수해
+        // 70%에 닿을 때까지 넓히는 것이다. 그러면 VA는 항상 연속 구간이 된다.
+        let vaLo = pocI, vaHi = pocI, acc = vol[pocI];
+        while (acc < total * 0.7 && (vaLo > 0 || vaHi < bins - 1)) {
+            const below = vaLo > 0 ? vol[vaLo - 1] : -1;
+            const above = vaHi < bins - 1 ? vol[vaHi + 1] : -1;
+            if (above >= below) { vaHi++; acc += vol[vaHi]; }
+            else { vaLo--; acc += vol[vaLo]; }
         }
+
         const top = order.slice(0, 3).sort((a, b) => a - b);
         return {
             poc: rp(lo + step * (pocI + 0.5)),
-            value_area_low: rp(lo + step * Math.min(...va)),
-            value_area_high: rp(lo + step * (Math.max(...va) + 1)),
+            value_area_low: rp(lo + step * vaLo),
+            value_area_high: rp(lo + step * (vaHi + 1)),
             hvn_nodes: top.map(i => rp(lo + step * (i + 0.5)))
         };
     }

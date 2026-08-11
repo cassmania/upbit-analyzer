@@ -98,13 +98,17 @@
         order.sort(function (a, b) { return vol[b] - vol[a]; });
 
         var pocI = order[0];
-        var acc = 0, va = [];
-        for (i = 0; i < order.length; i++) {
-            va.push(order[i]);
-            acc += vol[order[i]];
-            if (acc >= total * 0.7) break;
+
+        // Value Area는 POC에서 양옆으로 붙여가며 넓힌다(연속 구간 보장).
+        // 예전처럼 상위 빈만 모아 min/max를 취하면 사이의 저거래 구간까지 들어가
+        // VA가 전체 범위만큼 벌어진다. 표준은 POC 기준 확장이다.
+        var vaMin = pocI, vaMax = pocI, acc = vol[pocI];
+        while (acc < total * 0.7 && (vaMin > 0 || vaMax < bins - 1)) {
+            var below = vaMin > 0 ? vol[vaMin - 1] : -1;
+            var above = vaMax < bins - 1 ? vol[vaMax + 1] : -1;
+            if (above >= below) { vaMax++; acc += vol[vaMax]; }
+            else { vaMin--; acc += vol[vaMin]; }
         }
-        var vaMin = Math.min.apply(null, va), vaMax = Math.max.apply(null, va);
 
         // 상위 3개 빈을 가격 오름차순으로 — 고밀도 매물대(HVN)
         var top = order.slice(0, 3).sort(function (a, b) { return a - b; });
@@ -139,8 +143,14 @@
         return { high: hi, low: lo };
     }
 
-    /** 한 타임프레임에서 후보 레벨을 근거 태그와 함께 뽑는다. */
-    function extract(candles, tf) {
+    /**
+     * 한 타임프레임에서 후보 레벨을 근거 태그와 함께 뽑는다.
+     *
+     * price를 받는 이유: 스윙 피벗은 200봉에서 수십 개가 나와 전부 쓸 수 없는데,
+     * 어느 것을 버릴지는 현재가를 알아야 정할 수 있다. 아래 swPick 주석 참고.
+     * price가 없으면(테스트 등) 종가를 대신 쓴다.
+     */
+    function extract(candles, tf, price) {
         var norm = normalize(candles);
         if (norm.length < 20) return null;
 
@@ -175,9 +185,23 @@
         push(high, "마지노선", norm.length + "봉 최고");
         push(low, "마지노선", norm.length + "봉 최저");
 
-        // 스윙은 개수가 많아 상위만 쓴다. 가격 내림/오름차순 끝단이 의미 있는 벽이다.
-        var swHi = sw.high.slice().sort(function (a, b) { return b - a; }).slice(0, 6);
-        var swLo = sw.low.slice().sort(function (a, b) { return a - b; }).slice(0, 6);
+        // 스윙은 200봉에서 수십 개가 나와 전부는 못 쓴다. 어느 것을 남길지가 문제다.
+        //
+        // 예전에는 고점은 내림차순, 저점은 오름차순으로 상위 6개를 잘랐다.
+        // 그러면 구간 꼭대기 6개와 바닥 6개만 남고 현재가 근처는 통째로 버려진다.
+        // 실제로 현재가 위에 "스윙저점"이 저항으로 뜨는 모순이 화면에 나왔다
+        // (바닥권 저점만 살아남았는데, 이후 가격이 그 아래로 내려간 경우).
+        //
+        // 벽으로 의미 있는 건 극단값이 아니라 "지금 가격에서 곧 만날 것"이다.
+        // 현재가에서 가까운 순으로 뽑는다.
+        var 기준가 = isFiniteNum(price) && price > 0 ? price : norm[norm.length - 1].c;
+        function swPick(list, n) {
+            return list.slice().sort(function (a, b) {
+                return Math.abs(a - 기준가) - Math.abs(b - 기준가);
+            }).slice(0, n);
+        }
+        var swHi = swPick(sw.high, 6);
+        var swLo = swPick(sw.low, 6);
         for (i = 0; i < swHi.length; i++) push(swHi[i], "스윙", "스윙고점");
         for (i = 0; i < swLo.length; i++) push(swLo[i], "스윙", "스윙저점");
 
@@ -198,19 +222,32 @@
         var sorted = all.slice().sort(function (a, b) { return a.price - b.price; });
         var groups = [], cur = null;
 
+        // 이웃 간 간격으로 자른다. "바로 옆 후보와 tol보다 더 벌어지면 다른 벽"이다.
+        //
+        // 예전에는 앵커(그룹 대표가)를 가중평균으로 계속 옮기면서 그 앵커 기준으로
+        // 창을 쟀다. 앵커가 움직이니 창도 같이 끌려가서, 촘촘히 이어진 레벨이
+        // 스캔 순서에 따라 임의의 위치에서 갈라졌다. 같은 벽인데 tfCount가
+        // 반토막 나고 강도 등급이 낮게 나온다.
+        //
+        // 앵커를 첫 가격으로 고정하는 것만으로는 부족하다. 그러면 창 폭은 일정해도
+        // 경계가 여전히 "창이 먼저 소진된 지점"에 생긴다 — 후보가 빽빽한 구간
+        // 한가운데를 갈라놓을 수 있다.
+        //
+        // 이웃 간격으로 자르면 경계가 항상 실제로 비어 있는 곳에 생긴다.
+        // 대표 가격(price)은 묶기가 끝난 뒤 가중평균으로 따로 계산한다.
+        // 다만 이웃 간격만 보면 촘촘한 사슬이 끝없이 이어져 한 그룹이 지나치게
+        // 넓어질 수 있다. 그룹 전체 폭은 tol의 3배까지만 허용한다.
+        var 최대폭 = tol * 3;
         for (var i = 0; i < sorted.length; i++) {
             var lv = sorted[i];
-            if (cur && Math.abs(lv.price - cur.anchor) / cur.anchor <= tol) {
+            var prev = cur ? cur.items[cur.items.length - 1].price : 0;
+            var 붙는다 = cur && prev > 0
+                && Math.abs(lv.price - prev) / prev <= tol
+                && Math.abs(lv.price - cur.base) / cur.base <= 최대폭;
+            if (붙는다) {
                 cur.items.push(lv);
-                // 앵커는 가중 평균으로 계속 보정한다
-                var wsum = 0, psum = 0;
-                for (var j = 0; j < cur.items.length; j++) {
-                    var w = (KIND_WEIGHT[cur.items[j].kind] || 1) * (TF_WEIGHT[cur.items[j].tf] || 1);
-                    wsum += w; psum += cur.items[j].price * w;
-                }
-                cur.anchor = psum / wsum;
             } else {
-                cur = { anchor: lv.price, items: [lv] };
+                cur = { base: lv.price, items: [lv] };
                 groups.push(cur);
             }
         }
@@ -218,15 +255,18 @@
         // 점수 = Σ(근거가중 × 봉가중). 서로 다른 타임프레임 개수는 별도로 센다.
         for (var g = 0; g < groups.length; g++) {
             var grp = groups[g];
-            var score = 0, tfs = {}, kinds = {};
+            var score = 0, tfs = {}, kinds = {}, psum = 0;
             for (var k = 0; k < grp.items.length; k++) {
                 var it = grp.items[k];
-                score += (KIND_WEIGHT[it.kind] || 1) * (TF_WEIGHT[it.tf] || 1);
+                var w = (KIND_WEIGHT[it.kind] || 1) * (TF_WEIGHT[it.tf] || 1);
+                score += w;
+                psum += it.price * w;
                 tfs[it.tf] = true;
                 // 같은 봉에서 같은 종류가 여러 번이면 라벨은 한 번만
                 kinds[it.tf + ":" + it.label] = it;
             }
-            grp.price = grp.anchor;
+            // 대표 가격 = 근거·봉 가중 평균. 무거운 근거(POC 등) 쪽으로 끌린다.
+            grp.price = score > 0 ? psum / score : grp.base;
             grp.score = score;
             grp.tfCount = Object.keys(tfs).length;
             grp.tfList = Object.keys(tfs);
@@ -294,7 +334,7 @@
             var tfKeys = Object.keys(tfCandles || {});
             for (var i = 0; i < tfKeys.length; i++) {
                 var tf = tfKeys[i];
-                var ex = extract(tfCandles[tf], tf);
+                var ex = extract(tfCandles[tf], tf, price);
                 if (!ex) continue;
                 all = all.concat(ex.levels);
                 used.push({ tf: tf, bars: ex.bars });
