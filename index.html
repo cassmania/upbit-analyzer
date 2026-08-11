@@ -150,6 +150,56 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 }
 #briefText:focus{outline:none}
 
+/* ---------- 레퍼럴 배너 (왼쪽 여백) ----------
+   본문은 max-width 1240px + 좌우 24px 패딩이다. 화면이 그보다 넓을 때
+   생기는 왼쪽 여백에 세로로 붙인다. 여백이 배너 폭(168px)에 못 미치면
+   미디어쿼리가 숨긴다 — 본문을 밀거나 가리지 않는 게 우선이다. */
+.reflane{
+  position:fixed;
+  top:180px;
+  /* 화면 중앙에서 본문 절반(620px)만큼 왼쪽으로, 거기서 배너 폭+간격만큼 더 */
+  left:calc(50% - 620px - 188px);
+  width:168px;
+  display:flex;flex-direction:column;gap:8px;
+  z-index:30;
+}
+.ref-title{
+  font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--on-variant);opacity:.55;padding-left:2px;margin-bottom:2px;
+}
+.refcard{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 12px;border-radius:var(--r-md);
+  background:var(--surface-low);border:1px solid var(--outline);
+  text-decoration:none;color:var(--on-surface);
+  transition:border-color .16s, background .16s, transform .16s;
+}
+.refcard:hover{
+  border-color:var(--outline-strong);
+  background:var(--surface);
+  transform:translateX(2px);
+}
+.ref-logo{
+  width:28px;height:28px;border-radius:var(--r-sm);flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-weight:800;font-size:15px;
+}
+.ref-logo.bn{background:#f0b90b;color:#12141f}
+.ref-logo.mx{background:#00b897;color:#fff}
+.ref-body{display:flex;flex-direction:column;min-width:0;gap:1px}
+.ref-body b{font-size:12.5px;font-weight:700;line-height:1.3}
+.ref-body em{font-size:10.5px;font-style:normal;color:var(--on-variant);opacity:.75;line-height:1.3}
+.ref-note{
+  font-size:9.5px;color:var(--on-variant);opacity:.45;
+  padding-left:2px;margin-top:2px;letter-spacing:.02em;
+}
+
+/* 왼쪽 여백이 배너를 담을 만큼 없으면 숨긴다.
+   1240(본문) + 188*2(양쪽 배너 자리) = 1616px */
+@media (max-width:1615px){
+  .reflane{display:none}
+}
+
 /* ---------- 시세 스트립 ---------- */
 .quotes{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
@@ -335,6 +385,28 @@ footer b{color:#c9d2ee}
   </div>
 </header>
 
+<!-- 레퍼럴 배너.
+     본문(1240px) 왼쪽 여백에 붙인다. 여백이 모자라면 CSS가 알아서 숨기므로
+     좁은 화면에서 본문을 가리지 않는다. -->
+<aside class="reflane" id="reflane" aria-label="거래소 가입 링크">
+  <div class="ref-title">거래소 가입</div>
+  <a class="refcard" id="ref-binance" href="#" target="_blank" rel="noopener sponsored nofollow">
+    <span class="ref-logo bn">B</span>
+    <span class="ref-body">
+      <b>바이낸스</b>
+      <em>수수료 할인 링크</em>
+    </span>
+  </a>
+  <a class="refcard" id="ref-mexc" href="#" target="_blank" rel="noopener sponsored nofollow">
+    <span class="ref-logo mx">M</span>
+    <span class="ref-body">
+      <b>MEXC</b>
+      <em>수수료 할인 링크</em>
+    </span>
+  </a>
+  <div class="ref-note">제휴 링크입니다</div>
+</aside>
+
 <main class="wrap">
   <div class="controls">
     <span class="exbar" id="exbar">
@@ -397,6 +469,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=3.2.2" charset="utf-8"></script>
+<script src="app.js?v=3.3.0" charset="utf-8"></script>
 </body>
 </html>

@@ -16,6 +16,21 @@
      *     그래서 업비트만 서버리스 프록시(/api/upbit)를 거친다.
      *   - 년봉: 업비트는 candles/years가 있고, 빗썸은 404.
      */
+    /**
+     * 레퍼럴 링크.
+     *
+     * 여기 두 줄만 실제 링크로 바꾸면 배너가 살아난다.
+     * 빈 문자열이면 배너를 아예 감춘다 — 코드 없이 껍데기만 노출하는 게 더 나쁘다.
+     *
+     * 링크 얻는 곳:
+     *   바이낸스 https://www.binance.com/en/activity/referral
+     *   MEXC     https://www.mexc.com/ko-KR/referral
+     */
+    var REFERRAL = {
+        binance: "https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=en&ref=GRO_28502_927WY&utm_source=referral_entrance",
+        mexc: "https://www.mexc.com/acquisition/custom-sign-up?shareCode=mexc-2jSch"
+    };
+
     var EXCHANGES = {
         upbit: {
             name: "업비트",
@@ -1444,6 +1459,28 @@
         });
     }
 
+    /**
+     * 레퍼럴 배너를 채운다.
+     * 링크가 비어 있는 거래소 카드는 숨기고, 둘 다 비면 배너 자체를 감춘다.
+     */
+    function syncReferral() {
+        var lane = $("reflane");
+        if (!lane) return;
+        var 살아있는거 = 0;
+        [["ref-binance", REFERRAL.binance], ["ref-mexc", REFERRAL.mexc]].forEach(function (p) {
+            var el = $(p[0]);
+            if (!el) return;
+            if (p[1]) {
+                el.href = p[1];
+                el.style.display = "";
+                살아있는거++;
+            } else {
+                el.style.display = "none";
+            }
+        });
+        lane.style.display = 살아있는거 ? "" : "none";
+    }
+
     function syncApiHint() {
         var el = $("apiHint");
         if (el) el.textContent = ex().name + " 공개 API · 무인증 · 200봉";
@@ -1540,6 +1577,7 @@
 
         syncTfButtons();
         syncApiHint();
+        syncReferral();
         loadMarkets().then(run).catch(function (e) {
             $("out").innerHTML = '<div class="err">마켓 목록을 불러오지 못했습니다: ' + esc(e.message) + "</div>";
         });
