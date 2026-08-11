@@ -255,6 +255,44 @@
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
+    var maSeries = {};   // 이동평균선. 봉을 바꿔도 재사용한다
+
+    /**
+     * 차트 팔레트 — 밝은 배경.
+     *
+     * 페이지는 딥 네이비 다크지만 차트만 밝게 간다. 캔들·이동평균·레벨선이
+     * 한 화면에 열몇 개씩 겹치는데, 어두운 바탕에서는 선 색이 서로 묻힌다.
+     * 흰 바탕이면 같은 색이라도 구분이 확실히 된다(사용자 요청 레퍼런스 기준).
+     */
+    var CHART = {
+        bg: "#ffffff",
+        text: "#3f4a5a",
+        grid: "rgba(120,134,158,.14)",
+        border: "#d4dae4",
+        up: "#26a69a",          // 상승 캔들 — 청록
+        down: "#ef5350",        // 하락 캔들 — 빨강
+        // 이동평균 (바이낸스 기본 색)
+        ma: [
+            { n: 7,  color: "#f0b90b", label: "MA(7)" },
+            { n: 25, color: "#1e5eff", label: "MA(25)" },
+            { n: 99, color: "#c026d3", label: "MA(99)" }
+        ],
+        // 레벨선. 강도가 셀수록 진하고 두껍다.
+        res: ["#8b0000", "#d32f2f", "#f06292"],   // 3차·2차·1차 저항
+        sup: ["#0277bd", "#29b6f6", "#81d4fa"],   // 3차·2차·1차 지지
+        floor: "#ff9800"
+    };
+
+    /** 단순이동평균. 앞쪽 n-1개는 값이 없어 건너뛴다. */
+    function sma(candles, n) {
+        var out = [], sum = 0;
+        for (var i = 0; i < candles.length; i++) {
+            sum += candles[i].c;
+            if (i >= n) sum -= candles[i - n].c;
+            if (i >= n - 1) out.push({ time: candles[i].time, value: sum / n });
+        }
+        return out;
+    }
 
     var $ = function (id) { return document.getElementById(id); };
 
@@ -615,9 +653,12 @@
         }));
         if (volumeSeries) {
             volumeSeries.setData(candles.map(function (c) {
-                return { time: c.time, value: c.v, color: c.c >= c.o ? "rgba(14,203,129,.34)" : "rgba(246,70,93,.34)" };
+                return { time: c.time, value: c.v, color: c.c >= c.o ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" };
             }));
         }
+        CHART.ma.forEach(function (m) {
+            if (maSeries[m.n]) maSeries[m.n].setData(sma(candles, m.n));
+        });
         drawLevelLines(levels, dp);
         updateLegend(candles[candles.length - 1]);
         return true;   // 보고 있던 확대/스크롤 위치는 건드리지 않는다
@@ -639,20 +680,20 @@
             height: host.clientHeight,
             autoSize: true,
             layout: {
-                background: { type: "solid", color: C("--surface-lowest", "#060e20") },
-                textColor: C("--on-variant", "#9aa3bd"),
+                background: { type: "solid", color: CHART.bg },
+                textColor: CHART.text,
                 fontFamily: "Inter, sans-serif", fontSize: 11
             },
             grid: {
-                vertLines: { color: "rgba(42,51,80,.45)" },
-                horzLines: { color: "rgba(42,51,80,.45)" }
+                vertLines: { color: CHART.grid },
+                horzLines: { color: CHART.grid }
             },
-            rightPriceScale: { borderColor: C("--outline", "#2a3350"), scaleMargins: { top: .08, bottom: .26 } },
-            timeScale: { borderColor: C("--outline", "#2a3350"), timeVisible: true, secondsVisible: false },
+            rightPriceScale: { borderColor: CHART.border, scaleMargins: { top: .08, bottom: .26 } },
+            timeScale: { borderColor: CHART.border, timeVisible: true, secondsVisible: false },
             crosshair: {
                 mode: LightweightCharts.CrosshairMode.Normal,
-                vertLine: { color: "rgba(154,163,189,.4)", width: 1, style: 3, labelBackgroundColor: C("--surface-high", "#222a3d") },
-                horzLine: { color: "rgba(154,163,189,.4)", width: 1, style: 3, labelBackgroundColor: C("--surface-high", "#222a3d") }
+                vertLine: { color: "rgba(63,74,90,.45)", width: 1, style: 3, labelBackgroundColor: "#3f4a5a" },
+                horzLine: { color: "rgba(63,74,90,.45)", width: 1, style: 3, labelBackgroundColor: "#3f4a5a" }
             },
             localization: {
                 locale: "ko-KR",
@@ -677,23 +718,38 @@
         window.차트 = chart;   // 디버깅·외부 제어용
 
         candleSeries = chart.addCandlestickSeries({
-            upColor: C("--up", "#0ecb81"), downColor: C("--down", "#f6465d"),
-            borderUpColor: C("--up", "#0ecb81"), borderDownColor: C("--down", "#f6465d"),
-            wickUpColor: C("--up", "#0ecb81"), wickDownColor: C("--down", "#f6465d"),
+            upColor: CHART.up, downColor: CHART.down,
+            borderUpColor: CHART.up, borderDownColor: CHART.down,
+            wickUpColor: CHART.up, wickDownColor: CHART.down,
             priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) }
         });
         candleSeries.setData(candles.map(function (c) {
             return { time: c.time, open: c.o, high: c.h, low: c.l, close: c.c };
         }));
 
+        // 이동평균. 캔들 위에 얹어야 가려지지 않는다.
+        maSeries = {};
+        CHART.ma.forEach(function (m) {
+            if (candles.length < m.n) return;   // 봉이 모자라면 아예 안 그린다
+            var ls = chart.addLineSeries({
+                color: m.color, lineWidth: 1.5,
+                priceLineVisible: false, lastValueVisible: true,
+                crosshairMarkerVisible: false,
+                title: m.label,
+                priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) }
+            });
+            ls.setData(sma(candles, m.n));
+            maSeries[m.n] = ls;
+        });
+
         volumeSeries = chart.addHistogramSeries({
             priceFormat: { type: "volume" },
             priceScaleId: "vol",
-            color: "rgba(99,102,241,.4)"
+            color: "rgba(38,166,154,.4)"
         });
         chart.priceScale("vol").applyOptions({ scaleMargins: { top: .82, bottom: 0 } });
         volumeSeries.setData(candles.map(function (c) {
-            return { time: c.time, value: c.v, color: c.c >= c.o ? "rgba(14,203,129,.34)" : "rgba(246,70,93,.34)" };
+            return { time: c.time, value: c.v, color: c.c >= c.o ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" };
         }));
 
         drawLevelLines(levels, dp);
@@ -719,32 +775,44 @@
         priceLines.forEach(function (l) { try { candleSeries.removePriceLine(l); } catch (e) {} });
         priceLines = [];
 
-        function add(price, rank, label, kind) {
-            var isRes = kind === "res";
-            var base = isRes ? "246,70,93" : kind === "sup" ? "14,203,129" : "224,180,74";
-            var alpha = rank >= 4 ? .92 : rank === 3 ? .74 : rank === 2 ? .56 : .34;
+        /**
+         * 레벨선.
+         * 밝은 배경에서는 투명도로 강약을 주면 흐려서 안 보인다.
+         * 색 자체를 단계로 나눈다 — 가까운 벽일수록 진하고 두껍게.
+         */
+        function add(price, 순번, rank, label, kind) {
+            var 팔레트 = kind === "res" ? CHART.res : kind === "sup" ? CHART.sup : null;
+            var color = 팔레트 ? 팔레트[Math.min(순번, 팔레트.length - 1)] : CHART.floor;
+            // 3개 봉 이상이 지목한 벽은 굵은 실선, 나머지는 얇은 파선
             var width = rank >= 4 ? 2 : rank === 3 ? 2 : 1;
             try {
                 priceLines.push(candleSeries.createPriceLine({
                     price: price,
-                    color: "rgba(" + base + "," + alpha + ")",
+                    color: color,
                     lineWidth: width,
-                    lineStyle: rank >= 3 ? 0 : 2,      // 3중 이상 실선, 그 아래 파선
+                    lineStyle: rank >= 3 ? 0 : 2,
                     axisLabelVisible: true,
                     title: label
                 }));
             } catch (e) {}
         }
 
-        (lv.resistance || []).slice(0, 5).forEach(function (x) {
-            add(x.price, x.strength.rank, x.tfCount >= 2 ? "저항 " + x.tfCount + "봉" : "저항", "res");
+        // 가까운 순으로 1차·2차·3차. 스크린샷의 "1차 저항선 / 2차 저항선 / 3차 강력 저항선" 표기를 따른다.
+        var 차수 = ["1차", "2차", "3차"];
+        (lv.resistance || []).slice(0, 5).forEach(function (x, i) {
+            var 이름 = i < 3 ? 차수[i] + " 저항" : "저항";
+            if (i === 2) 이름 = "★3차 강력 저항";
+            add(x.price, i, x.strength.rank, 이름 + (x.tfCount >= 2 ? " " + x.tfCount + "봉" : ""), "res");
         });
-        (lv.support || []).slice(0, 5).forEach(function (x) {
-            add(x.price, x.strength.rank, x.tfCount >= 2 ? "지지 " + x.tfCount + "봉" : "지지", "sup");
+        (lv.support || []).slice(0, 5).forEach(function (x, i) {
+            var 이름 = i < 3 ? 차수[i] + " 지지" : "지지";
+            if (i === 2) 이름 = "★3차 강력 지지";
+            add(x.price, i, x.strength.rank, 이름 + (x.tfCount >= 2 ? " " + x.tfCount + "봉" : ""), "sup");
         });
-        if (lv.마지노선) add(lv.마지노선.price, 4, "마지노선 " + lv.마지노선.tf, "floor");
+        if (lv.마지노선) add(lv.마지노선.price, 0, 4, "마지노선 " + lv.마지노선.tf, "floor");
     }
 
+    /** 범례. 밝은 차트 위에 얹히므로 배경도 밝게 간다. */
     function updateLegend(c) {
         var el = $("legend");
         if (!el || !c) return;
@@ -1212,9 +1280,12 @@
             + '<div id="chart"></div><div class="chart-legend" id="legend"></div>'
             + "</div>"
             + '<div class="chart-note">'
-            + '<span class="swatch"><i class="sw" style="background:rgba(246,70,93,.9)"></i> 저항</span>'
-            + '<span class="swatch"><i class="sw" style="background:rgba(14,203,129,.9)"></i> 지지</span>'
-            + '<span class="swatch"><i class="sw" style="background:rgba(224,180,74,.9)"></i> 마지노선</span>'
+            + '<span class="swatch"><i class="sw" style="background:' + CHART.res[0] + '"></i> 저항</span>'
+            + '<span class="swatch"><i class="sw" style="background:' + CHART.sup[0] + '"></i> 지지</span>'
+            + '<span class="swatch"><i class="sw" style="background:' + CHART.floor + '"></i> 마지노선</span>'
+            + '<span class="swatch">' + CHART.ma.map(function (m) {
+                return '<i class="sw" style="background:' + m.color + '"></i> ' + m.label;
+              }).join(" ") + "</span>"
             + '<span class="dim">실선 = 3개 봉 이상이 지목 · 파선 = 1~2개. 선이 굵을수록 두꺼운 벽</span>'
             + '<span class="dim">확대: Ctrl+휠 · 드래그로 이동 · 더블클릭 전체</span>'
             + "</div></div></section>";

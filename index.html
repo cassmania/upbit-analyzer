@@ -259,20 +259,26 @@ h2{font-family:var(--font-h);font-size:20px;font-weight:600;letter-spacing:-.012
 .zoom-bar .fs-btn.on{background:var(--down);border-color:var(--down);color:#fff}
 
 
-.chart-shell{position:relative;height:440px;background:var(--surface-lowest)}
+/* 차트만 밝은 배경이다. 캔들·이평·레벨선이 열몇 개씩 겹치는데
+   어두운 바탕에서는 선끼리 묻혀서 구분이 안 된다. */
+.chart-shell{position:relative;height:440px;background:#ffffff}
 #chart{position:absolute;inset:0;cursor:crosshair}
 .chart-legend{
   position:absolute;top:12px;left:14px;z-index:5;pointer-events:none;
   font-size:11.5px;line-height:1.85;font-variant-numeric:tabular-nums;
-  background:rgba(6,14,32,.74);backdrop-filter:blur(8px);
-  border:1px solid var(--outline);border-radius:var(--r-sm);padding:8px 11px;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(8px);color:#2b3444;
+  border:1px solid #d4dae4;border-radius:var(--r-sm);padding:8px 11px;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
 }
+.chart-legend .lg-row span:first-child{color:#6b7688}
+.chart-legend b{color:#1a2233}
 .chart-legend b{font-family:var(--font-h)}
 .lg-row{display:flex;gap:9px}
 .lg-row span:first-child{color:var(--on-variant);min-width:34px}
 .chart-note{
   padding:10px 20px;border-top:1px solid var(--outline);
   font-size:11.5px;color:var(--on-variant);display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  background:var(--surface-low);
 }
 .swatch{display:inline-flex;align-items:center;gap:6px}
 .sw{width:15px;height:2px;border-radius:2px}
@@ -469,6 +475,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=3.3.0" charset="utf-8"></script>
+<script src="app.js?v=3.4.0" charset="utf-8"></script>
 </body>
 </html>
