@@ -45,6 +45,19 @@
             quote: "USDT",
             // 바이낸스 봉 표기. 8h·12h가 네이티브라 합성이 필요 없다.
             iv: { "1h": "1h", "4h": "4h", "8h": "8h", "12h": "12h", "1d": "1d", "1w": "1w", "1M": "1M" }
+        },
+        mexc: {
+            name: "MEXC",
+            kind: "binance",          // 바이낸스 호환 API — 같은 어댑터를 쓴다
+            rest: "https://api.mexc.com/api/v3/",
+            ws: null,                 // Protobuf만 제공. 아래 주석 참고
+            proxy: "/api/mexc",       // CORS 차단 -> 프록시 필요
+            hasYear: false,
+            quote: "USDT",
+            // MEXC 봉 표기는 바이낸스와 다르다(실측): 1h가 아니라 60m, 1w가 아니라 1W.
+            // 12시간봉은 아예 없어서 4h를 3개 묶는다.
+            iv: { "1h": "60m", "4h": "4h", "8h": "8h", "1d": "1d", "1w": "1W", "1M": "1M" },
+            group: { "12h": { from: "4h", n: 3 } }
         }
     };
 
@@ -56,6 +69,8 @@
 
     function apiUrl(path, params) {
         var e = ex();
+        // localhost엔 서버리스 함수가 없어 프록시를 못 쓴다.
+        // MEXC는 CORS도 막혀 있어 로컬에서는 조회가 실패한다(배포본에서만 동작).
         var 프록시 = e.proxy && !LOCAL;
         var sp = new URLSearchParams();
         if (프록시) sp.set("path", path);
@@ -74,6 +89,9 @@
         var e = ex();
         return TFS.filter(function (t) {
             if (t.key === "1y" && !e.hasYear) return false;
+            // 바이낸스 계열은 iv 표에 없는 봉을 못 받는다.
+            // MEXC엔 12시간봉이 없지만 group으로 합성하므로 살려둔다.
+            if (e.iv && !e.iv[t.key] && !(e.group && e.group[t.key])) return false;
             return true;
         });
     }
@@ -82,15 +100,21 @@
     function directTfs() {
         var e = ex();
         if (e.kind === "binance") {
-            // 바이낸스는 전 봉이 네이티브다. 합성 대상이 없다.
-            return activeTfs().filter(function (t) { return e.iv[t.key]; });
+            return activeTfs().filter(function (t) { return e.iv && e.iv[t.key]; });
         }
         return activeTfs().filter(function (t) { return t.path; });
     }
 
     /** 합성이 필요한 봉 (업비트/빗썸의 8h·12h) */
     function groupedTfs() {
-        if (ex().kind === "binance") return [];
+        var e = ex();
+        if (e.kind === "binance") {
+            // 바이낸스는 전 봉 네이티브라 비어 있고, MEXC는 12시간봉만 합성한다.
+            if (!e.group) return [];
+            return Object.keys(e.group).map(function (k) {
+                return { key: k, from: e.group[k].from, group: e.group[k].n };
+            });
+        }
         return activeTfs().filter(function (t) { return t.group; });
     }
 
@@ -112,7 +136,7 @@
     function bnKlines(market, tfKey, count) {
         var iv = ex().iv[tfKey];
         if (!iv) return Promise.resolve([]);
-        var u = ex().rest + "klines?symbol=" + bnSymbol(market) + "&interval=" + iv + "&limit=" + count;
+        var u = apiUrl("klines", { symbol: bnSymbol(market), interval: iv, limit: count });
         return getJSON(u).then(function (raw) {
             if (!Array.isArray(raw)) return [];
             // 바이낸스는 오래된 것부터 준다. 업비트는 최신순이라 toCandles가 뒤집는데,
@@ -130,7 +154,7 @@
 
     /** 바이낸스 24hr ticker -> 업비트 ticker 형태 */
     function bnTicker(market) {
-        return getJSON(ex().rest + "ticker/24hr?symbol=" + bnSymbol(market)).then(function (d) {
+        return getJSON(apiUrl("ticker/24hr", { symbol: bnSymbol(market) })).then(function (d) {
             var chg = parseFloat(d.priceChangePercent) / 100;
             return {
                 market: market,
@@ -148,9 +172,13 @@
 
     /** 바이낸스 USDT 마켓 목록 -> 업비트 market/all 형태 */
     function bnMarkets() {
-        return getJSON(ex().rest + "exchangeInfo").then(function (d) {
+        return getJSON(apiUrl("exchangeInfo", {})).then(function (d) {
             return (d.symbols || [])
-                .filter(function (x) { return x.quoteAsset === "USDT" && x.status === "TRADING"; })
+                // 거래중 표기가 다르다: 바이낸스 "TRADING", MEXC "1"
+                .filter(function (x) {
+                    return x.quoteAsset === "USDT"
+                        && (x.status === "TRADING" || x.status === "1" || x.status === "ENABLED");
+                })
                 .map(function (x) {
                     return {
                         market: "USDT-" + x.baseAsset,
@@ -349,7 +377,7 @@
         return Promise.all(calls).then(function (r) {
             var tf = {};
             direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
-            // 합성봉(업비트·빗썸의 8h·12h). 바이낸스는 네이티브라 목록이 비어 있다.
+            // 합성봉(업비트·빗썸의 8h·12h, MEXC의 12h). 바이낸스는 네이티브라 목록이 비어 있다.
             groupedTfs().forEach(function (t) {
                 tf[t.key] = groupCandles(tf[t.from] || [], t.group);
             });
@@ -426,6 +454,15 @@
     function connectWS(market) {
         closeWS();
         var e = ex();
+
+        // MEXC는 WebSocket을 Protobuf로만 준다(구 JSON 채널은 "Blocked!"로 차단됨, 실측).
+        // 스키마 파일과 디코더 라이브러리가 필요해 외부 의존성 없이는 붙일 수 없다.
+        // 실시간 대신 자동갱신(폴링)으로 대체하고 그 사실을 화면에 밝힌다.
+        if (!e.ws) {
+            setWsState(false, "폴링");
+            return;
+        }
+
         var 바이낸스 = e.kind === "binance";
         var ws;
         // 바이낸스는 구독 메시지 없이 URL에 스트림을 박는다(btcusdt@ticker).
@@ -485,7 +522,8 @@
     function setWsState(on, txt) {
         state.wsAlive = on;
         var d = $("wsdot"), t = $("wstxt");
-        if (d) d.className = "dot" + (on ? " on" : "");
+        // 폴링은 실시간(초록)과 끊김(회색) 어느 쪽도 아니다. 노란 점으로 구분한다.
+        if (d) d.className = "dot" + (on ? " on" : txt === "폴링" ? " poll" : "");
         if (t) t.textContent = txt;
     }
 
@@ -1293,9 +1331,15 @@
                 connectWS(market);
             })
             .catch(function (e) {
+                // 실패해도 상태 표시는 맞춰둔다. WebSocket이 없는 거래소는 "폴링"이다.
+                setWsState(false, ex().ws ? "연결 대기" : "폴링");
                 $("out").innerHTML = '<div class="err"><b>데이터를 불러오지 못했습니다.</b><br>'
                     + esc(e && e.message ? e.message : String(e))
-                    + '<div class="dim" style="margin-top:8px;font-size:12.5px">' + ex().name + ' API 호출 제한(초당 10회)에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.</div></div>';
+                    + '<div class="dim" style="margin-top:8px;font-size:12.5px">'
+                    + (ex().proxy && LOCAL
+                        ? ex().name + '은(는) CORS 차단 때문에 서버리스 프록시가 필요합니다. 로컬(localhost)에서는 조회되지 않고 배포본에서만 동작합니다.'
+                        : ex().name + ' API 호출 제한에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.')
+                    + '</div></div>';
             })
             .then(function () { state.busy = false; $("run").disabled = false; });
     }

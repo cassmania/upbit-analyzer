@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>코인 분석 — 업비트·빗썸·바이낸스 실시간 차트 · 지지저항</title>
-<meta name="description" content="업비트·빗썸·바이낸스 실시간 차트와 다중 타임프레임 지지·저항 분석">
+<title>코인 분석 — 업비트·빗썸·바이낸스·MEXC 차트 · 지지저항</title>
+<meta name="description" content="업비트·빗썸·바이낸스·MEXC 실시간 차트와 다중 타임프레임 지지·저항 분석">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -70,6 +70,7 @@ body{
 .live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--on-variant);white-space:nowrap}
 .dot{width:7px;height:7px;border-radius:99px;background:var(--outline-strong)}
 .dot.on{background:var(--up);box-shadow:0 0 0 0 rgba(14,203,129,.6);animation:pulse 2s infinite}
+.dot.poll{background:var(--warn)}
 @keyframes pulse{
   70%{box-shadow:0 0 0 7px rgba(14,203,129,0)}
   100%{box-shadow:0 0 0 0 rgba(14,203,129,0)}
@@ -120,10 +121,10 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .hint{font-size:12px;color:var(--on-variant)}
 
 /* 거래소 전환 — 봉 버튼과 헷갈리지 않게 액센트 색을 쓴다 */
-.exbar{display:inline-flex;border:1px solid var(--outline-strong);border-radius:var(--r-sm);overflow:hidden}
+.exbar{display:inline-flex;flex-wrap:wrap;border:1px solid var(--outline-strong);border-radius:var(--r-sm);overflow:hidden}
 .exbar button{
   background:transparent;border:0;color:var(--on-variant);
-  padding:8px 16px;cursor:pointer;font-weight:700;font-size:13px;
+  padding:8px 13px;cursor:pointer;font-weight:700;font-size:13px;
   font-family:var(--font-h);transition:all .16s;
 }
 .exbar button+button{border-left:1px solid var(--outline-strong)}
@@ -326,7 +327,7 @@ footer b{color:#c9d2ee}
 <header class="hero">
   <div class="wrap">
     <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
-    <h1>업비트 · 빗썸 · 바이낸스<br>실시간 차트 분석</h1>
+    <h1>업비트 · 빗썸 · 바이낸스 · MEXC<br>실시간 차트 분석</h1>
     <p class="lede">
       1시간부터 월봉까지 여러 봉을 함께 계산해, 같은 가격대를 동시에
       지목하는 봉이 많을수록 두꺼운 벽으로 표시합니다.
@@ -340,6 +341,7 @@ footer b{color:#c9d2ee}
       <button type="button" data-ex="upbit" class="act">업비트</button>
       <button type="button" data-ex="bithumb">빗썸</button>
       <button type="button" data-ex="binance">바이낸스</button>
+      <button type="button" data-ex="mexc">MEXC</button>
     </span>
     <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
     <select id="market"></select>
@@ -395,6 +397,6 @@ footer b{color:#c9d2ee}
 
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=3.1.3" charset="utf-8"></script>
+<script src="app.js?v=3.2.1" charset="utf-8"></script>
 </body>
 </html>
