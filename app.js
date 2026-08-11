@@ -944,6 +944,9 @@
         window.레벨결과 = lv;
         window.타점결과 = sig;
 
+        // 히어로 자리(설명 문구가 있던 곳)에도 타점을 띄운다.
+        renderHeroSignal(sym, sig, dp);
+
         // 알림은 렌더 뒤에 돌린다. 화면과 알림 내용이 어긋나면 안 된다.
         checkSignalAlerts(market, sig, dp);
     }
@@ -1519,6 +1522,62 @@
             + '<div class="card card-pad">' + L.join("")
             + '<div class="warn">지표에서 기계적으로 계산한 값입니다. 규칙이 틀리면 결과도 틀립니다. '
             + "손절을 반드시 함께 쓰고, 이 화면만 보고 매매하지 마세요.</div></div></section>";
+    }
+
+    /**
+     * 히어로(화면 최상단) 자리의 타점 알림.
+     *
+     * 분석 전에는 서비스 설명이 있던 자리다. 분석하면 그 자리를 타점이 차지한다.
+     * 스크롤 없이 바로 보이는 위치라, 여기 있는 내용이 가장 먼저 읽힌다.
+     * 그래서 진입가·손절·목표만 굵게 넣고 근거는 작게 붙인다.
+     */
+    function renderHeroSignal(sym, sig, dp) {
+        var el = $("heroSignal");
+        if (!el) return;
+        el.classList.add("sig");
+
+        if (!sig || sig.error) {
+            el.innerHTML = '<div class="hsig none"><span class="ico">—</span><div>'
+                + esc(sig ? sig.error : "분석 데이터 없음") + "</div></div>";
+            return;
+        }
+
+        var H = [];
+
+        if (sig.entry) {
+            var e = sig.entry;
+            var 롱 = e.side === "LONG";
+            H.push('<div class="hsig ' + (롱 ? "long" : "short") + '">'
+                + '<span class="ico">' + (롱 ? "▲" : "▼") + "</span><div>"
+                + "<b>" + esc(sym) + " " + (롱 ? "롱" : "숏") + " 진입 "
+                + '<span class="nums">' + fmt(e.entry, dp) + "</span></b>"
+                + ' <span class="nums">· 손절 ' + fmt(e.stop, dp)
+                + " · 목표 " + fmt(e.target1, dp)
+                + (e.target2 ? " → " + fmt(e.target2, dp) : "")
+                + " · " + e.rr.toFixed(2) + "R</span>"
+                + '<span class="sub">' + esc(e.기준벽.reason || "") + "</span>"
+                + "</div></div>");
+        } else if (sig.blocked) {
+            H.push('<div class="hsig none"><span class="ico">—</span><div>'
+                + "<b>" + esc(sym) + " 진입 신호 없음</b>"
+                + '<span class="sub">' + esc(sig.blocked) + "</span>"
+                + "</div></div>");
+        }
+
+        // 청산 신호는 포지션을 들고 있는 사람에게 더 급한 정보라 진입 아래 붙인다.
+        ["long", "short"].forEach(function (k) {
+            (sig.exits[k] || []).forEach(function (x) {
+                var 긴급 = x.level === "긴급";
+                H.push('<div class="hsig ' + (긴급 ? "urgent" : "warn-x") + '">'
+                    + '<span class="ico">' + (긴급 ? "!" : "·") + "</span><div>"
+                    + "<b>" + (k === "long" ? "롱" : "숏") + " 청산 · " + esc(x.level) + "</b> "
+                    + esc(x.text)
+                    + (isFinite(x.price) ? ' <span class="nums">' + fmt(x.price, dp) + "</span>" : "")
+                    + "</div></div>");
+            });
+        });
+
+        el.innerHTML = H.join("");
     }
 
     // ---------------------------------------------------------------- 타점 알림

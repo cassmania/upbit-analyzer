@@ -88,6 +88,26 @@ h1{
 }
 .lede{font-size:17px;line-height:1.7;color:var(--on-variant);max-width:620px;margin:0}
 
+/* 히어로 자리의 타점 알림. 설명 문구를 대체하므로 폭·여백을 lede와 맞춘다. */
+#heroSignal.sig{max-width:760px}
+.hsig{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 16px;border-radius:var(--r-md);
+  background:var(--surface-low);border:1px solid var(--outline);
+  font-size:15px;line-height:1.55;color:var(--on-surface);
+}
+.hsig+.hsig{margin-top:8px}
+.hsig .ico{font-size:15px;line-height:1.55;flex:none}
+.hsig b{font-family:var(--font-h)}
+.hsig .sub{display:block;margin-top:3px;font-size:13px;color:var(--on-variant)}
+/* 방향에 따라 왼쪽 테두리만 물들인다. 카드 전체를 칠하면 히어로가 시끄러워진다 */
+.hsig.long{border-left:3px solid var(--down)}
+.hsig.short{border-left:3px solid var(--up)}
+.hsig.warn-x{border-left:3px solid var(--gold)}
+.hsig.urgent{border-left:3px solid var(--down)}
+.hsig.none{border-left:3px solid var(--outline-strong);color:var(--on-variant)}
+.hsig .nums{font-variant-numeric:tabular-nums}
+
 /* ---------- 컨트롤 ---------- */
 .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:22px 0}
 input,select,button{font:inherit;font-size:14px}
@@ -384,10 +404,12 @@ footer b{color:#c9d2ee}
   <div class="wrap">
     <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
     <h1>업비트 · 빗썸 · 바이낸스 · MEXC<br>실시간 차트 분석</h1>
-    <p class="lede">
+    <!-- 분석 전에는 설명, 분석 후에는 그 자리에 타점 알림을 띄운다.
+         화면 맨 위라 스크롤 없이 바로 보이는 자리다. -->
+    <div id="heroSignal" class="lede">
       1시간부터 월봉까지 여러 봉을 함께 계산해, 같은 가격대를 동시에
       지목하는 봉이 많을수록 두꺼운 벽으로 표시합니다.
-    </p>
+    </div>
   </div>
 </header>
 
@@ -477,6 +499,6 @@ footer b{color:#c9d2ee}
 <script src="ta_engine.js?v=1.0.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.1.0" charset="utf-8"></script>
 <script src="signal_engine.js?v=1.0.2" charset="utf-8"></script>
-<script src="app.js?v=3.5.1" charset="utf-8"></script>
+<script src="app.js?v=3.6.0" charset="utf-8"></script>
 </body>
 </html>
