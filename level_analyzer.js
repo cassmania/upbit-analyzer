@@ -308,7 +308,7 @@
     }
 
     var LevelEngine = {
-        VERSION: "1.0.0",
+        VERSION: "1.1.0",
         TF_WEIGHT: TF_WEIGHT,
         KIND_WEIGHT: KIND_WEIGHT,
         vpvr: vpvr,
