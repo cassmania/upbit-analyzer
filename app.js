@@ -248,6 +248,7 @@
         exchange: "upbit",
         markets: [], sel: "KRW-BTC", chartTf: "4h",
         timer: null, busy: false, auto: false,
+        alertOn: false, lastSignalKey: null, signal: null,
         ws: null, wsAlive: false,
         tfCandles: null, levels: null, dp: 0, lastPrice: 0,
         usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
@@ -903,6 +904,12 @@
         var lv = LevelEngine.analyze(conv, price, { limit: 7 });
         state.levels = lv;
 
+        // 타점 산출. 지표·레벨이 다 나온 뒤라야 계산할 수 있다.
+        var sig = typeof SignalEngine !== "undefined"
+            ? SignalEngine.analyze(results, lv, price, fut)
+            : { error: "signal_engine.js가 로드되지 않았습니다." };
+        state.signal = sig;
+
         // 같은 종목·같은 봉을 다시 그릴 때는 DOM을 통째로 갈아끼우지 않는다.
         // innerHTML 교체 + 차트 재생성이 자동갱신마다 화면을 깜빡이게 만든다.
         var sameView = state.renderedFor === market && $("chart") && chart;
@@ -912,6 +919,7 @@
             replaceSection("sec-quotes", renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
             replaceSection("sec-summary", renderSummary(results));
             replaceSection("sec-levels", renderLevels(lv, dp));
+            replaceSection("sec-signal", renderSignal(sig, dp));
             replaceSection("sec-detail", renderDetail(results, dp));
             replaceSection("sec-scenario", renderScenario(lv, dp));
             if (!updateChartData(data.tf[state.chartTf], lv, dp)) {
@@ -923,6 +931,7 @@
             html.push(renderChartSection(sym));
             html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
             html.push('<div id="sec-levels">' + renderLevels(lv, dp) + "</div>");
+            html.push(renderSignal(sig, dp));
             html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
             html.push('<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>");
             $("out").innerHTML = html.join("");
@@ -933,6 +942,10 @@
 
         window.분석결과 = { market: market, results: results, ticker: t, futures: fut };
         window.레벨결과 = lv;
+        window.타점결과 = sig;
+
+        // 알림은 렌더 뒤에 돌린다. 화면과 알림 내용이 어긋나면 안 된다.
+        checkSignalAlerts(market, sig, dp);
     }
 
     /**
@@ -1429,6 +1442,181 @@
         return '<section><div class="sec-head"><h2>지표 상세</h2></div><div class="grid2">' + blocks + "</div></section>";
     }
 
+    /**
+     * 타점 패널.
+     *
+     * 진입 신호가 없을 때 빈 화면을 두지 않고 **왜 없는지**를 쓴다.
+     * "지금은 신호 없음"이 정상 출력이고, 그 이유가 보여야 사용자가 판단할 수 있다.
+     */
+    function renderSignal(sig, dp) {
+        if (!sig || sig.error) {
+            return '<section id="sec-signal"><div class="sec-head"><h2>롱·숏 타점</h2></div>'
+                + '<div class="card card-pad"><div class="dim">' + esc(sig ? sig.error : "데이터 없음")
+                + "</div></div></section>";
+        }
+
+        var L = [];
+        var 방향 = sig.방향;
+
+        // 방향 요약
+        var dirTxt = 방향.dir === "LONG" ? '<b class="down">롱 우위</b>'
+            : 방향.dir === "SHORT" ? '<b class="up">숏 우위</b>'
+            : '<b class="dim">방향성 부족</b>';
+        L.push('<div class="scn"><span class="scn-i">◆</span><div>' + dirTxt
+            + ' · 상위봉 평균 수렴 ' + (방향.avg >= 0 ? "+" : "") + 방향.avg + "%"
+            + ' <span class="dim">(' + 방향.tfs.map(function (x) {
+                return x.tf + " " + (x.net >= 0 ? "+" : "") + x.net + "%";
+            }).join(" · ") + " · 일치율 " + 방향.agree + "%)</span></div></div>");
+
+        if (sig.entry) {
+            var e = sig.entry;
+            var 롱 = e.side === "LONG";
+            var cls = 롱 ? "down" : "up";
+            L.push('<div class="scn"><span class="scn-i ' + cls + '">' + (롱 ? "▲" : "▼") + "</span><div>"
+                + '<b class="' + cls + '">' + (롱 ? "롱" : "숏") + " 진입 " + fmt(e.entry, dp) + "</b>"
+                + " · 손절 <b>" + fmt(e.stop, dp) + "</b>"
+                + " · 목표 <b>" + fmt(e.target1, dp) + "</b>"
+                + (e.target2 ? " → " + fmt(e.target2, dp) : "")
+                + ' <span class="dim">(손익비 ' + e.rr.toFixed(2) + "R)</span>"
+                + '<div class="dim" style="margin-top:4px">기준 ' + (롱 ? "지지" : "저항") + " "
+                + fmt(e.기준벽.price, dp) + " · " + esc(e.기준벽.reason || "")
+                + "</div></div></div>");
+            L.push('<div class="scn"><span class="scn-i" style="color:var(--gold)">■</span>'
+                + '<div class="dim">무효화: ' + fmt(e.stop, dp) + " 이탈 시 이 계획은 폐기됩니다.</div></div>");
+        } else if (sig.blocked) {
+            L.push('<div class="scn"><span class="scn-i dim">—</span><div><b>진입 신호 없음</b> · '
+                + esc(sig.blocked) + "</div></div>");
+            // 기각된 계획도 참고로 보여준다. 그 자리까지 오면 유효해질 수 있다.
+            if (sig.rejected) {
+                var r = sig.rejected;
+                L.push('<div class="scn"><span class="scn-i dim">·</span><div class="dim">참고 계획: '
+                    + (r.side === "LONG" ? "롱" : "숏") + " 진입 " + fmt(r.entry, dp)
+                    + " · 손절 " + fmt(r.stop, dp) + " · 목표 " + fmt(r.target1, dp)
+                    + " (" + r.rr.toFixed(2) + "R)</div></div>");
+            }
+        }
+
+        // 청산 신호
+        var 청산 = [];
+        ["long", "short"].forEach(function (k) {
+            (sig.exits[k] || []).forEach(function (x) {
+                청산.push({ side: k, level: x.level, text: x.text, price: x.price });
+            });
+        });
+        if (청산.length) {
+            청산.forEach(function (x) {
+                var 색 = x.level === "긴급" ? "var(--red)" : "var(--gold)";
+                L.push('<div class="scn"><span class="scn-i" style="color:' + 색 + '">!</span><div>'
+                    + '<b style="color:' + 색 + '">' + (x.side === "long" ? "롱" : "숏") + " 청산 · " + x.level + "</b> — "
+                    + esc(x.text)
+                    + (isFinite(x.price) ? " <b>" + fmt(x.price, dp) + "</b>" : "")
+                    + "</div></div>");
+            });
+        }
+
+        return '<section id="sec-signal"><div class="sec-head"><h2>롱·숏 타점</h2>'
+            + '<span class="dim" style="font-size:12.5px">규칙 기반 산출 · 예측 아님</span></div>'
+            + '<div class="card card-pad">' + L.join("")
+            + '<div class="warn">지표에서 기계적으로 계산한 값입니다. 규칙이 틀리면 결과도 틀립니다. '
+            + "손절을 반드시 함께 쓰고, 이 화면만 보고 매매하지 마세요.</div></div></section>";
+    }
+
+    // ---------------------------------------------------------------- 타점 알림
+
+    /**
+     * 신호가 **새로 생겼을 때만** 알린다.
+     *
+     * 자동갱신이 10초마다 도는데 조건이 유지되는 동안 계속 알리면
+     * 알림이 무의미해지고 사용자가 꺼버린다. 그래서 신호의 정체성을
+     * 문자열 키로 만들어, 직전과 같으면 건너뛴다.
+     *
+     * 키에 진입가를 넣는 이유: 같은 롱이라도 기준 벽이 바뀌면 다른 계획이다.
+     * 반올림해서 넣어야 소수점 흔들림으로 중복 알림이 뜨지 않는다.
+     */
+    function signalKey(market, sig) {
+        if (!sig || sig.error) return null;
+        var parts = [market];
+        if (sig.entry) {
+            parts.push("E", sig.entry.side, Math.round(sig.entry.entry), Math.round(sig.entry.stop));
+        }
+        // 청산 사유는 종류만 넣는다. 문구의 숫자까지 넣으면 매 틱 달라진다.
+        ["long", "short"].forEach(function (k) {
+            (sig.exits[k] || []).forEach(function (x) {
+                parts.push("X", k, x.level, x.text.slice(0, 12));
+            });
+        });
+        return parts.length > 1 ? parts.join("|") : null;
+    }
+
+    function notify(title, body) {
+        try {
+            if (!("Notification" in window)) return;
+            if (Notification.permission !== "granted") return;
+            new Notification(title, { body: body, tag: "upbit-signal" });
+        } catch (e) {
+            console.warn("알림 실패:", e);
+        }
+    }
+
+    function checkSignalAlerts(market, sig, dp) {
+        if (!state.alertOn) return;
+        var key = signalKey(market, sig);
+        if (!key) { state.lastSignalKey = null; return; }
+        if (key === state.lastSignalKey) return;   // 같은 신호 반복 금지
+        state.lastSignalKey = key;
+
+        var sym = coinOf(market);
+        var 줄 = [];
+
+        if (sig.entry) {
+            var e = sig.entry;
+            줄.push((e.side === "LONG" ? "롱" : "숏") + " 진입 " + fmt(e.entry, dp)
+                + " / 손절 " + fmt(e.stop, dp) + " / 목표 " + fmt(e.target1, dp)
+                + " (" + e.rr.toFixed(2) + "R)");
+        }
+        ["long", "short"].forEach(function (k) {
+            (sig.exits[k] || []).forEach(function (x) {
+                줄.push((k === "long" ? "롱" : "숏") + " 청산(" + x.level + ") " + x.text
+                    + (isFinite(x.price) ? " " + fmt(x.price, dp) : ""));
+            });
+        });
+
+        if (!줄.length) return;
+        notify(sym + " 타점 신호", 줄.join("\n"));
+    }
+
+    function toggleAlert() {
+        var b = $("alertBtn");
+        if (state.alertOn) {
+            state.alertOn = false;
+            state.lastSignalKey = null;
+            b.textContent = "타점 알림 OFF";
+            b.classList.remove("on");
+            return;
+        }
+        // 권한이 없으면 먼저 요청한다. 거부하면 화면 패널만 쓰도록 안내한다.
+        if (!("Notification" in window)) {
+            alert("이 브라우저는 알림을 지원하지 않습니다. 화면의 '롱·숏 타점' 패널을 보세요.");
+            return;
+        }
+        if (Notification.permission === "denied") {
+            alert("브라우저에서 이 사이트 알림이 차단돼 있습니다.\n주소창 옆 자물쇠 > 알림 허용으로 바꿔주세요.\n(차단 상태에서도 화면의 '롱·숏 타점' 패널은 그대로 동작합니다.)");
+            return;
+        }
+        var 켜기 = function () {
+            state.alertOn = true;
+            state.lastSignalKey = null;   // 켠 직후 현재 신호를 한 번 알린다
+            b.textContent = "타점 알림 ON";
+            b.classList.add("on");
+            if (state.signal) checkSignalAlerts(state.sel, state.signal, state.dp);
+        };
+        if (Notification.permission === "granted") 켜기();
+        else Notification.requestPermission().then(function (p) {
+            if (p === "granted") 켜기();
+            else alert("알림이 허용되지 않았습니다. 화면의 '롱·숏 타점' 패널을 보세요.");
+        });
+    }
+
     function renderScenario(lv, dp) {
         if (!lv || lv.error) return "";
         var out = [];
@@ -1702,6 +1890,7 @@
         });
         $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
+        $("alertBtn").addEventListener("click", toggleAlert);
 
         // 거래소 전환. 마켓 목록·상장 종목이 다르므로 목록부터 새로 받는다.
         [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
