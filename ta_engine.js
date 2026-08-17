@@ -189,6 +189,54 @@
     }
 
     /**
+     * ADX / +DI / -DI — Wilder 원식.
+     *
+     * ADX는 추세의 방향이 아니라 강도다. 첫 ADX를 만들려면 n개의 DX가 더
+     * 필요하므로 최소 2n개의 TR(= 2n+1개 캔들)을 요구한다. 데이터가 부족하면
+     * 임의의 초기값을 만들지 않고 null을 반환한다.
+     */
+    function adx(candles, n) {
+        n = n || 14;
+        if (!candles || candles.length < n * 2 + 1) return null;
+
+        const tr = [], plus = [], minus = [];
+        for (let i = 1; i < candles.length; i++) {
+            const cur = candles[i], prev = candles[i - 1];
+            const up = cur.h - prev.h;
+            const down = prev.l - cur.l;
+            tr.push(Math.max(cur.h - cur.l, Math.abs(cur.h - prev.c), Math.abs(cur.l - prev.c)));
+            plus.push(up > down && up > 0 ? up : 0);
+            minus.push(down > up && down > 0 ? down : 0);
+        }
+
+        let trSm = tr.slice(0, n).reduce((a, b) => a + b, 0);
+        let plusSm = plus.slice(0, n).reduce((a, b) => a + b, 0);
+        let minusSm = minus.slice(0, n).reduce((a, b) => a + b, 0);
+        const dx = [];
+        let plusDi = 0, minusDi = 0;
+
+        function appendDx() {
+            plusDi = trSm > 0 ? 100 * plusSm / trSm : 0;
+            minusDi = trSm > 0 ? 100 * minusSm / trSm : 0;
+            const sum = plusDi + minusDi;
+            dx.push(sum > 0 ? 100 * Math.abs(plusDi - minusDi) / sum : 0);
+        }
+
+        appendDx();
+        for (let i = n; i < tr.length; i++) {
+            trSm = trSm - trSm / n + tr[i];
+            plusSm = plusSm - plusSm / n + plus[i];
+            minusSm = minusSm - minusSm / n + minus[i];
+            appendDx();
+        }
+        if (dx.length < n) return null;
+
+        let value = dx.slice(0, n).reduce((a, b) => a + b, 0) / n;
+        for (let i = n; i < dx.length; i++) value = (value * (n - 1) + dx[i]) / n;
+        return { adx: rp(value), plus_di: rp(plusDi), minus_di: rp(minusDi) };
+    }
+
+    /**
      * 슈퍼트렌드 — 밴드를 상태로 이어가는 표준 방식.
      *
      * 예전 구현은 마지막 봉 하나의 hl2와 종가만 비교했다. 그건 슈퍼트렌드가 아니라
@@ -260,7 +308,8 @@
         const closes = candles.map(c => c.c);
         const price = closes[closes.length - 1];
         const ma = {};
-        for (const p of [20, 60, 120, 200]) {
+        // 기존 20/60/120 신호 점수는 호환을 위해 유지하고 V3 표준 SMA50을 추가한다.
+        for (const p of [20, 50, 60, 120, 200]) {
             const v = sma(closes, p);
             ma[p] = v !== null ? rp(v) : null;
         }
@@ -294,7 +343,7 @@
             else sig.push("RSI " + r + " 중립");
         }
         const label = score >= 3 ? "강세" : score <= -3 ? "약세" : "중립/횡보";
-        return { bias: label, score: score, ma: ma, rsi14: r, supertrend: st, signals: sig };
+        return { bias: label, score: score, ma: ma, rsi14: r, adx: adx(candles), supertrend: st, signals: sig };
     }
 
     // ---------------------------------------------------------------- 레벨
@@ -539,9 +588,9 @@
     }
 
     const TAEngine = {
-        VERSION: "1.1.0",
+        VERSION: "1.2.0",
         rp, sma, ema, rsi, rsiSeries, stoch, cci, macd, bollinger,
-        atr, supertrend, vwap, trend,
+        atr, adx, supertrend, vwap, trend,
         swings, vpvr, levels,
         rsiDivergence, candlePattern, volumeCheck, confluence,
         analyzeTf

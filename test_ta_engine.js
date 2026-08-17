@@ -171,6 +171,16 @@ console.log('\n[5] ATR / 슈퍼트렌드 / VWAP');
     assert.ok(Math.abs(TA.atr(c, 14) - expected) < 1e-12);
 });
 
+검증('ADX는 강한 상승 추세에서 25 이상이고 +DI가 우세', () => {
+    const value = TA.adx(캔들(경로(100, 180, 80)), 14);
+    assert.ok(value && value.adx >= 25, `ADX ${JSON.stringify(value)}`);
+    assert.ok(value.plus_di > value.minus_di, `DI ${JSON.stringify(value)}`);
+});
+
+검증('ADX는 표본이 부족하면 null', () => {
+    assert.strictEqual(TA.adx(캔들(경로(100, 110, 20)), 14), null);
+});
+
 검증('슈퍼트렌드는 상승 추세를 상승으로 판정', () => {
     const st = TA.supertrend(캔들(경로(100, 130, 40)));
     assert.strictEqual(st.trend, '상승');
@@ -239,6 +249,12 @@ console.log('\n[7] VPVR / 레벨 — 스킬과 동일해야 하는 핵심');
     const c = 캔들([...경로(100, 130, 30), ...경로(130, 100, 30)], { 무거운구간: [112, 118] });
     const p = TA.vpvr(c);
     assert.ok(p.poc >= 108 && p.poc <= 122, `POC ${p.poc}`);
+});
+
+검증('V3 표준 SMA50을 추세 결과에 포함', () => {
+    const t = TA.trend(캔들(경로(100, 130, 80)));
+    assert.ok(Number.isFinite(t.ma[50]), `MA50 ${t.ma[50]}`);
+    assert.ok(t.adx && Number.isFinite(t.adx.adx), `ADX ${JSON.stringify(t.adx)}`);
 });
 
 검증('장대봉 거래량을 대표가격 한 칸에 몰아넣지 않는다', () => {

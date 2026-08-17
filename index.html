@@ -395,7 +395,7 @@ footer b{color:#c9d2ee}
 <nav class="nav">
   <div class="nav-in">
     <div class="brand">KR<span>·</span>TA</div>
-    <span class="chip">coin-ta-brief</span>
+    <span class="chip">crypto-master V3.1</span>
     <div class="sp"></div>
     <div class="live"><span class="dot" id="wsdot"></span><span id="wstxt">연결 대기</span></div>
   </div>
@@ -403,13 +403,13 @@ footer b{color:#c9d2ee}
 
 <header class="hero">
   <div class="wrap">
-    <div class="eyebrow">Multi-Timeframe Technical Analysis</div>
-    <h1>업비트 · 빗썸 · 바이낸스 · MEXC<br>실시간 차트 분석</h1>
+    <div class="eyebrow">Evidence-First Multi-Timeframe Analysis</div>
+    <h1>업비트 · 빗썸 · 바이낸스 · MEXC<br>V3.1 실시간 통합 분석</h1>
     <!-- 분석 전에는 설명, 분석 후에는 그 자리에 타점 알림을 띄운다.
          화면 맨 위라 스크롤 없이 바로 보이는 자리다. -->
     <div id="heroSignal" class="lede">
-      1시간부터 월봉까지 여러 봉을 함께 계산해, 같은 가격대를 동시에
-      지목하는 봉이 많을수록 두꺼운 벽으로 표시합니다.
+      완료봉 기반 ADX·SMA·SMC·모멘텀·파생상품을 5단계로 통합하고,
+      확인할 수 없는 데이터는 추정하지 않습니다.
     </div>
   </div>
 </header>
@@ -458,7 +458,7 @@ footer b{color:#c9d2ee}
     </div>
     <button class="btn solid" id="run">분석</button>
     <button class="btn" id="auto">자동갱신 OFF</button>
-    <button class="btn accent" id="briefBtn" title="coin-ta-brief 스킬 형식으로 브리핑 뽑기">브리핑 생성</button>
+    <button class="btn accent" id="briefBtn" title="AI MASTER CRYPTO ANALYST V3.1 형식으로 브리핑 뽑기">V3.1 브리핑</button>
     <button class="btn" id="alertBtn" title="타점·청산 조건이 성립하면 브라우저 알림을 띄웁니다">타점 알림 OFF</button>
     <select id="interval" title="지표·레벨 재계산 주기 (시세는 WebSocket으로 항상 실시간)">
       <option value="1">1초</option>
@@ -472,10 +472,10 @@ footer b{color:#c9d2ee}
 
   <div class="warn" id="rateHint" style="display:none;margin:0 0 20px"></div>
 
-  <!-- coin-ta-brief 스킬 형식 브리핑. 복사해서 메모·채팅에 붙일 수 있다 -->
+  <!-- V3.1 마스터 분석 형식 브리핑. 복사해서 메모·채팅에 붙일 수 있다 -->
   <div class="card brief-box" id="brief" style="display:none">
     <div class="brief-head">
-      <b>coin-ta-brief 브리핑</b>
+      <b>AI MASTER CRYPTO ANALYST V3.1 브리핑</b>
       <span class="tag">마크다운</span>
       <span class="sp"></span>
       <button class="btn sm" id="briefCopy">복사</button>
@@ -491,16 +491,17 @@ footer b{color:#c9d2ee}
   <div class="wrap">
     시세·캔들 <b>업비트 공개 API</b> · 실시간 체결 <b>업비트 WebSocket</b> ·
     펀딩비/미결제약정 <b>바이낸스 USDT-M 선물</b>(해당 종목 상장 시)<br>
-    계산 로직은 coin-ta-brief 스킬(analyze.py)을 이식한 것이며,
+    계산 로직은 crypto-master-analyst V3.1의 재현 가능한 규칙을 이식했으며,
     <b>기술적 수치 계산 결과이지 투자 권유가 아닙니다.</b><br>
-    청산맵·온체인(MVRV/SOPR)·매크로(DXY)는 무료 API 미제공 — 표시하지 않습니다.
+    청산맵·CVD·온체인·뉴스·언락은 검증 가능한 원자료가 없어 <b>현재 실시간 데이터 확인 불가</b>로 표시합니다.
   </div>
 </footer>
 
 <script src="candle_utils.js?v=1.0.1" charset="utf-8"></script>
-<script src="ta_engine.js?v=1.1.0" charset="utf-8"></script>
+<script src="ta_engine.js?v=1.2.0" charset="utf-8"></script>
+<script src="v3_analysis.js?v=3.1.0" charset="utf-8"></script>
 <script src="level_analyzer.js?v=1.2.0" charset="utf-8"></script>
 <script src="signal_engine.js?v=1.1.0" charset="utf-8"></script>
-<script src="app.js?v=4.0.1" charset="utf-8"></script>
+<script src="app.js?v=5.0.0" charset="utf-8"></script>
 </body>
 </html>
