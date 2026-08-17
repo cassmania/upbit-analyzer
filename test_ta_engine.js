@@ -154,6 +154,23 @@ console.log('\n[5] ATR / 슈퍼트렌드 / VWAP');
     assert.ok(TA.atr(캔들(경로(100, 130, 40))) > 0);
 });
 
+검증('ATR은 Wilder RMA 표준값과 일치', () => {
+    const c = [];
+    let prev = 100;
+    for (let i = 0; i < 20; i++) {
+        const span = i + 1;
+        c.push({ o: prev, h: prev + span, l: prev - span * 0.5, c: prev + 0.2, v: 1 });
+        prev += 0.2;
+    }
+    const tr = [];
+    for (let i = 1; i < c.length; i++) {
+        tr.push(Math.max(c[i].h - c[i].l, Math.abs(c[i].h - c[i - 1].c), Math.abs(c[i].l - c[i - 1].c)));
+    }
+    let expected = tr.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
+    for (let i = 14; i < tr.length; i++) expected = (expected * 13 + tr[i]) / 14;
+    assert.ok(Math.abs(TA.atr(c, 14) - expected) < 1e-12);
+});
+
 검증('슈퍼트렌드는 상승 추세를 상승으로 판정', () => {
     const st = TA.supertrend(캔들(경로(100, 130, 40)));
     assert.strictEqual(st.trend, '상승');
@@ -222,6 +239,13 @@ console.log('\n[7] VPVR / 레벨 — 스킬과 동일해야 하는 핵심');
     const c = 캔들([...경로(100, 130, 30), ...경로(130, 100, 30)], { 무거운구간: [112, 118] });
     const p = TA.vpvr(c);
     assert.ok(p.poc >= 108 && p.poc <= 122, `POC ${p.poc}`);
+});
+
+검증('장대봉 거래량을 대표가격 한 칸에 몰아넣지 않는다', () => {
+    const c = [{ o: 0, h: 100, l: 0, c: 100, v: 20000 }];
+    for (let i = 0; i < 100; i++) c.push({ o: 50, h: 50.2, l: 49.8, c: 50, v: 100 });
+    const p = TA.vpvr(c, 24);
+    assert.ok(p.poc > 45 && p.poc < 55, `POC ${p.poc}`);
 });
 
 검증('VAL <= POC <= VAH', () => {
@@ -349,6 +373,23 @@ console.log('\n[9] confluence');
     const r = TA.analyzeTf(c);
     assert.ok(r.confluence.volume_reliability, '신뢰도 필요');
     assert.strictEqual(r.confluence.volume_reliability, r.volume.reliability);
+});
+
+검증('상관 높은 과열 지표 여러 개를 독립 신호로 중복 계산하지 않는다', () => {
+    const r = TA.confluence({
+        trend: { score: 0 },
+        oscillators: {
+            rsi14: 80,
+            stochastic: { k: 90, d: 90 },
+            cci20: 150,
+            macd: null,
+            rsi_divergence: null
+        },
+        bollinger: { pct_b: 1.2 },
+        volume: { reliability: '보통' }
+    });
+    assert.strictEqual(r.bear_signals, 1);
+    assert.strictEqual(r.bull_signals, 0);
 });
 
 console.log('\n[10] analyzeTf 통합 / 방어');
