@@ -84,12 +84,24 @@
 
         var total = 0;
         for (i = 0; i < candles.length; i++) {
-            var mid = (candles[i].h + candles[i].l + candles[i].c) / 3;
-            var idx = Math.floor((mid - lo) / step);
-            if (idx < 0) idx = 0;
-            if (idx > bins - 1) idx = bins - 1;
-            vol[idx] += candles[i].v;
-            total += candles[i].v;
+            var bar = candles[i], range = bar.h - bar.l;
+            if (!(range > 0)) {
+                var idx = Math.floor((bar.c - lo) / step);
+                if (idx < 0) idx = 0;
+                if (idx > bins - 1) idx = bins - 1;
+                vol[idx] += bar.v;
+                total += bar.v;
+                continue;
+            }
+            // OHLCV만으로 체결별 분포는 알 수 없으므로 고가~저가와 겹친 폭에 비례 배분한다.
+            var first = Math.max(0, Math.floor((bar.l - lo) / step));
+            var last = Math.min(bins - 1, Math.floor((bar.h - lo) / step));
+            for (var b = first; b <= last; b++) {
+                var binLo = lo + b * step, binHi = binLo + step;
+                var overlap = Math.max(0, Math.min(bar.h, binHi) - Math.max(bar.l, binLo));
+                if (overlap > 0) vol[b] += bar.v * overlap / range;
+            }
+            total += bar.v;
         }
         if (!(total > 0)) return null;
 
@@ -308,7 +320,7 @@
     }
 
     var LevelEngine = {
-        VERSION: "1.1.0",
+        VERSION: "1.2.0",
         TF_WEIGHT: TF_WEIGHT,
         KIND_WEIGHT: KIND_WEIGHT,
         vpvr: vpvr,

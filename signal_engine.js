@@ -238,7 +238,7 @@
     }
 
     var SignalEngine = {
-        VERSION: "1.0.0",
+        VERSION: "1.1.0",
         방향_최소: 방향_최소,
         최소_R: 최소_R,
         방향판정: 방향판정,

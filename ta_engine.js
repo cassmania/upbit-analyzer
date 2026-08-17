@@ -182,7 +182,10 @@
             const h = candles[i].h, l = candles[i].l, pc = candles[i - 1].c;
             trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
         }
-        return trs.slice(-n).reduce((a, b) => a + b, 0) / n;
+        // TradingView의 ATR과 같은 Wilder RMA: 첫 n개 단순평균으로 시작한 뒤 평활한다.
+        let out = trs.slice(0, n).reduce((a, b) => a + b, 0) / n;
+        for (let i = n; i < trs.length; i++) out = (out * (n - 1) + trs[i]) / n;
+        return out;
     }
 
     /**
@@ -284,8 +287,10 @@
             sig.push("슈퍼트렌드 " + st.trend);
         }
         if (r !== null) {
-            if (r >= 70) { score -= 1; sig.push("RSI " + r + " 과매수"); }
-            else if (r <= 30) { score += 1; sig.push("RSI " + r + " 과매도"); }
+            // RSI는 추세가 아니라 과열/과매도 지표다. 구조 추세 점수에 섞으면
+            // 강한 상승을 RSI 과매수 하나로 약화시키고 confluence에서 다시 중복 반영된다.
+            if (r >= 70) sig.push("RSI " + r + " 과매수");
+            else if (r <= 30) sig.push("RSI " + r + " 과매도");
             else sig.push("RSI " + r + " 중립");
         }
         const label = score >= 3 ? "강세" : score <= -3 ? "약세" : "중립/횡보";
@@ -318,9 +323,21 @@
         const step = (hi - lo) / bins;
         const vol = new Array(bins).fill(0);
         for (const c of candles) {
-            const mid = (c.h + c.l + c.c) / 3;
-            const idx = Math.min(Math.floor((mid - lo) / step), bins - 1);
-            vol[idx] += c.v;
+            const range = c.h - c.l;
+            if (!(range > 0)) {
+                const idx = Math.max(0, Math.min(Math.floor((c.c - lo) / step), bins - 1));
+                vol[idx] += c.v;
+                continue;
+            }
+            // 실제 체결별 거래량은 공개 OHLCV만으로 알 수 없다. 한 칸에 전부 몰아넣는
+            // 것보다 재현성이 높은 보수적 근사로, 고가~저가와 겹친 폭만큼 분배한다.
+            const first = Math.max(0, Math.floor((c.l - lo) / step));
+            const last = Math.min(bins - 1, Math.floor((c.h - lo) / step));
+            for (let i = first; i <= last; i++) {
+                const binLo = lo + i * step, binHi = binLo + step;
+                const overlap = Math.max(0, Math.min(c.h, binHi) - Math.max(c.l, binLo));
+                if (overlap > 0) vol[i] += c.v * overlap / range;
+            }
         }
         const total = vol.reduce((a, b) => a + b, 0);
         if (!(total > 0)) return null;
@@ -443,25 +460,32 @@
         if (tr.score >= 2) { bull += 2; notes.push("추세 강세"); }
         else if (tr.score <= -2) { bear += 2; notes.push("추세 약세"); }
 
+        // RSI·스토캐스틱·CCI·볼린저 위치는 같은 가격 과열을 여러 방식으로 본다.
+        // 각각 한 표를 주면 같은 움직임을 3~4개의 독립 근거처럼 과장하므로 그룹당 1점만 준다.
+        let momentumBull = 0, momentumBear = 0;
         const r = osc.rsi14;
         if (r !== null) {
-            if (r >= 70) { bear += 1; notes.push("RSI 과매수"); }
-            else if (r <= 30) { bull += 1; notes.push("RSI 과매도"); }
+            if (r >= 70) { momentumBear++; notes.push("RSI 과매수"); }
+            else if (r <= 30) { momentumBull++; notes.push("RSI 과매도"); }
         }
         if (osc.stochastic) {
-            if (osc.stochastic.k >= 80) bear += 1;
-            else if (osc.stochastic.k <= 20) bull += 1;
+            if (osc.stochastic.k >= 80) momentumBear++;
+            else if (osc.stochastic.k <= 20) momentumBull++;
         }
         if (osc.cci20 !== null && osc.cci20 !== undefined) {
-            if (osc.cci20 >= 100) bear += 1;
-            else if (osc.cci20 <= -100) bull += 1;
-        }
-        if (osc.macd && osc.macd.hist !== null && osc.macd.hist !== undefined) {
-            if (osc.macd.hist > 0) bull += 1; else bear += 1;
+            if (osc.cci20 >= 100) momentumBear++;
+            else if (osc.cci20 <= -100) momentumBull++;
         }
         if (bb) {
-            if (bb.pct_b >= 1) { bear += 1; notes.push("볼린저 상단 과열"); }
-            else if (bb.pct_b <= 0) { bull += 1; notes.push("볼린저 하단 과매도"); }
+            if (bb.pct_b >= 1) { momentumBear++; notes.push("볼린저 상단 과열"); }
+            else if (bb.pct_b <= 0) { momentumBull++; notes.push("볼린저 하단 과매도"); }
+        }
+        if (momentumBull > momentumBear) bull += 1;
+        else if (momentumBear > momentumBull) bear += 1;
+
+        // MACD 히스토그램은 방향·가속도 근거라 과열 그룹과 분리한다.
+        if (osc.macd && osc.macd.hist !== null && osc.macd.hist !== undefined) {
+            if (osc.macd.hist > 0) bull += 1; else bear += 1;
         }
         const dv = osc.rsi_divergence;
         if (dv) {
@@ -515,7 +539,7 @@
     }
 
     const TAEngine = {
-        VERSION: "1.0.0",
+        VERSION: "1.1.0",
         rp, sma, ema, rsi, rsiSeries, stoch, cci, macd, bollinger,
         atr, supertrend, vwap, trend,
         swings, vpvr, levels,

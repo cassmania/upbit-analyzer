@@ -1,5 +1,5 @@
 /**
- * app.js — 업비트/빗썸 데이터 조달 + 실시간 차트 + 렌더
+ * app.js — 4개 거래소 데이터 조달 + 실시간 차트 + 렌더
  *
  * 지표 계산은 ta_engine.js(스킬 이식), 겹침 판정은 level_analyzer.js가 맡는다.
  * 이 파일은 API/WebSocket 조달과 화면 그리기만 한다.
@@ -156,14 +156,8 @@
             if (!Array.isArray(raw)) return [];
             // 바이낸스는 오래된 것부터 준다. 업비트는 최신순이라 toCandles가 뒤집는데,
             // 여기서는 이미 시간순이므로 그대로 매핑한다.
-            return raw.map(function (k) {
-                return {
-                    time: Math.floor(k[0] / 1000),
-                    kst: new Date(k[0]).toISOString(),
-                    o: parseFloat(k[1]), h: parseFloat(k[2]),
-                    l: parseFloat(k[3]), c: parseFloat(k[4]), v: parseFloat(k[5])
-                };
-            });
+            var tf = TFS.filter(function (t) { return t.key === tfKey; })[0];
+            return CandleUtils.fromBinance(raw, tfKey, tf ? tf.sec : 0);
         }).catch(function () { return []; });
     }
 
@@ -192,7 +186,8 @@
                 low_price: parseFloat(d.lowPrice),
                 acc_trade_price_24h: parseFloat(d.quoteVolume),
                 acc_trade_volume_24h: parseFloat(d.volume),
-                prev_closing_price: parseFloat(d.prevClosePrice)
+                prev_closing_price: parseFloat(d.prevClosePrice),
+                timestamp: isFinite(Number(d.closeTime)) ? Number(d.closeTime) : Date.now()
             };
         });
     }
@@ -250,7 +245,7 @@
         timer: null, busy: false, auto: false,
         alertOn: false, lastSignalKey: null, signal: null,
         ws: null, wsAlive: false,
-        tfCandles: null, levels: null, dp: 0, lastPrice: 0,
+        tfCandles: null, analysisTfCandles: null, levels: null, dp: 0, lastPrice: 0,
         usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
         renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
@@ -398,16 +393,9 @@
         }
     }
 
-    /** 업비트 캔들 -> 엔진 형식. 응답은 최신순이라 뒤집는다. time은 차트용 UNIX초. */
-    function toCandles(raw) {
-        return raw.slice().reverse().map(function (k) {
-            return {
-                time: Math.floor(k.timestamp / 1000),
-                kst: k.candle_date_time_kst,
-                o: k.opening_price, h: k.high_price, l: k.low_price,
-                c: k.trade_price, v: k.candle_acc_trade_volume
-            };
-        });
+    /** 업비트 캔들 -> 엔진 형식. 봉 시작 시각과 완료 여부도 함께 정규화한다. */
+    function toCandles(raw, tf) {
+        return CandleUtils.fromUpbit(raw, tf.key, tf.sec);
     }
 
     /**
@@ -423,30 +411,10 @@
      *
      * UNIX 시각을 구간 길이로 내림하면 경계가 절대 시간에 고정된다.
      * 12시간봉이면 항상 같은 시각에 열리고, 새로고침해도 값이 같다.
-     * 마지막 구간은 아직 안 끝났을 수 있지만 그대로 넣는다 — 형성 중인 봉을
-     * 보여주는 건 실제 거래소 차트와 같은 동작이다.
+     * 마지막 구간은 차트에는 남기되 `closed:false`로 표시해 지표 계산에서는 뺀다.
      */
     function groupCandles(src, n, secPerBar) {
-        if (!src || !src.length) return [];
-        var 구간 = (secPerBar || 0) * n;
-        if (!(구간 > 0)) return [];
-
-        var out = [], cur = null, curKey = null;
-        for (var i = 0; i < src.length; i++) {
-            var c = src[i];
-            var key = Math.floor(c.time / 구간) * 구간;
-            if (cur && key === curKey) {
-                if (c.h > cur.h) cur.h = c.h;
-                if (c.l < cur.l) cur.l = c.l;
-                cur.c = c.c;
-                cur.v += c.v;
-            } else {
-                cur = { time: key, kst: c.kst, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v };
-                curKey = key;
-                out.push(cur);
-            }
-        }
-        return out;
+        return CandleUtils.group(src, n, secPerBar);
     }
 
     /**
@@ -469,7 +437,7 @@
             calls.push(e.kind === "binance"
                 ? bnKlines(market, t.key, 200)
                 : getJSON(apiUrl(t.path, { market: market, count: 200 }))
-                    .then(toCandles)
+                    .then(function (raw) { return toCandles(raw, t); })
                     .catch(function () { return []; }));   // 이력 짧은 종목은 여기서 흡수
         });
 
@@ -876,6 +844,11 @@
         var dp = decimals(price);
         state.dp = dp;
         state.tfCandles = data.tf;
+        var analysisTf = {};
+        activeTfs().forEach(function (tf) {
+            analysisTf[tf.key] = CandleUtils.completed(data.tf[tf.key] || []);
+        });
+        state.analysisTfCandles = analysisTf;
         state.lastPrice = price;
         state.usdPrice = fut && fut.usdPrice ? fut.usdPrice : null;
         state.usdtKrw = usdtKrw || null;     // 김프 기준 환율 (업비트 USDT)
@@ -887,7 +860,7 @@
         // 지표 계산
         var results = {};
         activeTfs().forEach(function (tf) {
-            var c = data.tf[tf.key];
+            var c = analysisTf[tf.key];
             results[tf.key] = (c && c.length >= 30)
                 ? TAEngine.analyzeTf(c.map(function (x) { return { o: x.o, h: x.h, l: x.l, c: x.c, v: x.v }; }))
                 : { error: "캔들 부족 (" + (c ? c.length : 0) + "봉)" };
@@ -896,7 +869,7 @@
         // 지지·저항. levels:false인 봉(년봉)은 표본이 부족해 levelTfs()가 이미 뺀다.
         var conv = {};
         levelTfs().forEach(function (tf) {
-            var c = data.tf[tf.key];
+            var c = analysisTf[tf.key];
             if (c && c.length >= 20) {
                 conv[tf.key] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
             }
@@ -909,6 +882,7 @@
             ? SignalEngine.analyze(results, lv, price, fut)
             : { error: "signal_engine.js가 로드되지 않았습니다." };
         state.signal = sig;
+        syncApiHint(analysisTf, t.timestamp);
 
         // 같은 종목·같은 봉을 다시 그릴 때는 DOM을 통째로 갈아끼우지 않는다.
         // innerHTML 교체 + 차트 재생성이 자동갱신마다 화면을 깜빡이게 만든다.
@@ -1287,7 +1261,9 @@
         if (fut) {
             out.push(qb("펀딩비 <span class='dim'>· 바이낸스</span>",
                 fut.funding === null ? "—" : '<span class="' + (fut.funding >= 0 ? "up" : "down") + '">' + fut.funding.toFixed(4) + "%</span>",
-                fut.funding === null ? "데이터 없음" : (fut.funding >= 0 ? "롱 우위" : "숏 과열 — 숏스퀴즈 조건")));
+                fut.funding === null ? "데이터 없음" : (fut.funding > 0
+                    ? "롱이 숏에 비용 지급 · 롱 과열 가능"
+                    : fut.funding < 0 ? "숏이 롱에 비용 지급 · 숏 과열 가능" : "중립")));
             out.push(qb("미결제약정 <span class='dim'>· 바이낸스</span>",
                 fut.oi === null ? "—" : fmt(fut.oi, 0), fut.oi === null ? "데이터 없음" : sym + " 계약"));
             // 김프 표준은 현물가 기준이다. 현물이 없으면 선물로 대체하고 그 사실을 표기한다.
@@ -1772,7 +1748,7 @@
     /**
      * 자동갱신은 지표·레벨 재계산용이다. 시세 자체는 WebSocket이 항상 실시간으로 넣는다.
      *
-     * 한 번 갱신에 업비트를 4번 호출한다(ticker + 1h/4h/1d 캔들).
+     * 한 번 갱신에 업비트를 7번 호출한다(ticker + 직접 조회 캔들 6종).
      * 업비트 제한은 초당 10회라 1초 간격이면 초당 4회 — 한 탭이면 안전하지만
      * 여러 탭을 띄우면 넘긴다. 짧은 주기를 고르면 경고를 띄운다.
      */
@@ -1877,9 +1853,29 @@
         lane.style.display = 살아있는거 ? "" : "none";
     }
 
-    function syncApiHint() {
+    function syncApiHint(analysisTf, sourceTimestamp) {
         var el = $("apiHint");
-        if (el) el.textContent = ex().name + " 공개 API · 무인증 · 200봉";
+        if (!el) return;
+        var parts = [ex().name + " 현물 공개 API", "무인증", "최대 200봉"];
+        if (analysisTf) {
+            parts.push("지표·신호는 완료봉 기준");
+            var c4 = analysisTf["4h"] || [];
+            var last = c4.length ? c4[c4.length - 1] : null;
+            if (last && isFinite(last.endTime)) {
+                parts.push("최근 완료 4h " + new Date(last.endTime * 1000).toLocaleString("ko-KR", {
+                    timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit",
+                    hour: "2-digit", minute: "2-digit", hour12: false
+                }));
+            }
+        }
+        var ts = Number(sourceTimestamp);
+        if (isFinite(ts) && ts > 0) {
+            if (ts < 1e12) ts *= 1000;
+            parts.push("시세 " + new Date(ts).toLocaleTimeString("ko-KR", {
+                timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+            }));
+        }
+        el.textContent = parts.join(" · ");
     }
 
     /** 거래소가 지원하지 않는 봉 버튼은 숨긴다. */
