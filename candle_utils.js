@@ -124,14 +124,34 @@
         return Array.isArray(candles) ? candles.filter(function (c) { return c.closed === true; }) : [];
     }
 
+    /**
+     * 티커 기준 시각. 빗썸은 timestamp를 KST 벽시계 값처럼 보내는 경우가 있어
+     * 9시간 앞서 보일 수 있으므로, 함께 오는 KST 날짜·시각을 우선 신뢰한다.
+     */
+    function tickerTimeMs(ticker) {
+        var t = ticker || {};
+        var date = String(t.trade_date_kst || "").replace(/\D/g, "");
+        var time = String(t.trade_time_kst || "").replace(/\D/g, "");
+        if (date.length === 8 && time.length >= 6) {
+            var iso = date.slice(0, 4) + "-" + date.slice(4, 6) + "-" + date.slice(6, 8)
+                + "T" + time.slice(0, 2) + ":" + time.slice(2, 4) + ":" + time.slice(4, 6) + "+09:00";
+            var parsed = Date.parse(iso);
+            if (isFinite(parsed)) return parsed;
+        }
+        var raw = Number(t.timestamp);
+        if (!isFinite(raw) || raw <= 0) return null;
+        return raw < 1e12 ? raw * 1000 : raw;
+    }
+
     var CandleUtils = {
-        VERSION: "1.0.0",
+        VERSION: "1.0.1",
         parseUtcSeconds: parseUtcSeconds,
         closeTimeSeconds: closeTimeSeconds,
         fromUpbit: fromUpbit,
         fromBinance: fromBinance,
         group: group,
-        completed: completed
+        completed: completed,
+        tickerTimeMs: tickerTimeMs
     };
 
     global.CandleUtils = CandleUtils;

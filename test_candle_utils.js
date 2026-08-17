@@ -67,4 +67,13 @@ test("구성 봉이 빠진 합성봉은 분석 완료봉으로 인정하지 않�
     assert.strictEqual(C.completed(grouped).length, 0);
 });
 
+test("빗썸 티커는 잘못된 epoch보다 KST 날짜·시각을 우선한다", () => {
+    const ms = C.tickerTimeMs({
+        timestamp: Date.parse("2026-08-17T12:08:00Z"),
+        trade_date_kst: "20260817",
+        trade_time_kst: "120800"
+    });
+    assert.strictEqual(ms, Date.parse("2026-08-17T12:08:00+09:00"));
+});
+
 console.log("\n총 " + passed + "개 검증 통과");

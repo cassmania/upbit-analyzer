@@ -882,7 +882,7 @@
             ? SignalEngine.analyze(results, lv, price, fut)
             : { error: "signal_engine.js가 로드되지 않았습니다." };
         state.signal = sig;
-        syncApiHint(analysisTf, t.timestamp);
+        syncApiHint(analysisTf, CandleUtils.tickerTimeMs(t));
 
         // 같은 종목·같은 봉을 다시 그릴 때는 DOM을 통째로 갈아끼우지 않는다.
         // innerHTML 교체 + 차트 재생성이 자동갱신마다 화면을 깜빡이게 만든다.

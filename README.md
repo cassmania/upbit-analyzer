@@ -68,7 +68,7 @@ node test_level_analyzer.js
 node test_signal_engine.js
 ```
 
-총 96개 통과: 캔들 시간축 6 / TA 55 / 레벨 12 / 신호 23.
+총 97개 통과: 캔들 시간축 7 / TA 55 / 레벨 12 / 신호 23.
 
 2026-08-17 정확도 개선에서 업비트 `timestamp` 오용, 진행봉 지표 혼입,
 단순평균 ATR, 대표가격 단일 칸 VPVR, 상관 높은 과열지표 중복 가중을 회귀 테스트로 고정했다.
