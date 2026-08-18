@@ -2111,14 +2111,14 @@
     function renderUsdtDominanceChart(d) {
         var chartUrl = "https://www.tradingview.com/widgetembed/?frameElementId=tradingview_usdtd"
             + "&symbol=CRYPTOCAP%3AUSDT.D&interval=D&hidesidetoolbar=0&symboledit=0"
-            + "&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=light&style=1"
+            + "&saveimage=1&toolbarbg=f1f3f6&studies=%5B%22PivotPointsStandard%40tv-basicstudies%22%5D&theme=light&style=1"
             + "&timezone=Asia%2FSeoul&withdateranges=1&hideideas=1&hidelegend=0"
             + "&hidevolume=1&allow_symbol_change=0";
         var current = d ? renderDominance(d) : renderDominance(null);
         return '<div class="loading" style="display:none"></div>'
             + current
             + '<section id="chart-sec"><div class="sec-head"><h2>테더 도미넌스 (USDT.D) 차트</h2>'
-            + '<span class="tag">TradingView · CRYPTOCAP:USDT.D</span>'
+            + '<span class="tag">TradingView · CRYPTOCAP:USDT.D · 피벗 지지/저항</span>'
             + '<span class="tag">일봉</span></div>'
             + '<div class="card" style="overflow:hidden">'
             + '<div style="height:560px;background:#fff">'
@@ -2132,7 +2132,7 @@
             + '<div class="card card-pad" style="margin-top:14px;font-size:13px">'
             + '<b>읽는 방법</b> · USDT.D 상승은 시장 자금의 위험회피 가능성, 하락은 위험선호 가능성을 시사할 수 있습니다. '
             + 'BTC 가격·BTC 도미넌스·전체 시가총액과 함께 확인해야 하며, 이 지표 하나만으로 매매 방향을 확정하지 않습니다.'
-            + '<div class="reason">차트 출처: TradingView CRYPTOCAP:USDT.D · 현재값 출처: CoinGecko · 투자 권유 아님</div>'
+            + '<div class="reason">차트 출처: TradingView CRYPTOCAP:USDT.D · 피벗 지지/저항: TradingView 표준 지표 · 현재값 출처: CoinGecko · 투자 권유 아님</div>'
             + '</div></section>';
     }
 
@@ -2142,6 +2142,7 @@
         state.busy = true;
         state.sel = "__USDT_DOMINANCE__";
         state.renderedFor = "__USDT_DOMINANCE__";
+        $("mainLayout").classList.add("usdtd-mode");
         closeWS();
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }
         $("run").disabled = true;
@@ -2165,6 +2166,7 @@
             showUsdtDominanceChart();
             return;
         }
+        $("mainLayout").classList.remove("usdtd-mode");
         if (state.busy) return;
         state.busy = true;
         var market = selected;
