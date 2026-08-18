@@ -2142,7 +2142,8 @@
         state.busy = true;
         state.sel = "__USDT_DOMINANCE__";
         state.renderedFor = "__USDT_DOMINANCE__";
-        $("mainLayout").classList.add("usdtd-mode");
+        var layout = $("mainLayout");
+        if (layout) layout.classList.add("usdtd-mode");
         closeWS();
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }
         $("run").disabled = true;
@@ -2166,7 +2167,8 @@
             showUsdtDominanceChart();
             return;
         }
-        $("mainLayout").classList.remove("usdtd-mode");
+        var layout = $("mainLayout");
+        if (layout) layout.classList.remove("usdtd-mode");
         if (state.busy) return;
         state.busy = true;
         var market = selected;
