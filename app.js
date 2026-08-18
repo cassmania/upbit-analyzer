@@ -888,6 +888,7 @@
                     lineWidth: width,
                     lineStyle: rank >= 3 ? 0 : 2,
                     axisLabelVisible: true,
+                    lineVisible: true,
                     title: label
                 }));
             } catch (e) {}
@@ -906,6 +907,24 @@
             add(x.price, i, x.strength.rank, 이름 + (x.tfCount >= 2 ? " " + x.tfCount + "봉" : ""), "sup");
         });
         if (lv.마지노선) add(lv.마지노선.price, 0, 4, "마지노선 " + lv.마지노선.tf, "floor");
+        updateLevelLegend(lv, dp);
+    }
+
+    /** 차트 안에서 지지·저항선의 색과 가격을 함께 보여준다. */
+    function updateLevelLegend(lv, dp) {
+        var el = $("levelLegend");
+        if (!el || !lv || lv.error) return;
+        var html = [];
+        (lv.resistance || []).slice(0, 3).forEach(function (x, i) {
+            html.push('<div class="ll-item" style="color:' + CHART.res[Math.min(i, CHART.res.length - 1)] + '">━ ' + (i + 1) + '차 저항 ' + fmt(x.price, dp) + '</div>');
+        });
+        (lv.support || []).slice(0, 3).forEach(function (x, i) {
+            html.push('<div class="ll-item" style="color:' + CHART.sup[Math.min(i, CHART.sup.length - 1)] + '">━ ' + (i + 1) + '차 지지 ' + fmt(x.price, dp) + '</div>');
+        });
+        if (lv.마지노선) {
+            html.push('<div class="ll-item" style="color:' + CHART.floor + '">┅ 마지노선 ' + fmt(lv.마지노선.price, dp) + '</div>');
+        }
+        el.innerHTML = html.join('');
     }
 
     /** 범례. 밝은 차트 위에 얹히므로 배경도 밝게 간다. */
@@ -1725,7 +1744,7 @@
             +   '<button type="button" id="fsBtn" class="fs-btn" title="전체화면 (F 또는 Esc로 해제)">⛶ 전체화면</button>'
             + "</div>"
             + '<div class="chart-shell">'
-            + '<div id="chart"></div><div class="chart-legend" id="legend"></div>'
+            + '<div id="chart"></div><div class="chart-legend" id="legend"></div><div class="level-legend" id="levelLegend"></div>'
             + "</div>"
             + '<div class="chart-note">'
             + '<span class="swatch"><i class="sw" style="background:' + CHART.res[0] + '"></i> 저항</span>'
