@@ -2417,7 +2417,15 @@
             e.preventDefault();
             toggleFullscreen();
         });
-        $("q").addEventListener("input", function () { renderMarketSelect(this.value); });
+        $("q").addEventListener("input", function () {
+            renderMarketSelect(this.value);
+            // 정확한 지표명을 입력하면 선택 단계를 생략하고 바로 차트를 표시한다.
+            if (isUsdtDominanceMarket(this.value)) {
+                state.sel = "__USDT_DOMINANCE__";
+                $("market").value = state.sel;
+                run();
+            }
+        });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
         $("alertBtn").addEventListener("click", toggleAlert);
 
