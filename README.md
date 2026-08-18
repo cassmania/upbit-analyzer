@@ -18,8 +18,9 @@ GitHub Pages(`cassmania.github.io/upbit-analyzer/`)는 **쓰지 않는다.**
 | `ta_engine.js` | 스킬 지표 계산 이식 — RSI/스토캐스틱/CCI/MACD/볼린저/ATR/슈퍼트렌드/VWAP/VPVR/패턴/confluence |
 | `v3_analysis.js` | V3.1 구조 분석 — ADX 국면, 좌우 5봉 피벗, BOS, FVG, 오더블록 후보, 피보나치 |
 | `level_analyzer.js` | 다중 타임프레임 지지·저항 겹침 판정 (crypto-futures-simulator와 동일 엔진) |
-| `app.js` | 업비트 API 조달 + 렌더 + 캔버스 차트 |
+| `app.js` | 거래소 API 조달 + 실시간 차트 + USDT 도미넌스 + 화면 렌더 |
 | `index.html` | 화면 |
+| `api/coingecko.js` | CoinGecko 전체 시장·USDT 시가총액 서버리스 프록시 |
 | `test_ta_engine.js` | 자체검증 45개 |
 
 외부 라이브러리 0개. 차트도 캔버스 직접 그리기다.
@@ -31,6 +32,7 @@ GitHub Pages(`cassmania.github.io/upbit-analyzer/`)는 **쓰지 않는다.**
 | 시세·캔들 | 선택한 거래소 현물 공개 API | 무인증, 봉당 최대 200개 |
 | 펀딩비·미결제약정 | 바이낸스 USDT-M 선물 | **현물 분석의 보조자료다.** 미상장 종목은 "데이터 없음" |
 | 김치 프리미엄 | 업비트 원화가 ÷ (바이낸스 달러가 × 환율) | 환율은 open.er-api.com |
+| USDT 도미넌스 | USDT 시가총액 ÷ 전체 암호화폐 시가총액 × 100 | CoinGecko `/global` + `/simple/price` |
 | 청산맵·온체인·매크로 | — | 무료 API 미제공. **표시하지 않는다** |
 
 ## 진행봉과 합성봉

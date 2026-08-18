@@ -248,6 +248,7 @@
         tfCandles: null, analysisTfCandles: null, levels: null, dp: 0, lastPrice: 0,
         usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
         analysisAt: null, tickerAt: null, fxAt: null, v3: null,
+        usdtDominance: null,                         // CoinGecko 기준 USDT 시가총액 비중
         renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
 
@@ -539,6 +540,43 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) { return d && d.rates && d.rates.KRW ? d.rates.KRW : null; })
             .catch(function () { return null; });
+    }
+
+    /**
+     * CoinGecko에서 USDT 도미넌스 계산에 필요한 두 원자료를 받는다.
+     *
+     * USDT.D는 USDT 가격이 아니라 시가총액 비중이다.
+     * 따라서 전체 시장 시가총액과 USDT 시가총액을 같은 조회 시점에 받아
+     * USDT 시가총액 ÷ 전체 시장 시가총액 × 100으로 계산한다.
+     * 과거 시계열 API가 확인되지 않으면 현재값만 표시하고 값을 만들어내지 않는다.
+     */
+    function fetchUsdtDominance() {
+        var base = "/api/coingecko";
+        var globalUrl = base + "?path=global";
+        var tetherUrl = base + "?path=simple%2Fprice&ids=tether"
+            + "&vs_currencies=usd&include_market_cap=true&include_24hr_change=true";
+        return Promise.all([
+            getJSON(globalUrl),
+            getJSON(tetherUrl)
+        ]).then(function (r) {
+            var g = r[0] && r[0].data;
+            var tether = r[1] && r[1].tether;
+            var total = g && g.total_market_cap && Number(g.total_market_cap.usd);
+            var usdt = tether && Number(tether.usd_market_cap);
+            if (!(total > 0) || !(usdt > 0)) return null;
+            return {
+                value: usdt / total * 100,
+                totalMarketCap: total,
+                usdtMarketCap: usdt,
+                totalChange24h: g.market_cap_change_percentage_24h_usd,
+                usdtChange24h: tether.usd_market_cap_change_24h,
+                source: "CoinGecko /global + /simple/price",
+                observedAt: new Date().toISOString()
+            };
+        }).catch(function () {
+            // 도미넌스 데이터가 없어도 코인 분석 자체는 계속 진행한다.
+            return null;
+        });
     }
 
     // ---------------------------------------------------------------- 실시간 WebSocket
@@ -872,7 +910,7 @@
 
     // ---------------------------------------------------------------- 렌더
 
-    function render(market, data, fut, usdtKrw, bankFx) {
+    function render(market, data, fut, usdtKrw, bankFx, usdtDominance) {
         var t = data.ticker;
         var price = t.trade_price;
         var dp = decimals(price);
@@ -890,6 +928,7 @@
         state.analysisAt = Date.now();
         state.tickerAt = CandleUtils.tickerTimeMs(t);
         state.fxAt = usdtKrw ? Date.now() : null;
+        state.usdtDominance = usdtDominance || null;
 
         var name = (state.markets.filter(function (m) { return m.market === market; })[0] || {}).korean_name || market;
         var sym = coinOf(market);
@@ -933,6 +972,7 @@
             // 시세 스트립과 분석 표만 내용 교체. 차트는 데이터만 밀어넣는다.
             replaceSection("sec-quotes", renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
             replaceSection("sec-v3", renderV3Panel(market, results, v3, lv, sig, fut, t, dp));
+            replaceSection("sec-dominance", renderDominance(usdtDominance));
             replaceSection("sec-summary", renderSummary(results));
             replaceSection("sec-levels", renderLevels(lv, dp));
             replaceSection("sec-signal", renderSignal(sig, dp));
@@ -945,6 +985,7 @@
             var html = [];
             html.push('<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>");
             html.push(renderV3Panel(market, results, v3, lv, sig, fut, t, dp));
+            html.push('<div id="sec-dominance">' + renderDominance(usdtDominance) + "</div>");
             html.push(renderChartSection(sym));
             html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
             html.push('<div id="sec-levels">' + renderLevels(lv, dp) + "</div>");
@@ -957,7 +998,14 @@
         }
         $("updatedAt") && ($("updatedAt").textContent = new Date().toLocaleTimeString("ko-KR"));
 
-        window.분석결과 = { market: market, results: results, ticker: t, futures: fut, v3: v3 };
+        window.분석결과 = {
+            market: market,
+            results: results,
+            ticker: t,
+            futures: fut,
+            v3: v3,
+            usdtDominance: usdtDominance
+        };
         window.레벨결과 = lv;
         window.타점결과 = sig;
         window.V3분석결과 = v3;
@@ -1134,6 +1182,20 @@
             if (fu.length) L.push(fu.join(" · ") + "  (바이낸스)");
         } else {
             L.push("바이낸스 선물 미상장 — 펀딩·OI·김프 데이터 없음");
+        }
+        L.push("");
+
+        // 테더 도미넌스는 USDT 가격이 아니라 시가총액 비중이다.
+        // 현재값을 받지 못한 경우 숫자를 만들지 않고 확인 불가로 남긴다.
+        L.push("### 테더 도미넌스 (USDT.D)");
+        if (r.usdtDominance && isFinite(r.usdtDominance.value)) {
+            L.push("- 현재 USDT.D: " + r.usdtDominance.value.toFixed(3) + "%");
+            L.push("- USDT 시가총액: " + fmtUsd(r.usdtDominance.usdtMarketCap));
+            L.push("- 전체 시장 시가총액: " + fmtUsd(r.usdtDominance.totalMarketCap));
+            L.push("- 방향성: 현재값만 확인했으며, 시계열 없이 상승·하락을 확정하지 않음");
+            L.push("- 출처: " + r.usdtDominance.source);
+        } else {
+            L.push("- USDT 도미넌스 현재 데이터 확인 불가");
         }
         L.push("");
 
@@ -1576,6 +1638,55 @@
             + '<div class="warn">규칙 기반 조건부 분석이며 투자 권유나 수익 보장이 아닙니다.</div></div></section>';
     }
 
+    /**
+     * 테더 도미넌스 패널.
+     *
+     * CoinGecko 공개 현재값만으로 계산하므로 방향성을 과장하지 않는다.
+     * 과거 시계열을 확보하지 못한 경우에도 현재 도미넌스와 계산 원자료는
+     * 보여주되, 상승·하락 결론은 "확인 불가"로 남긴다.
+     */
+    function renderDominance(d) {
+        if (!d) {
+            return '<section><div class="sec-head"><h2>테더 도미넌스 (USDT.D)</h2>'
+                + '<span class="tag">시장 전체 보조지표</span></div>'
+                + '<div class="card card-pad"><div class="dim">USDT 도미넌스 현재 데이터 확인 불가</div>'
+                + '<div class="reason">CoinGecko 공개 API 또는 네트워크 응답을 확인하지 못했습니다. 코인별 분석은 계속 표시합니다.</div></div></section>';
+        }
+
+        var value = Number(d.value);
+        var total = Number(d.totalMarketCap);
+        var usdt = Number(d.usdtMarketCap);
+        var money = function (n) {
+            if (!(n > 0)) return "확인 불가";
+            if (n >= 1e12) return "$" + (n / 1e12).toFixed(2) + "T";
+            if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+            return "$" + (n / 1e6).toFixed(1) + "M";
+        };
+        var observed = d.observedAt ? new Date(d.observedAt).toLocaleString("ko-KR") : "확인 불가";
+
+        return '<section><div class="sec-head"><h2>테더 도미넌스 (USDT.D)</h2>'
+            + '<span class="tag">USDT 시가총액 ÷ 전체 시장 시가총액</span></div>'
+            + '<div class="grid2">'
+            + '<div class="card card-pad">'
+            + '<div class="qk">현재 USDT.D</div>'
+            + '<div class="qv" style="font-size:30px;color:#7c5cff">' + value.toFixed(3) + '%</div>'
+            + '<div class="qs">현재값 확인 · 방향성은 시계열 추가 확인 필요</div>'
+            + '</div>'
+            + '<div class="card card-pad">'
+            + '<table><tbody>'
+            + '<tr><td class="dim">USDT 시가총액</td><td class="num">' + money(usdt) + '</td></tr>'
+            + '<tr><td class="dim">전체 시장 시가총액</td><td class="num">' + money(total) + '</td></tr>'
+            + '<tr><td class="dim">BTC·알트코인 해석</td><td>USDT.D 단독 확정 금지</td></tr>'
+            + '<tr><td class="dim">자료 시각</td><td class="num">' + esc(observed) + '</td></tr>'
+            + '</tbody></table>'
+            + '</div></div>'
+            + '<div class="card card-pad" style="margin-top:14px;font-size:13px">'
+            + '<b>해석 규칙</b> · USDT.D 상승은 위험회피 가능성, 하락은 위험선호 가능성을 뜻할 수 있습니다. '
+            + '단, BTC 가격·BTC 도미넌스·전체 시가총액·거래량과 함께 확인해야 하며 현재값만으로 롱·숏을 결정하지 않습니다.'
+            + '<div class="reason">출처: ' + esc(d.source || "CoinGecko") + ' · 근거 품질: B</div>'
+            + '</div></section>';
+    }
+
     function renderChartSection(sym) {
         var lbl = (TFS.filter(function (x) { return x.key === state.chartTf; })[0] || {}).label || "";
         return '<section id="chart-sec"><div class="sec-head"><h2>' + esc(sym) + " " + lbl + ' 차트</h2>'
@@ -1971,9 +2082,17 @@
         }
 
         fetchAll(market)
-            .then(function (data) { return Promise.all([data, fetchFutures(sym), fetchUsdtKrw(), fetchBankFx()]); })
+            .then(function (data) {
+                return Promise.all([
+                    data,
+                    fetchFutures(sym),
+                    fetchUsdtKrw(),
+                    fetchBankFx(),
+                    fetchUsdtDominance()
+                ]);
+            })
             .then(function (r) {
-                render(market, r[0], r[1], r[2], r[3]);
+                render(market, r[0], r[1], r[2], r[3], r[4]);
                 connectWS(market);
             })
             .catch(function (e) {
