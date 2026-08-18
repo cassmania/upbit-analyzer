@@ -2111,7 +2111,7 @@
     function renderUsdtDominanceChart(d) {
         var chartUrl = "https://www.tradingview.com/widgetembed/?frameElementId=tradingview_usdtd"
             + "&symbol=CRYPTOCAP%3AUSDT.D&interval=D&hidesidetoolbar=0&symboledit=0"
-            + "&saveimage=1&toolbarbg=f1f3f6&studies=%5B%22PivotPointsStandard%40tv-basicstudies%22%5D&theme=light&style=1"
+            + "&saveimage=1&toolbarbg=f1f3f6&studies=PivotPointsStandard%40tv-basicstudies&theme=light&style=1"
             + "&timezone=Asia%2FSeoul&withdateranges=1&hideideas=1&hidelegend=0"
             + "&hidevolume=1&allow_symbol_change=0";
         var current = d ? renderDominance(d) : renderDominance(null);
