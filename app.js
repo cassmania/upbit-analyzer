@@ -387,6 +387,17 @@
     /** 기축통화 접두사를 뗀 코인 심볼 */
     function coinOf(market) { return (market || "").split("-")[1] || market; }
 
+    /** 검색창에서 테더 도미넌스 지표를 선택했는지 판별한다. */
+    function isUsdtDominanceMarket(value) {
+        var q = String(value || "").trim().toLowerCase();
+        return q === "__usdt_dominance__"
+            || q === "usdt.d"
+            || q === "usdt dominance"
+            || q === "tether dominance"
+            || q === "테더 도미넌스"
+            || q === "테더도미넌스";
+    }
+
     /**
      * 종목 목록을 그린다.
      *
@@ -401,6 +412,10 @@
     function renderMarketSelect(filter) {
         var sel = $("market");
         var f = (filter || "").trim().toLowerCase();
+        var showDominance = isUsdtDominanceMarket(f)
+            || f.indexOf("테더") !== -1
+            || f.indexOf("usdt.d") !== -1
+            || f.indexOf("tether dominance") !== -1;
         var list = state.markets.filter(function (m) {
             if (!f) return true;
             if (m.market === state.sel) return true;   // 선택 중인 종목은 항상 남긴다
@@ -408,11 +423,16 @@
                 || m.korean_name.toLowerCase().indexOf(f) !== -1
                 || (m.english_name || "").toLowerCase().indexOf(f) !== -1;
         });
-        sel.innerHTML = list.map(function (m) {
+        var dominanceOption = showDominance
+            ? '<option value="__USDT_DOMINANCE__">테더 도미넌스 (USDT.D) · 차트</option>'
+            : "";
+        sel.innerHTML = dominanceOption + list.map(function (m) {
             return '<option value="' + m.market + '">' + esc(m.korean_name)
                 + " (" + coinOf(m.market) + ")</option>";
         }).join("");
-        if (list.some(function (m) { return m.market === state.sel; })) {
+        if (state.sel === "__USDT_DOMINANCE__" && showDominance) {
+            sel.value = state.sel;
+        } else if (list.some(function (m) { return m.market === state.sel; })) {
             sel.value = state.sel;
         }
     }
@@ -2068,10 +2088,67 @@
 
     // ---------------------------------------------------------------- 실행
 
-    function run() {
+    /** TradingView의 USDT.D 시계열 차트를 보여주는 전용 화면을 만든다. */
+    function renderUsdtDominanceChart(d) {
+        var chartUrl = "https://www.tradingview.com/widgetembed/?frameElementId=tradingview_usdtd"
+            + "&symbol=CRYPTOCAP%3AUSDT.D&interval=D&hidesidetoolbar=0&symboledit=0"
+            + "&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=light&style=1"
+            + "&timezone=Asia%2FSeoul&withdateranges=1&hideideas=1&hidelegend=0"
+            + "&hidevolume=1&allow_symbol_change=0";
+        var current = d ? renderDominance(d) : renderDominance(null);
+        return '<div class="loading" style="display:none"></div>'
+            + current
+            + '<section id="chart-sec"><div class="sec-head"><h2>테더 도미넌스 (USDT.D) 차트</h2>'
+            + '<span class="tag">TradingView · CRYPTOCAP:USDT.D</span>'
+            + '<span class="tag">일봉</span></div>'
+            + '<div class="card" style="overflow:hidden">'
+            + '<div style="height:560px;background:#fff">'
+            + '<iframe title="테더 도미넌스 차트" src="' + chartUrl + '" '
+            + 'style="width:100%;height:100%;border:0" loading="eager" allowfullscreen></iframe>'
+            + '</div>'
+            + '<div class="chart-note" style="padding:12px 16px">'
+            + '<span class="swatch"><i class="sw" style="background:#7c5cff"></i> USDT 도미넌스</span>'
+            + '<span class="dim">검색어: 테더 도미넌스 · USDT.D</span>'
+            + '</div></div>'
+            + '<div class="card card-pad" style="margin-top:14px;font-size:13px">'
+            + '<b>읽는 방법</b> · USDT.D 상승은 시장 자금의 위험회피 가능성, 하락은 위험선호 가능성을 시사할 수 있습니다. '
+            + 'BTC 가격·BTC 도미넌스·전체 시가총액과 함께 확인해야 하며, 이 지표 하나만으로 매매 방향을 확정하지 않습니다.'
+            + '<div class="reason">차트 출처: TradingView CRYPTOCAP:USDT.D · 현재값 출처: CoinGecko · 투자 권유 아님</div>'
+            + '</div></section>';
+    }
+
+    /** 특수 지표 선택 시 일반 코인 분석 대신 USDT.D 화면을 표시한다. */
+    function showUsdtDominanceChart() {
         if (state.busy) return;
         state.busy = true;
-        var market = $("market").value || state.sel;
+        state.sel = "__USDT_DOMINANCE__";
+        state.renderedFor = "__USDT_DOMINANCE__";
+        closeWS();
+        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+        $("run").disabled = true;
+        $("out").innerHTML = '<div class="loading"><span class="spin"></span>테더 도미넌스 차트 준비 중…</div>';
+        fetchUsdtDominance().then(function (d) {
+            state.usdtDominance = d;
+            $("out").innerHTML = renderUsdtDominanceChart(d);
+            $("updatedAt") && ($("updatedAt").textContent = new Date().toLocaleTimeString("ko-KR"));
+            window.분석결과 = { market: "USDT.D", usdtDominance: d, chartSource: "TradingView CRYPTOCAP:USDT.D" };
+        }).catch(function () {
+            $("out").innerHTML = renderUsdtDominanceChart(null);
+        }).then(function () {
+            state.busy = false;
+            $("run").disabled = false;
+        });
+    }
+
+    function run() {
+        var selected = $("market").value || state.sel;
+        if (isUsdtDominanceMarket(selected)) {
+            showUsdtDominanceChart();
+            return;
+        }
+        if (state.busy) return;
+        state.busy = true;
+        var market = selected;
         state.sel = market;
         var sym = coinOf(market);
         $("run").disabled = true;
