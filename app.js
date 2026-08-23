@@ -240,8 +240,10 @@
     }
 
     var state = {
-        exchange: "upbit",
-        markets: [], sel: "KRW-BTC", chartTf: "4h",
+        // 첫 진입은 USDT 기준의 바이낸스 현물 가격을 표시한다.
+        // 사용자가 거래소 버튼을 누르면 기존처럼 해당 거래소로 전환된다.
+        exchange: "binance",
+        markets: [], sel: "USDT-BTC", chartTf: "4h",
         timer: null, busy: false, auto: false,
         alertOn: false, lastSignalKey: null, signal: null,
         ws: null, wsAlive: false,
