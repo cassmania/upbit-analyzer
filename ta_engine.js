@@ -111,20 +111,37 @@
         return out;
     }
 
-    function stoch(candles, k, d) {
-        k = k || 14; d = d || 3;
-        if (candles.length < k + d) return null;
-        const ks = [];
+    /**
+     * Slow Stochastic(14,3,3).
+     *
+     * Raw %K를 3기간 단순평균한 값을 화면의 %K로 쓰고, 그 Slow %K를
+     * 다시 3기간 단순평균해 %D를 만든다. 이전 구현은 Raw %K를 그대로
+     * 표시해 실제로는 (14,1,3)이었으므로 V4.1 규격에 맞게 교정한다.
+     */
+    function stoch(candles, k, smooth, d) {
+        k = k || 14; smooth = smooth || 3; d = d || 3;
+        if (candles.length < k + smooth + d - 2) return null;
+        const rawKs = [];
         for (let i = k - 1; i < candles.length; i++) {
             const win = candles.slice(i - k + 1, i + 1);
             let hi = -Infinity, lo = Infinity;
             for (const c of win) { if (c.h > hi) hi = c.h; if (c.l < lo) lo = c.l; }
             const c = candles[i].c;
-            ks.push(hi !== lo ? 100 * (c - lo) / (hi - lo) : 50.0);
+            rawKs.push(hi !== lo ? 100 * (c - lo) / (hi - lo) : 50.0);
         }
-        const kv = ks[ks.length - 1];
-        const dv = ks.slice(-d).reduce((a, b) => a + b, 0) / d;
-        return { k: Math.round(kv * 10) / 10, d: Math.round(dv * 10) / 10 };
+        const slowKs = [];
+        for (let i = smooth - 1; i < rawKs.length; i++) {
+            slowKs.push(rawKs.slice(i - smooth + 1, i + 1).reduce((a, b) => a + b, 0) / smooth);
+        }
+        if (slowKs.length < d) return null;
+        const kv = slowKs[slowKs.length - 1];
+        const dv = slowKs.slice(-d).reduce((a, b) => a + b, 0) / d;
+        return {
+            k: Math.round(kv * 10) / 10,
+            d: Math.round(dv * 10) / 10,
+            raw_k: Math.round(rawKs[rawKs.length - 1] * 10) / 10,
+            params: k + "," + smooth + "," + d
+        };
     }
 
     function cci(candles, n) {
@@ -304,11 +321,23 @@
         return den ? rp(num / den) : null;
     }
 
+    /** 조회 구간 첫 확정 봉을 앵커로 사용한 VWAP의 메타데이터. */
+    function vwapInfo(candles) {
+        const value = vwap(candles);
+        if (value === null || !candles || !candles.length) return null;
+        const first = candles[0];
+        return {
+            value: value,
+            anchor_type: "조회 구간 첫 확정 봉",
+            anchor_time: Number.isFinite(first.time) ? first.time : null
+        };
+    }
+
     function trend(candles) {
         const closes = candles.map(c => c.c);
         const price = closes[closes.length - 1];
         const ma = {};
-        // 기존 20/60/120 신호 점수는 호환을 위해 유지하고 V3 표준 SMA50을 추가한다.
+        // V4.1 기본값은 20/60/120/200이다. SMA50은 기존 화면·테스트 호환용이다.
         for (const p of [20, 50, 60, 120, 200]) {
             const v = sma(closes, p);
             ma[p] = v !== null ? rp(v) : null;
@@ -328,8 +357,8 @@
             }
         }
         if (ma[200]) {
-            if (price > ma[200]) { score += 1; sig.push("200일선 상회(장기 강세)"); }
-            else { score -= 1; sig.push("200일선 하회(장기 약세)"); }
+            if (price > ma[200]) { score += 1; sig.push("SMA200기간 상회(장기 강세)"); }
+            else { score -= 1; sig.push("SMA200기간 하회(장기 약세)"); }
         }
         if (st) {
             score += st.trend === "상승" ? 1 : -1;
@@ -575,6 +604,7 @@
             },
             bollinger: bollinger(closes),
             vwap: vwap(candles),
+            vwap_meta: vwapInfo(candles),
             candle_pattern: candlePattern(candles),
             volume: {
                 last: vols[vols.length - 1],
@@ -588,9 +618,9 @@
     }
 
     const TAEngine = {
-        VERSION: "1.2.0",
+        VERSION: "1.3.0",
         rp, sma, ema, rsi, rsiSeries, stoch, cci, macd, bollinger,
-        atr, adx, supertrend, vwap, trend,
+        atr, adx, supertrend, vwap, vwapInfo, trend,
         swings, vpvr, levels,
         rsiDivergence, candlePattern, volumeCheck, confluence,
         analyzeTf

@@ -102,6 +102,14 @@ console.log('\n[3] 스토캐스틱 / CCI');
     const st = TA.stoch(c);
     assert.ok(st.k >= 0 && st.k <= 100, 'k 범위');
     assert.ok(st.d >= 0 && st.d <= 100, 'd 범위');
+    assert.strictEqual(st.params, '14,3,3');
+});
+
+검증('Stochastic(14,3,3)은 Raw %K를 3기간 평활한다', () => {
+    const c = 캔들([...경로(100, 130, 25), ...경로(130, 90, 6), ...경로(90, 110, 4)]);
+    const st = TA.stoch(c);
+    assert.ok(st && Number.isFinite(st.raw_k));
+    assert.notStrictEqual(st.k, st.raw_k);
 });
 
 검증('CCI 상승 구간에서 양수', () => {
@@ -255,6 +263,20 @@ console.log('\n[7] VPVR / 레벨 — 스킬과 동일해야 하는 핵심');
     const t = TA.trend(캔들(경로(100, 130, 80)));
     assert.ok(Number.isFinite(t.ma[50]), `MA50 ${t.ma[50]}`);
     assert.ok(t.adx && Number.isFinite(t.adx.adx), `ADX ${JSON.stringify(t.adx)}`);
+});
+
+검증('V4.1 VWAP은 조회 구간 첫 확정 봉 앵커를 표시', () => {
+    const c = 캔들(경로(100, 130, 40));
+    c.forEach((x, i) => { x.time = 1700000000 + i * 3600; });
+    const info = TA.vwapInfo(c);
+    assert.strictEqual(info.anchor_type, '조회 구간 첫 확정 봉');
+    assert.strictEqual(info.anchor_time, 1700000000);
+    assert.ok(Number.isFinite(info.value));
+});
+
+검증('V4.1 SMA20/60/120/200기간 키를 모두 제공', () => {
+    const t = TA.trend(캔들(경로(100, 200, 220)));
+    [20, 60, 120, 200].forEach(n => assert.ok(Number.isFinite(t.ma[n]), `SMA${n}`));
 });
 
 검증('장대봉 거래량을 대표가격 한 칸에 몰아넣지 않는다', () => {

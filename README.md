@@ -1,9 +1,10 @@
 # 업비트 코인 분석
 
 업비트·빗썸·바이낸스·MEXC 현물 마켓을 다중 타임프레임으로 분석한다.
-계산 로직은 `crypto-master-analyst V3.1`의 근거 우선 원칙을 바탕으로 하며,
-완료봉 분리, Wilder ADX/ATR, SMA20/50/200, 확정 피벗, FVG·오더블록 후보,
-범위분배 VPVR과 조건부 롱·숏·관망 시나리오를 적용한다.
+계산 로직은 `crypto-master-analyst V4.1`의 근거 우선 원칙을 바탕으로 하며,
+완료봉 분리, Wilder ADX/ATR, SMA20/60/120/200, Stochastic(14,3,3),
+확정 피벗, FVG·오더블록 후보, 범위분배 근사 VPVR과 조건부
+롱·숏·관망 시나리오를 적용한다.
 
 **라이브**: https://upbit-analyzer.vercel.app/
 
@@ -16,12 +17,14 @@ GitHub Pages(`cassmania.github.io/upbit-analyzer/`)는 **쓰지 않는다.**
 |---|---|
 | `candle_utils.js` | 거래소별 봉 시작 시각 정규화 + 완료봉 분리 + 합성봉 검증 |
 | `ta_engine.js` | 스킬 지표 계산 이식 — RSI/스토캐스틱/CCI/MACD/볼린저/ATR/슈퍼트렌드/VWAP/VPVR/패턴/confluence |
-| `v3_analysis.js` | V3.1 구조 분석 — ADX 국면, 좌우 5봉 피벗, BOS, FVG, 오더블록 후보, 피보나치 |
+| `v3_analysis.js` | 검증된 구조 분석 기반 — ADX 국면, 좌우 5봉 피벗, BOS, FVG, 오더블록 후보, 피보나치 |
+| `v41_analysis.js` | V4.1 데이터 계약·근거군·가용성 호환 계층 |
 | `level_analyzer.js` | 다중 타임프레임 지지·저항 겹침 판정 (crypto-futures-simulator와 동일 엔진) |
 | `app.js` | 거래소 API 조달 + 실시간 차트 + USDT 도미넌스 + 화면 렌더 |
 | `index.html` | 화면 |
 | `api/coingecko.js` | CoinGecko 전체 시장·USDT 시가총액 서버리스 프록시 |
-| `test_ta_engine.js` | 자체검증 45개 |
+| `test_ta_engine.js` | 기술 지표 회귀 검증 |
+| `test_v41_analysis.js` | V4.1 프로토콜 회귀 검증 |
 
 외부 라이브러리 0개. 차트도 캔버스 직접 그리기다.
 
@@ -75,8 +78,9 @@ node test_v3_analysis.js
 
 총 106개 통과: 캔들 시간축 7 / TA 58 / 레벨 12 / 신호 23 / V3 구조 6.
 
-화면의 `V3.1 브리핑`은 같은 계산 스냅샷에서 USDT(KRW), 데이터 시각,
-멀티 타임프레임 추세, FVG·오더블록, 파생상품 가용성, 롱·숏·관망 조건을 만든다.
+화면의 `V4.1 브리핑`은 같은 계산 스냅샷에서 USDT(KRW), 데이터 시각,
+PART 0~5, 멀티 타임프레임 추세, FVG·오더블록, 파생상품 가용성,
+온체인·뉴스 데이터 한계, 롱·숏·관망 및 포지션 관리 조건을 만든다.
 브라우저 OHLCV만으로 확인할 수 없는 뉴스·언락·고래·온체인·CVD·청산맵은
 `현재 실시간 데이터 확인 불가`라고 명시한다.
 

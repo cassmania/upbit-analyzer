@@ -247,7 +247,7 @@
         ws: null, wsAlive: false,
         tfCandles: null, analysisTfCandles: null, levels: null, dp: 0, lastPrice: 0,
         usdPrice: null, usdtKrw: null, bankFx: null,  // 바이낸스 시세 / 김프 기준 환율 / 은행 환율
-        analysisAt: null, tickerAt: null, fxAt: null, v3: null,
+        analysisAt: null, tickerAt: null, fxAt: null, v41: null,
         usdtDominance: null,                         // CoinGecko 기준 USDT 시가총액 비중
         renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
@@ -523,6 +523,7 @@
                 return {
                     funding: r[0] && r[0].lastFundingRate !== undefined ? parseFloat(r[0].lastFundingRate) * 100 : null,
                     oi: r[1] && r[1].openInterest ? parseFloat(r[1].openInterest) : null,
+                    oiUnit: "Binance openInterest API 원단위(명목 USDT 아님)",
                     usdPrice: r[2] && r[2].price ? parseFloat(r[2].price) : null,
                     spotPrice: r[3] && r[3].price ? parseFloat(r[3].price) : null,
                     fundingTime: r[0] && r[0].time ? Number(r[0].time) : null,
@@ -977,7 +978,9 @@
         activeTfs().forEach(function (tf) {
             var c = analysisTf[tf.key];
             results[tf.key] = (c && c.length >= 30)
-                ? TAEngine.analyzeTf(c.map(function (x) { return { o: x.o, h: x.h, l: x.l, c: x.c, v: x.v }; }))
+                ? TAEngine.analyzeTf(c.map(function (x) {
+                    return { time: x.time, endTime: x.endTime, o: x.o, h: x.h, l: x.l, c: x.c, v: x.v };
+                }))
                 : { error: "캔들 부족 (" + (c ? c.length : 0) + "봉)" };
         });
 
@@ -997,10 +1000,10 @@
             ? SignalEngine.analyze(results, lv, price, fut)
             : { error: "signal_engine.js가 로드되지 않았습니다." };
         state.signal = sig;
-        var v3 = typeof V3Analysis !== "undefined"
-            ? V3Analysis.analyze(analysisTf, TAEngine)
-            : { error: "v3_analysis.js가 로드되지 않았습니다.", frames: {} };
-        state.v3 = v3;
+        var v41 = typeof V41Analysis !== "undefined"
+            ? V41Analysis.analyze(analysisTf, TAEngine)
+            : { error: "v41_analysis.js가 로드되지 않았습니다.", frames: {} };
+        state.v41 = v41;
         syncApiHint(analysisTf, CandleUtils.tickerTimeMs(t));
 
         // 같은 종목·같은 봉을 다시 그릴 때는 DOM을 통째로 갈아끼우지 않는다.
@@ -1010,7 +1013,7 @@
         if (sameView) {
             // 시세 스트립과 분석 표만 내용 교체. 차트는 데이터만 밀어넣는다.
             replaceSection("sec-quotes", renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx));
-            replaceSection("sec-v3", renderV3Panel(market, results, v3, lv, sig, fut, t, dp));
+            replaceSection("sec-v41", renderV41Panel(market, results, v41, lv, sig, fut, t, dp));
             replaceSection("sec-dominance", renderDominance(usdtDominance));
             replaceSection("sec-summary", renderSummary(results));
             replaceSection("sec-levels", renderLevels(lv, dp));
@@ -1023,7 +1026,7 @@
         } else {
             var html = [];
             html.push('<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>");
-            html.push(renderV3Panel(market, results, v3, lv, sig, fut, t, dp));
+            html.push(renderV41Panel(market, results, v41, lv, sig, fut, t, dp));
             html.push('<div id="sec-dominance">' + renderDominance(usdtDominance) + "</div>");
             html.push(renderChartSection(sym));
             html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
@@ -1042,12 +1045,14 @@
             results: results,
             ticker: t,
             futures: fut,
-            v3: v3,
+            v41: v41,
+            v3: v41,
             usdtDominance: usdtDominance
         };
         window.레벨결과 = lv;
         window.타점결과 = sig;
-        window.V3분석결과 = v3;
+        window.V41분석결과 = v41;
+        window.V3분석결과 = v41;
 
         // 히어로 자리(설명 문구가 있던 곳)에도 타점을 띄운다.
         renderHeroSignal(sym, sig, dp);
@@ -1214,7 +1219,7 @@
             if (r.futures.funding !== null && r.futures.funding !== undefined) {
                 fu.push("펀딩 " + r.futures.funding.toFixed(4) + "%");
             }
-            if (r.futures.oi) fu.push("OI " + fmt(r.futures.oi, 0));
+            if (r.futures.oi) fu.push("OI " + fmt(r.futures.oi, 0) + " (API 원단위)");
             if (r.futures.spotPrice && state.usdtKrw && 원화브리핑) {
                 fu.push("김프 " + pct((price / (r.futures.spotPrice * state.usdtKrw) - 1) * 100));
             }
@@ -1342,11 +1347,11 @@
         return L.join("\n");
     }
 
-    /** 화면과 같은 스냅샷을 V3.1 마스터 프롬프트 출력 형식으로 직렬화한다. */
-    function buildV3Brief() {
+    /** 화면과 같은 스냅샷을 코인분석스킬 V4.1 출력 형식으로 직렬화한다. */
+    function buildV41Brief() {
         var r = window.분석결과, lv = window.레벨결과, sig = window.타점결과;
         if (!r || !lv) return "분석 결과가 없습니다. 먼저 분석을 실행하세요.";
-        var v3 = r.v3 || window.V3분석결과 || {};
+        var v41 = r.v41 || window.V41분석결과 || {};
         var t = r.ticker, price = t.trade_price, dp = state.dp;
         var sym = coinOf(r.market);
         var name = (state.markets.filter(function (m) { return m.market === r.market; })[0] || {}).korean_name || sym;
@@ -1356,7 +1361,7 @@
         var c4 = completed["4h"] || [];
         var last4 = c4.length ? c4[c4.length - 1] : null;
 
-        L.push("# " + title + " — AI MASTER CRYPTO ANALYST V3.1");
+        L.push("# " + title + " — AI MASTER CRYPTO ANALYST V4.1");
         L.push("");
         L.push("## ■ 분석 기준");
         L.push("- 종목/시장: " + r.market + " · " + ex().name + " 현물");
@@ -1365,9 +1370,24 @@
         L.push("- 마지막 확정 4시간봉: " + (last4 && isFinite(last4.endTime) ? kst(last4.endTime * 1000) : "확인 불가"));
         L.push("- OHLCV 출처: " + ex().name + " 현물 공개 API · 최대 200봉 · 지표는 완료봉만 사용");
         L.push("- KRW 환산: 업비트 KRW-USDT 공개 시세 · " + kst(state.fxAt));
+        L.push("- 데이터 계약: 같은 종목·거래소 현물 OHLCV · 완료봉 기준 · 미완성 봉 지표 제외");
         L.push("");
 
-        L.push("## ■ 현재 시장 요약");
+        L.push("## ■ PART 0. USDT 도미넌스와 시장 위험선호");
+        if (r.usdtDominance && isFinite(r.usdtDominance.value)) {
+            var dominanceAt = r.usdtDominance.observedAt ? Date.parse(r.usdtDominance.observedAt) : r.usdtDominance.fetchedAt;
+            L.push("- 현재 USDT.D: " + r.usdtDominance.value.toFixed(3) + "% · " + kst(dominanceAt));
+            L.push("- 계산: USDT 시가총액 ÷ 전체 암호화폐 시가총액 × 100");
+            L.push("- 방향성: 현재값만 확인 가능해 1W/1D/4H/1H 상승·하락은 확인 불가");
+            L.push("- BTC·BTC.D·전체 시가총액과의 교차검증: 브라우저 원자료 부족으로 현재 확인 불가");
+            L.push("- 단독 매매 신호로 사용하지 않음 · 출처: " + r.usdtDominance.source);
+        } else {
+            L.push("- USDT 도미넌스 현재 데이터 확인 불가");
+        }
+        L.push("");
+
+        L.push("## ■ PART 1. 기술적 차트 분석");
+        L.push("### 멀티 타임프레임");
         ["1M", "1w", "1d", "12h", "4h", "1h"].forEach(function (key) {
             var d = r.results[key];
             if (!d) return;
@@ -1379,12 +1399,22 @@
                 + " · RSI " + (d.oscillators.rsi14 === null ? "—" : d.oscillators.rsi14)
                 + " · SuperTrend " + (d.trend.supertrend ? d.trend.supertrend.trend : "—"));
         });
-        var primary = v3.primary_tf && r.results[v3.primary_tf] ? r.results[v3.primary_tf] : null;
+        var primary = v41.primary_tf && r.results[v41.primary_tf] ? r.results[v41.primary_tf] : null;
         if (primary) {
-            L.push("- SMA20/50/200(" + v3.primary_tf + "): "
-                + [20, 50, 200].map(function (n) {
+            L.push("- SMA20/60/120/200기간(" + v41.primary_tf + "): "
+                + [20, 60, 120, 200].map(function (n) {
                     return "SMA" + n + " " + (primary.trend.ma[n] ? fmtPair(primary.trend.ma[n], dp) : "표본 부족");
                 }).join(" · "));
+            var osc = primary.oscillators || {};
+            L.push("- 모멘텀 근거군(중복 점수화 금지): RSI " + (osc.rsi14 === null ? "—" : osc.rsi14)
+                + " · CCI " + (osc.cci20 === null ? "—" : osc.cci20)
+                + " · Stochastic(14,3,3) " + (osc.stochastic ? osc.stochastic.k + "/" + osc.stochastic.d : "—")
+                + " · MACD hist " + (osc.macd && osc.macd.hist !== null ? osc.macd.hist : "—"));
+            L.push("- Bollinger(20,2): " + (primary.bollinger
+                ? "상단 " + fmtPair(primary.bollinger.upper, dp) + " · 중앙 " + fmtPair(primary.bollinger.mid, dp)
+                    + " · 하단 " + fmtPair(primary.bollinger.lower, dp) + " · 폭 " + primary.bollinger.bandwidth_pct + "%"
+                : "표본 부족"));
+            L.push("- VWAP: " + (primary.vwap ? fmtPair(primary.vwap, dp) + " · 조회 구간 첫 확정 봉 앵커" : "표본 부족"));
         }
         L.push("- 근거 품질: 기술 데이터 A(공식 공개 API·완료봉), 나머지는 항목별 가용성");
         L.push("");
@@ -1402,46 +1432,55 @@
         L.push("## ■ 핵심 유동성 구간");
         levelTable("강한 저항대", lv.resistance);
         levelTable("핵심 지지대", lv.support);
-        var activeFvg = (v3.fvg || []).filter(function (x) { return x.status !== "완전 메움"; }).slice(-3).reverse();
-        var activeOb = (v3.order_blocks || []).filter(function (x) { return x.status !== "무효"; }).slice(-3).reverse();
+        var activeFvg = (v41.fvg || []).filter(function (x) { return x.status !== "완전 메움"; }).slice(-3).reverse();
+        var activeOb = (v41.order_blocks || []).filter(function (x) { return x.status !== "무효"; }).slice(-3).reverse();
         L.push("- FVG: " + (activeFvg.length ? activeFvg.map(function (x) {
             return (x.type === "bullish" ? "상승" : "하락") + " " + fmtPair(x.lower, dp) + " ~ " + fmtPair(x.upper, dp) + "(" + x.status + " " + x.filled_pct + "%)";
         }).join(" / ") : "확인된 활성 구간 없음"));
         L.push("- 오더블록: " + (activeOb.length ? activeOb.map(function (x) {
             return (x.type === "bullish" ? "상승" : "하락") + " " + fmtPair(x.lower, dp) + " ~ " + fmtPair(x.upper, dp) + "(" + x.quality + ")";
         }).join(" / ") : "확인된 유효 구간 없음"));
-        L.push("- VPVR POC/HVN/LVN: OHLCV 범위분배 근사. 체결별 원자료가 아니므로 정밀 VPVR은 검증 불가");
+        L.push("- 근사 VPVR POC/VAH/VAL/HVN: OHLCV 범위분배 · 체결별 원자료 아님 · LVN 미산출");
         L.push("");
 
-        L.push("## ■ 모멘텀 및 파동 구조");
+        L.push("### 모멘텀 및 파동 구조");
         L.push("- RSI 다이버전스: " + (primary && primary.oscillators.rsi_divergence ? primary.oscillators.rsi_divergence : "확인된 일반 다이버전스 없음"));
-        if (v3.fibonacci) {
-            L.push("- 피보나치 " + v3.fibonacci.direction + ": 0.382 " + fmtPair(v3.fibonacci.levels["0.382"], dp)
-                + " · 0.5 " + fmtPair(v3.fibonacci.levels["0.5"], dp)
-                + " · 0.618 " + fmtPair(v3.fibonacci.levels["0.618"], dp)
-                + " · 0.786 " + fmtPair(v3.fibonacci.levels["0.786"], dp));
+        if (v41.fibonacci) {
+            L.push("- 피보나치 " + v41.fibonacci.direction + ": 0.382 " + fmtPair(v41.fibonacci.levels["0.382"], dp)
+                + " · 0.5 " + fmtPair(v41.fibonacci.levels["0.5"], dp)
+                + " · 0.618 " + fmtPair(v41.fibonacci.levels["0.618"], dp)
+                + " · 0.786 " + fmtPair(v41.fibonacci.levels["0.786"], dp));
         } else {
             L.push("- 피보나치: 확정 스윙 한 쌍 부족");
         }
         L.push("- 엘리엇 파동: 규칙 기반 유일 카운트를 검증할 수 없어 자동 단정하지 않음");
         L.push("");
 
-        L.push("## ■ 파생상품 심리");
+        L.push("## ■ PART 2. 선물 시장과 군중 심리");
         if (r.futures) {
             L.push("- 펀딩비: " + (r.futures.funding === null ? "현재 실시간 데이터 확인 불가" : r.futures.funding.toFixed(4) + "%"));
-            L.push("- OI: " + (r.futures.oi === null ? "현재 실시간 데이터 확인 불가" : fmt(r.futures.oi, 0) + " 계약"));
+            L.push("- 다음 펀딩 시각: " + (r.futures.nextFundingTime ? kst(r.futures.nextFundingTime) : "확인 불가"));
+            L.push("- OI: " + (r.futures.oi === null ? "현재 실시간 데이터 확인 불가" : fmt(r.futures.oi, 0) + " · " + r.futures.oiUnit));
             L.push("- 출처/시각: " + (r.futures.source || "Binance USDT-M 공개 API") + " · " + kst(r.futures.fetchedAt));
+            L.push("- 시장 구분: 현재 기술분석은 " + ex().name + " 현물, 펀딩·OI는 Binance USDT-M 선물 보조자료");
         } else {
             L.push("- 펀딩비/OI: 바이낸스 USDT-M 미상장 또는 조회 실패 — 현재 실시간 데이터 확인 불가");
         }
         L.push("- CVD/청산맵: 현재 실시간 데이터 확인 불가");
         L.push("");
 
-        L.push("## ■ 펀더멘털");
-        L.push("- 토큰 언락·고래 이동·파트너십·뉴스: 브라우저 OHLCV만으로 검증 불가 — 현재 실시간 데이터 확인 불가");
+        L.push("## ■ PART 3. 온체인 데이터와 고래 동향");
+        L.push("- 거래소 순유입·순유출: 현재 실시간 데이터 확인 불가");
+        L.push("- 고래 이동·주소 라벨: 현재 실시간 데이터 확인 불가");
+        L.push("- MVRV/SOPR: 현재 실시간 데이터 확인 불가");
         L.push("");
 
-        L.push("## ■ 시나리오별 매매 전략");
+        L.push("## ■ PART 4. 토큰노믹스와 프로젝트 펀더멘털");
+        L.push("- 토큰 언락·고래 이동·파트너십·뉴스: 브라우저 OHLCV만으로 검증 불가 — 현재 실시간 데이터 확인 불가");
+        L.push("- 뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행이며 실제 뉴스 부재를 뜻하지 않음");
+        L.push("");
+
+        L.push("## ■ PART 5. 리스크 관리와 실행 전략");
         L.push("### 롱 셋업");
         if (sig && sig.entry && sig.entry.side === "LONG") {
             L.push("- 발동 조건: 상위봉 방향과 1시간 타이밍 조건 충족");
@@ -1453,6 +1492,13 @@
             L.push("- 발동 조건: " + (lv.직상 ? fmtPair(lv.직상.price, dp) + " 돌파 후 확정 봉 유지·재지지" : "상단 돌파 기준 확인 불가"));
             L.push("- 현재 판단: 관망 · " + (sig && sig.blocked ? sig.blocked : "롱 조건 미충족"));
         }
+        L.push("");
+
+        L.push("### 포지션 관리");
+        L.push("- 계좌 위험액 = 계좌 평가액 × 허용 위험률");
+        L.push("- 기본 포지션 수량 = 계좌 위험액 ÷ |진입가-손절가|");
+        L.push("- 계좌 규모·위험 성향이 없어 고정 레버리지와 수량은 산정하지 않음");
+        L.push("- 청산가가 구조적 손절보다 먼저 오는 레버리지는 사용 금지");
         L.push("");
         L.push("### 숏 셋업 또는 관망");
         if (sig && sig.entry && sig.entry.side === "SHORT") {
@@ -1474,6 +1520,12 @@
         L.push("- 주요 위험: API 지연, 거래소 간 가격 차이, 미반영 수수료·슬리피지, 급변 이벤트");
         L.push("- 멘탈케어: 좋은 자리는 쫓아가는 자리가 아니라, 조건이 먼저 와서 기다려 주는 자리입니다.");
         L.push("");
+        L.push("## ■ Executive Summary");
+        L.push("1. 현재 구조: " + (primary ? primary.trend.bias + " · " + v41.primary_tf + " 기준" : "표본 부족"));
+        L.push("2. 핵심 조건: " + (lv.직상 ? fmtPair(lv.직상.price, dp) + " 돌파" : "상단 확인 불가")
+            + " / " + (lv.직하 ? fmtPair(lv.직하.price, dp) + " 이탈" : "하단 확인 불가"));
+        L.push("3. 실행 판단: " + (sig && sig.entry ? (sig.entry.side === "LONG" ? "조건부 롱" : "조건부 숏") : "관망"));
+        L.push("");
         L.push("---");
         L.push("규칙 기반 조건부 분석이며 투자 권유나 수익 보장이 아닙니다. 백테스트 없는 승률·확률은 표시하지 않습니다.");
         return L.join("\n");
@@ -1482,7 +1534,7 @@
     function openBrief() {
         var box = $("brief");
         if (!box) return;
-        $("briefText").value = buildV3Brief();
+        $("briefText").value = buildV41Brief();
         box.style.display = "";
         box.scrollIntoView({ block: "center", behavior: "smooth" });
     }
@@ -1548,7 +1600,7 @@
                     ? "롱이 숏에 비용 지급 · 롱 과열 가능"
                     : fut.funding < 0 ? "숏이 롱에 비용 지급 · 숏 과열 가능" : "중립")));
             out.push(qb("미결제약정 <span class='dim'>· 바이낸스</span>",
-                fut.oi === null ? "—" : fmt(fut.oi, 0), fut.oi === null ? "데이터 없음" : sym + " 계약"));
+                fut.oi === null ? "—" : fmt(fut.oi, 0), fut.oi === null ? "데이터 없음" : "Binance openInterest API 원단위 · 명목 USDT 아님"));
             // 김프 표준은 현물가 기준이다. 현물이 없으면 선물로 대체하고 그 사실을 표기한다.
             var refUsd = fut.spotPrice || fut.usdPrice;
             var isSpot = !!fut.spotPrice;
@@ -1581,11 +1633,11 @@
         return out.join("");
     }
 
-    /** V3.1의 5단계 분석을 현재 선택 종목의 같은 계산 스냅샷으로 표시한다. */
-    function renderV3Panel(market, results, v3, lv, sig, fut, ticker, dp) {
+    /** V4.1의 PART 0~5 분석을 현재 선택 종목의 같은 계산 스냅샷으로 표시한다. */
+    function renderV41Panel(market, results, v41, lv, sig, fut, ticker, dp) {
         var sym = coinOf(market);
         var price = ticker.trade_price;
-        var primary = v3 && v3.primary_tf ? results[v3.primary_tf] : null;
+        var primary = v41 && v41.primary_tf ? results[v41.primary_tf] : null;
         var completed = state.analysisTfCandles || {};
         var c4 = completed["4h"] || [];
         var last4 = c4.length ? c4[c4.length - 1] : null;
@@ -1615,7 +1667,7 @@
         }).join("<br>");
 
         var ma = primary && primary.trend ? primary.trend.ma : {};
-        var fib = v3 && v3.fibonacci;
+        var fib = v41 && v41.fibonacci;
         var fibText = fib
             ? fib.direction + " · 0.382 " + fmtPair(fib.levels["0.382"], dp)
                 + " · 0.5 " + fmtPair(fib.levels["0.5"], dp)
@@ -1626,7 +1678,7 @@
 
         var derivatives = fut
             ? "펀딩 " + (fut.funding === null ? "데이터 없음" : fut.funding.toFixed(4) + "%")
-                + " · OI " + (fut.oi === null ? "데이터 없음" : fmt(fut.oi, 0) + " 계약")
+                + " · OI " + (fut.oi === null ? "데이터 없음" : fmt(fut.oi, 0) + " " + esc(fut.oiUnit || "API 원단위"))
                 + "<br><span class=\"dim\">" + esc(fut.source || "Binance USDT-M 공개 API") + " · " + kst(fut.fetchedAt) + "</span>"
             : "바이낸스 USDT-M 미상장 또는 조회 실패 — 현재 실시간 데이터 확인 불가";
 
@@ -1644,22 +1696,25 @@
         if (lv && lv.직상) conditional.push("롱 대안: " + fmtPair(lv.직상.price, dp) + " 돌파 후 확정 봉 유지·재지지 확인");
         if (lv && lv.직하) conditional.push("숏 대안: " + fmtPair(lv.직하.price, dp) + " 이탈 후 되돌림 저항 확인");
 
-        var part1 = item("멀티 타임프레임", frameSummary || "표본 부족")
-            + item("MA 20/50/200 · " + (v3 && v3.primary_tf ? v3.primary_tf : "—"),
-                [20, 50, 200].map(function (n) { return "SMA" + n + " " + (ma && ma[n] ? fmtPair(ma[n], dp) : "표본 부족"); }).join("<br>"))
-            + item("FVG", levelList(v3 && v3.fvg, "fvg"))
-            + item("오더블록", levelList(v3 && v3.order_blocks, "ob"));
-        var part2 = item("피보나치", fibText)
+        var part1a = item("멀티 타임프레임", frameSummary || "표본 부족")
+            + item("MA 20/60/120/200기간 · " + (v41 && v41.primary_tf ? v41.primary_tf : "—"),
+                [20, 60, 120, 200].map(function (n) { return "SMA" + n + " " + (ma && ma[n] ? fmtPair(ma[n], dp) : "표본 부족"); }).join("<br>"))
+            + item("FVG", levelList(v41 && v41.fvg, "fvg"))
+            + item("오더블록", levelList(v41 && v41.order_blocks, "ob"));
+        var part1b = item("피보나치", fibText)
             + item("RSI 다이버전스", divergence)
-            + item("VPVR", "OHLCV 고가~저가 범위분배 근사 · 체결별 원자료 아님");
-        var part3 = item("펀딩·OI", derivatives)
+            + item("모멘텀", "RSI·CCI·Stochastic(14,3,3)·MACD는 한 근거군 · 중복 점수화 금지")
+            + item("VPVR·VWAP", "VPVR은 OHLCV 범위분배 근사 · VWAP은 조회 구간 첫 확정 봉 앵커");
+        var part2 = item("펀딩·OI", derivatives)
             + item("CVD·청산맵", "현재 실시간 데이터 확인 불가");
-        var part4 = item("뉴스·토큰 언락·고래·온체인", "브라우저 OHLCV만으로 검증 불가 · 현재 실시간 데이터 확인 불가");
+        var part3 = item("거래소 순유입·고래·MVRV·SOPR", "검증 가능한 온체인 원자료 없음 · 현재 실시간 데이터 확인 불가");
+        var part4 = item("뉴스·토큰 언락·기관·생태계", "브라우저 OHLCV만으로 검증 불가 · 현재 실시간 데이터 확인 불가");
         var part5 = item("현재 실행 판단", execution)
             + (conditional.length ? item("조건부 대안", conditional.join("<br>")) : "")
-            + item("근거 품질", "기술 데이터 A(공식 공개 API·완료봉) · 파생/펀더멘털은 항목별 가용성 적용");
+            + item("포지션 관리", "계좌 위험액=평가액×허용 위험률 · 계좌 정보가 없어 고정 레버리지/수량 산정 안 함")
+            + item("근거 품질", "기술 데이터 A(공식 공개 API·완료봉) · 파생/온체인/펀더멘털은 항목별 가용성 적용");
 
-        return '<section id="sec-v3"><div class="sec-head"><h2>V3.1 5단계 통합 분석</h2>'
+        return '<section id="sec-v41"><div class="sec-head"><h2>V4.1 PART 0~5 통합 분석</h2>'
             + '<span class="tag">확정 봉 · 근거 우선 · 승률 추정 없음</span></div>'
             + '<div class="card card-pad" style="margin-bottom:14px">'
             + item("분석 기준", esc(sym + " · " + ex().name + " 현물") + " · 현재 " + fmtPair(price, dp)
@@ -1668,12 +1723,13 @@
                 + " · USDT/KRW 업비트 공개 API " + kst(state.fxAt) + "</span>")
             + "</div>"
             + '<div class="grid2">'
-            + '<div class="card card-pad"><b>PART 1 · 추세와 유동성</b>' + part1 + "</div>"
-            + '<div class="card card-pad"><b>PART 2 · 모멘텀과 구조</b>' + part2 + "</div>"
-            + '<div class="card card-pad"><b>PART 3 · 파생상품 심리</b>' + part3 + "</div>"
+            + '<div class="card card-pad"><b>PART 1 · 기술적 추세와 유동성</b>' + part1a + "</div>"
+            + '<div class="card card-pad"><b>PART 1 · 모멘텀과 구조</b>' + part1b + "</div>"
+            + '<div class="card card-pad"><b>PART 2 · 파생상품 심리</b>' + part2 + "</div>"
+            + '<div class="card card-pad"><b>PART 3 · 온체인과 고래</b>' + part3 + "</div>"
             + '<div class="card card-pad"><b>PART 4 · 펀더멘털</b>' + part4 + "</div>"
             + "</div>"
-            + '<div class="card card-pad" style="margin-top:14px"><b>PART 5 · 최종 판단과 실행</b>' + part5
+            + '<div class="card card-pad" style="margin-top:14px"><b>PART 5 · 리스크 관리와 실행</b>' + part5
             + '<div class="warn">규칙 기반 조건부 분석이며 투자 권유나 수익 보장이 아닙니다.</div></div></section>';
     }
 
@@ -1686,7 +1742,7 @@
      */
     function renderDominance(d) {
         if (!d) {
-            return '<section><div class="sec-head"><h2>테더 도미넌스 (USDT.D)</h2>'
+            return '<section><div class="sec-head"><h2>PART 0 · 테더 도미넌스 (USDT.D)</h2>'
                 + '<span class="tag">시장 전체 보조지표</span></div>'
                 + '<div class="card card-pad"><div class="dim">USDT 도미넌스 현재 데이터 확인 불가</div>'
                 + '<div class="reason">CoinGecko 공개 API 또는 네트워크 응답을 확인하지 못했습니다. 코인별 분석은 계속 표시합니다.</div></div></section>';
@@ -1703,7 +1759,7 @@
         };
         var observed = d.observedAt ? new Date(d.observedAt).toLocaleString("ko-KR") : "확인 불가";
 
-        return '<section><div class="sec-head"><h2>테더 도미넌스 (USDT.D)</h2>'
+        return '<section><div class="sec-head"><h2>PART 0 · 테더 도미넌스 (USDT.D)</h2>'
             + '<span class="tag">USDT 시가총액 ÷ 전체 시장 시가총액</span></div>'
             + '<div class="grid2">'
             + '<div class="card card-pad">'
@@ -1828,14 +1884,14 @@
             var L = [];
             function row(k, val) { return '<tr><td class="dim">' + k + '</td><td class="num mono">' + val + "</td></tr>"; }
             L.push(row("RSI(14)", o.rsi14 === null ? "—" : '<span class="' + (o.rsi14 >= 70 ? "down" : o.rsi14 <= 30 ? "up" : "") + '">' + o.rsi14 + "</span>"));
-            if (o.stochastic) L.push(row("스토캐스틱 K/D", o.stochastic.k + " / " + o.stochastic.d));
+            if (o.stochastic) L.push(row("스토캐스틱(14,3,3) K/D", o.stochastic.k + " / " + o.stochastic.d));
             if (o.cci20 !== null) L.push(row("CCI(20)", '<span class="' + (o.cci20 >= 100 ? "down" : o.cci20 <= -100 ? "up" : "") + '">' + o.cci20 + "</span>"));
             if (o.macd) L.push(row("MACD 히스토그램", o.macd.hist === null ? "—" : '<span class="' + (o.macd.hist > 0 ? "up" : "down") + '">' + fmt(o.macd.hist, dp) + "</span>"));
             if (bb) {
                 L.push(row("볼린저 %B", '<span class="' + (bb.pct_b >= 1 ? "down" : bb.pct_b <= 0 ? "up" : "") + '">' + bb.pct_b + "</span>"));
                 L.push(row("밴드폭", bb.bandwidth_pct + "%" + (bb.bandwidth_pct < 3 ? ' <span class="neu">수축</span>' : "")));
             }
-            if (r.vwap) L.push(row("VWAP", fmt(r.vwap, dp)));
+            if (r.vwap) L.push(row("VWAP · 조회 구간 첫 확정 봉 앵커", fmt(r.vwap, dp)));
             L.push(row("거래량 배수", (v.surge === null ? "—" : v.surge + "배") + ' <span class="dim" style="font-size:10px">' + esc(v.reliability || "") + "</span>"));
             if (r.levels.vpvr) {
                 L.push(row("POC", fmt(r.levels.vpvr.poc, dp)));
