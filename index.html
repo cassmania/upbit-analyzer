@@ -121,6 +121,20 @@ input[type=search]{min-width:180px}
 select{min-width:210px;cursor:pointer}
 #interval{min-width:auto;width:auto;padding-right:8px}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
+.market-picker{display:flex;align-items:center;gap:8px;flex:1 1 360px;min-width:280px;position:relative}
+.market-picker #q{flex:1;min-width:160px}
+.market-results{position:absolute;left:0;top:calc(100% + 6px);z-index:45;width:min(430px,calc(100vw - 48px));max-height:300px;overflow:auto;padding:6px;background:var(--surface);border:1px solid var(--outline-strong);border-radius:var(--r-md);box-shadow:0 14px 28px rgba(0,0,0,.28)}
+.market-results[hidden]{display:none}
+.market-result{display:flex;align-items:center;gap:7px;padding:4px;border-radius:var(--r-sm)}
+.market-result:hover,.market-result:focus-within{background:var(--surface-high)}
+.market-result .market-open{flex:1;min-width:0;padding:8px 9px;border:0;background:transparent;color:var(--on-surface);text-align:left;cursor:pointer;border-radius:var(--r-sm);font-size:13px}
+.market-result .market-open:hover{color:#fff}
+.market-result .market-open b{font-family:var(--font-h);font-weight:700}
+.market-result .market-open span{color:var(--on-variant);margin-left:5px}
+.favorite-toggle{width:34px;height:34px;padding:0;border:1px solid var(--outline);border-radius:var(--r-sm);background:transparent;color:var(--on-variant);cursor:pointer;font-size:18px;line-height:1}
+.favorite-toggle:hover,.favorite-toggle.is-favorite{border-color:var(--gold);color:var(--gold);background:rgba(224,180,74,.1)}
+.market-results-note{padding:8px 9px;color:var(--on-variant);font-size:12px}
+@media(max-width:620px){.market-picker{flex-basis:100%;min-width:0}.market-results{width:calc(100vw - 48px)}}
 .btn{
   padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
   background:transparent;color:var(--on-surface);
@@ -460,7 +474,10 @@ footer b{color:#c9d2ee}
       <button type="button" data-ex="binance" class="act">바이낸스</button>
       <button type="button" data-ex="mexc">MEXC</button>
     </span>
-    <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off">
+    <div class="market-picker">
+      <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off" aria-label="코인 검색">
+      <div id="marketResults" class="market-results" role="listbox" aria-label="코인 검색 결과" hidden></div>
+    </div>
     <select id="market"></select>
     <div class="tfbar" id="tfbar">
       <button data-tf="1h">1시간</button>
