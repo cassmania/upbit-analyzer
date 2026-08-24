@@ -373,13 +373,15 @@
 
     function loadMarkets() {
         var e = ex();
+        // API 응답이 늦거나 실패해도 저장된 즐겨찾기 개수는 먼저 복원한다.
+        state.favorites = loadFavorites();
+        renderFavoriteCount();
         var p = e.kind === "binance"
             ? bnMarkets()
             : getJSON(apiUrl("market/all", { isDetails: false })).then(function (all) {
                 return all.filter(function (m) { return m.market.indexOf("KRW-") === 0; });
             });
         return p.then(function (list) {
-            state.favorites = loadFavorites();
             state.markets = list.sort(function (a, b) {
                 return a.korean_name.localeCompare(b.korean_name, "ko");
             });
@@ -417,6 +419,45 @@
     function saveFavorites() {
         try { localStorage.setItem(favoriteStorageKey(), JSON.stringify(state.favorites)); } catch (e) { /* 저장 불가 환경에서는 화면만 유지 */ }
     }
+
+    /**
+     * 마지막 거래소와 코인을 기억한다.
+     *
+     * 즐겨찾기 목록은 거래소별로 이미 안전하게 나뉘어 저장되고 있다. 다만 재접속 때
+     * 거래소가 항상 바이낸스로 돌아가면, MEXC 등에 저장한 즐겨찾기가 0개처럼 보인다.
+     * 따라서 민감하지 않은 화면 설정 두 가지만 별도 키에 보관해 같은 화면으로 복원한다.
+     */
+    var PREFERENCE_STORAGE_KEY = "upbit-analyzer:preferences:v1";
+    function loadPreferences() {
+        try {
+            var saved = JSON.parse(localStorage.getItem(PREFERENCE_STORAGE_KEY) || "{}");
+            if (saved && EXCHANGES[saved.exchange]) {
+                state.exchange = saved.exchange;
+            } else {
+                // 이번 버전 이전에 등록한 즐겨찾기도 첫 재접속부터 바로 보이게 한다.
+                // 마지막 거래소 기록이 없으면 즐겨찾기가 가장 많은 거래소를 합리적인 복원값으로 쓴다.
+                var best = Object.keys(EXCHANGES).map(function (key) {
+                    var list;
+                    try {
+                        list = JSON.parse(localStorage.getItem("upbit-analyzer:favorites:" + key) || "[]");
+                    } catch (e) {
+                        list = [];
+                    }
+                    return { key: key, count: Array.isArray(list) ? list.length : 0 };
+                }).sort(function (a, b) { return b.count - a.count; })[0];
+                if (best && best.count > 0) state.exchange = best.key;
+            }
+            if (saved && typeof saved.sel === "string" && saved.sel) state.sel = saved.sel;
+        } catch (e) { /* 손상되었거나 저장소를 쓸 수 없으면 기본값을 사용한다 */ }
+    }
+    function savePreferences() {
+        try {
+            localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify({
+                exchange: state.exchange,
+                sel: state.sel
+            }));
+        } catch (e) { /* 저장 불가 환경에서는 현재 접속 중인 화면만 유지한다 */ }
+    }
     function isFavorite(market) { return state.favorites.indexOf(market) !== -1; }
     function toggleFavorite(market) {
         var i = state.favorites.indexOf(market);
@@ -446,16 +487,34 @@
         }
     }
 
+    /** 검색어가 코인의 마켓 코드, 심볼, 한글명 또는 영문명에 포함되는지 확인한다. */
+    function marketMatchesSearch(m, filter) {
+        var f = (filter || "").trim().toLowerCase();
+        if (!f) return true;
+        return m.market.toLowerCase().indexOf(f) !== -1
+            || coinOf(m.market).toLowerCase().indexOf(f) !== -1
+            || m.korean_name.toLowerCase().indexOf(f) !== -1
+            || (m.english_name || "").toLowerCase().indexOf(f) !== -1;
+    }
+
+    /** 불완전한 글자를 입력하는 도중에는 실행하지 않도록 정확히 일치하는 코인만 찾는다. */
+    function findExactMarket(query) {
+        var q = (query || "").trim().toLowerCase();
+        if (!q) return null;
+        return state.markets.find(function (m) {
+            return m.market.toLowerCase() === q
+                || coinOf(m.market).toLowerCase() === q
+                || m.korean_name.toLowerCase() === q
+                || (m.english_name || "").toLowerCase() === q;
+        }) || null;
+    }
+
     /**
      * 종목 목록을 그린다.
      *
-     * 검색은 "보여줄 목록"만 좁힌다. 분석 대상(state.sel)은 절대 건드리지 않는다.
-     * 예전에는 필터에 안 걸리면 목록 첫 종목으로 state.sel을 밀어버려서,
-     * 검색창에 "eth"를 치는 것만으로 분석 중이던 BTC가 다른 코인으로 바뀌었다.
-     * 자동갱신이 켜져 있으면 고르지도 않은 종목을 계속 조회하게 된다.
-     *
-     * 그래서 선택 중인 종목은 필터에 안 걸려도 목록에 남긴다.
-     * 종목 변경은 오직 사용자가 select를 조작할 때(change 이벤트)만 일어난다.
+     * 오른쪽 기본 선택 상자에는 현재 분석 종목을 남겨 화면이 엉뚱한 종목으로 보이지
+     * 않게 한다. 검색 결과 목록에는 실제 일치한 코인만 보여 TAO를 분석하면서 PUMP를
+     * 검색했을 때 TAO가 검색 결과에 섞이는 문제를 막는다.
      */
     function renderMarketSelect(filter) {
         var sel = $("market");
@@ -464,13 +523,12 @@
             || f.indexOf("테더") !== -1
             || f.indexOf("usdt.d") !== -1
             || f.indexOf("tether dominance") !== -1;
-        var list = state.markets.filter(function (m) {
-            if (!f) return true;
-            if (m.market === state.sel) return true;   // 선택 중인 종목은 항상 남긴다
-            return m.market.toLowerCase().indexOf(f) !== -1
-                || m.korean_name.toLowerCase().indexOf(f) !== -1
-                || (m.english_name || "").toLowerCase().indexOf(f) !== -1;
-        });
+        var matches = state.markets.filter(function (m) { return marketMatchesSearch(m, f); });
+        var list = matches.slice();
+        if (f && !list.some(function (m) { return m.market === state.sel; })) {
+            var current = state.markets.find(function (m) { return m.market === state.sel; });
+            if (current) list.unshift(current);
+        }
         var dominanceOption = showDominance
             ? '<option value="__USDT_DOMINANCE__">테더 도미넌스 (USDT.D) · 차트</option>'
             : "";
@@ -483,7 +541,7 @@
         } else if (list.some(function (m) { return m.market === state.sel; })) {
             sel.value = state.sel;
         }
-        renderMarketResults(f, list);
+        renderMarketResults(f, matches);
         renderFavoriteCount();
     }
 
@@ -533,6 +591,19 @@
             : '<div class="market-results-note">등록된 즐겨찾기가 없습니다.<br>코인 검색 탭에서 ☆를 눌러 추가하세요.</div>';
         box.hidden = false;
         renderFavoriteCount();
+    }
+
+    /** 검색 결과, 즐겨찾기, Enter, 기본 선택 상자의 종목 선택을 한 경로로 처리한다. */
+    function selectMarketAndRun(market) {
+        if (!market) return;
+        state.sel = market;
+        $("q").value = "";
+        setMarketTab("search");
+        renderMarketSelect("");
+        $("market").value = state.sel;
+        $("marketResults").hidden = true;
+        savePreferences();
+        run();
     }
 
     /** 업비트 캔들 -> 엔진 형식. 봉 시작 시각과 완료 여부도 함께 정규화한다. */
@@ -2476,6 +2547,7 @@
             } else if (state.markets.length) {
                 state.sel = $("market").value = state.markets[0].market;
             }
+            savePreferences();
             run();
         }).catch(function (e) {
             $("out").innerHTML = '<div class="err">마켓 목록을 불러오지 못했습니다: ' + esc(e.message) + "</div>";
@@ -2552,6 +2624,12 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
+        // 새로 접속해도 마지막 거래소와 코인으로 돌아가 즐겨찾기가 사라진 것처럼 보이지 않게 한다.
+        loadPreferences();
+        [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
+            b.classList.toggle("act", b.getAttribute("data-ex") === state.exchange);
+        });
+
         $("run").addEventListener("click", run);
         $("auto").addEventListener("click", toggleAuto);
         $("briefBtn").addEventListener("click", openBrief);
@@ -2601,8 +2679,30 @@
             if (isUsdtDominanceMarket(this.value)) {
                 state.sel = "__USDT_DOMINANCE__";
                 $("market").value = state.sel;
+                savePreferences();
                 run();
+                return;
             }
+            // BTC, PUMP, 이더리움처럼 정확히 일치하면 옆 선택 상자를 다시 누르지 않고 즉시 분석한다.
+            var exact = findExactMarket(this.value);
+            if (exact) selectMarketAndRun(exact.market);
+        });
+        $("q").addEventListener("keydown", function (e) {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            if (isUsdtDominanceMarket(this.value)) {
+                state.sel = "__USDT_DOMINANCE__";
+                $("market").value = state.sel;
+                savePreferences();
+                run();
+                return;
+            }
+            var exact = findExactMarket(this.value);
+            var candidates = state.markets.filter(function (m) {
+                return marketMatchesSearch(m, $("q").value);
+            });
+            var chosen = exact || candidates[0];
+            if (chosen) selectMarketAndRun(chosen.market);
         });
         [].forEach.call(document.querySelectorAll("[data-market-tab]"), function (b) {
             b.addEventListener("click", function () { setMarketTab(b.getAttribute("data-market-tab")); });
@@ -2615,13 +2715,7 @@
             }
             var open = e.target.closest ? e.target.closest("[data-market-open]") : null;
             if (open) {
-                state.sel = open.getAttribute("data-market-open");
-                $("market").value = state.sel;
-                $("q").value = "";
-                setMarketTab("search");
-                renderMarketSelect("");
-                $("marketResults").hidden = true;
-                run();
+                selectMarketAndRun(open.getAttribute("data-market-open"));
             }
         }
         $("marketResults").addEventListener("click", onMarketResultClick);
@@ -2637,7 +2731,7 @@
                 $("favoriteResults").hidden = true;
             }
         });
-        $("market").addEventListener("change", function () { state.sel = this.value; run(); });
+        $("market").addEventListener("change", function () { selectMarketAndRun(this.value); });
         $("alertBtn").addEventListener("click", toggleAlert);
 
         // 거래소 전환. 마켓 목록·상장 종목이 다르므로 목록부터 새로 받는다.
@@ -2665,7 +2759,20 @@
         syncTfButtons();
         syncApiHint();
         syncReferral();
-        loadMarkets().then(run).catch(function (e) {
+        loadMarkets().then(function () {
+            // 저장된 코인이 상장 폐지되었거나 거래소 코드와 맞지 않으면 BTC, 그다음 첫 종목으로 안전하게 대체한다.
+            if (state.sel !== "__USDT_DOMINANCE__"
+                    && !state.markets.some(function (m) { return m.market === state.sel; })) {
+                var btc = (ex().quote || "KRW") + "-BTC";
+                state.sel = state.markets.some(function (m) { return m.market === btc; })
+                    ? btc
+                    : (state.markets[0] ? state.markets[0].market : state.sel);
+                renderMarketSelect("");
+            }
+            $("market").value = state.sel;
+            savePreferences();
+            run();
+        }).catch(function (e) {
             $("out").innerHTML = '<div class="err">마켓 목록을 불러오지 못했습니다: ' + esc(e.message) + "</div>";
         });
     });
