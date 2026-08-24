@@ -2675,7 +2675,11 @@
         $("q").addEventListener("input", function () {
             setMarketTab("search");
             renderMarketSelect(this.value);
-            // 정확한 지표명을 입력하면 선택 단계를 생략하고 바로 차트를 표시한다.
+            // 일반 코인 검색은 입력 도중 실행하지 않는다.
+            // 예: MEXC에는 심볼 F가 실제로 있으므로 FET를 입력하려는 첫 글자 F만으로
+            // 분석이 시작되면 검색어가 지워지고 즐겨찾기 별표를 누를 수 없게 된다.
+            // 검색 결과의 코인명 클릭 또는 Enter에서만 분석을 시작한다.
+            // USDT.D는 별도 검색 결과가 없는 특수 지표라 기존처럼 즉시 표시한다.
             if (isUsdtDominanceMarket(this.value)) {
                 state.sel = "__USDT_DOMINANCE__";
                 $("market").value = state.sel;
@@ -2683,9 +2687,6 @@
                 run();
                 return;
             }
-            // BTC, PUMP, 이더리움처럼 정확히 일치하면 옆 선택 상자를 다시 누르지 않고 즉시 분석한다.
-            var exact = findExactMarket(this.value);
-            if (exact) selectMarketAndRun(exact.market);
         });
         $("q").addEventListener("keydown", function (e) {
             if (e.key !== "Enter") return;
