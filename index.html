@@ -121,10 +121,18 @@ input[type=search]{min-width:180px}
 select{min-width:210px;cursor:pointer}
 #interval{min-width:auto;width:auto;padding-right:8px}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
-.market-picker{display:flex;align-items:center;gap:8px;flex:1 1 360px;min-width:280px;position:relative}
-.market-picker #q{flex:1;min-width:160px}
-.market-results{position:absolute;left:0;top:calc(100% + 6px);z-index:45;width:min(430px,calc(100vw - 48px));max-height:300px;overflow:auto;padding:6px;background:var(--surface);border:1px solid var(--outline-strong);border-radius:var(--r-md);box-shadow:0 14px 28px rgba(0,0,0,.28)}
-.market-results[hidden]{display:none}
+.market-picker{display:flex;flex-direction:column;align-items:stretch;gap:7px;flex:1 1 360px;min-width:280px;position:relative}
+.market-tabs{display:inline-flex;align-self:flex-start;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
+.market-tab{background:transparent;border:0;color:var(--on-variant);padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700}
+.market-tab+.market-tab{border-left:1px solid var(--outline)}
+.market-tab:hover{color:var(--on-surface);background:rgba(255,255,255,.04)}
+.market-tab.act{background:var(--accent);color:#fff}
+.market-tab .count{margin-left:4px;color:inherit;opacity:.78;font-variant-numeric:tabular-nums}
+.market-panel{position:relative;min-width:0}
+.market-panel[hidden]{display:none}
+.market-picker #q{width:100%;min-width:160px}
+.market-results,.favorite-results{position:absolute;left:0;top:calc(100% + 6px);z-index:45;width:min(430px,calc(100vw - 48px));max-height:300px;overflow:auto;padding:6px;background:var(--surface);border:1px solid var(--outline-strong);border-radius:var(--r-md);box-shadow:0 14px 28px rgba(0,0,0,.28)}
+.market-results[hidden],.favorite-results[hidden]{display:none}
 .market-result{display:flex;align-items:center;gap:7px;padding:4px;border-radius:var(--r-sm)}
 .market-result:hover,.market-result:focus-within{background:var(--surface-high)}
 .market-result .market-open{flex:1;min-width:0;padding:8px 9px;border:0;background:transparent;color:var(--on-surface);text-align:left;cursor:pointer;border-radius:var(--r-sm);font-size:13px}
@@ -134,7 +142,7 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .favorite-toggle{width:34px;height:34px;padding:0;border:1px solid var(--outline);border-radius:var(--r-sm);background:transparent;color:var(--on-variant);cursor:pointer;font-size:18px;line-height:1}
 .favorite-toggle:hover,.favorite-toggle.is-favorite{border-color:var(--gold);color:var(--gold);background:rgba(224,180,74,.1)}
 .market-results-note{padding:8px 9px;color:var(--on-variant);font-size:12px}
-@media(max-width:620px){.market-picker{flex-basis:100%;min-width:0}.market-results{width:calc(100vw - 48px)}}
+@media(max-width:620px){.market-picker{flex-basis:100%;min-width:0}.market-results,.favorite-results{width:calc(100vw - 48px)}}
 .btn{
   padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
   background:transparent;color:var(--on-surface);
@@ -475,8 +483,17 @@ footer b{color:#c9d2ee}
       <button type="button" data-ex="mexc">MEXC</button>
     </span>
     <div class="market-picker">
-      <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off" aria-label="코인 검색">
-      <div id="marketResults" class="market-results" role="listbox" aria-label="코인 검색 결과" hidden></div>
+      <div class="market-tabs" role="tablist" aria-label="코인 선택 방식">
+        <button type="button" class="market-tab act" id="searchTab" data-market-tab="search" role="tab" aria-selected="true">코인 검색</button>
+        <button type="button" class="market-tab" id="favoritesTab" data-market-tab="favorites" role="tab" aria-selected="false">즐겨찾기 <span class="count" id="favoriteCount">0</span></button>
+      </div>
+      <div class="market-panel" id="marketSearchPanel" role="tabpanel">
+        <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off" aria-label="코인 검색">
+        <div id="marketResults" class="market-results" role="listbox" aria-label="코인 검색 결과" hidden></div>
+      </div>
+      <div class="market-panel" id="marketFavoritesPanel" role="tabpanel" hidden>
+        <div id="favoriteResults" class="favorite-results" role="listbox" aria-label="즐겨찾기 목록"></div>
+      </div>
     </div>
     <select id="market"></select>
     <div class="tfbar" id="tfbar">

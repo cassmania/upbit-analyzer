@@ -243,7 +243,7 @@
         // 첫 진입은 USDT 기준의 바이낸스 현물 가격을 표시한다.
         // 사용자가 거래소 버튼을 누르면 기존처럼 해당 거래소로 전환된다.
         exchange: "binance",
-        markets: [], favorites: [], sel: "USDT-BTC", chartTf: "4h",
+        markets: [], favorites: [], marketTab: "search", sel: "USDT-BTC", chartTf: "4h",
         timer: null, busy: false, auto: false,
         alertOn: false, lastSignalKey: null, signal: null,
         ws: null, wsAlive: false,
@@ -384,6 +384,7 @@
                 return a.korean_name.localeCompare(b.korean_name, "ko");
             });
             renderMarketSelect("");
+            renderFavoriteResults();
         });
     }
 
@@ -423,6 +424,26 @@
         else state.favorites.splice(i, 1);
         saveFavorites();
         renderMarketSelect($("q").value);
+        renderFavoriteResults();
+    }
+
+    /** 검색과 즐겨찾기 목록을 탭으로 전환한다. */
+    function setMarketTab(tab) {
+        state.marketTab = tab === "favorites" ? "favorites" : "search";
+        [].forEach.call(document.querySelectorAll("[data-market-tab]"), function (b) {
+            var active = b.getAttribute("data-market-tab") === state.marketTab;
+            b.classList.toggle("act", active);
+            b.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        var searchPanel = $("marketSearchPanel");
+        var favoritePanel = $("marketFavoritesPanel");
+        if (searchPanel) searchPanel.hidden = state.marketTab !== "search";
+        if (favoritePanel) favoritePanel.hidden = state.marketTab !== "favorites";
+        if (state.marketTab === "search") {
+            renderMarketResults($("q").value, state.markets);
+        } else {
+            renderFavoriteResults();
+        }
     }
 
     /**
@@ -463,33 +484,55 @@
             sel.value = state.sel;
         }
         renderMarketResults(f, list);
+        renderFavoriteCount();
     }
 
-    /** 검색 결과를 클릭 가능한 목록으로 보여준다. 별표 버튼은 분석을 실행하지 않는다. */
+    function renderFavoriteCount() {
+        var count = $("favoriteCount");
+        if (count) count.textContent = String(state.favorites.length);
+    }
+
+    function marketResultMarkup(m) {
+        var fav = isFavorite(m.market);
+        return '<div class="market-result" role="option">'
+            + '<button type="button" class="market-open" data-market-open="' + esc(m.market) + '">'
+            + '<b>' + esc(m.korean_name) + '</b><span>' + esc(coinOf(m.market)) + '</span></button>'
+            + '<button type="button" class="favorite-toggle' + (fav ? ' is-favorite' : '') + '"'
+            + ' data-favorite="' + esc(m.market) + '" aria-label="' + (fav ? '즐겨찾기 해제' : '즐겨찾기 등록') + '"'
+            + ' aria-pressed="' + (fav ? 'true' : 'false') + '" title="' + (fav ? '즐겨찾기 해제' : '즐겨찾기 등록') + '">'
+            + (fav ? '★' : '☆') + '</button></div>';
+    }
+
+    /** 검색 탭에서만 일치하는 코인을 표시한다. 빈 검색어에서는 목록을 열지 않는다. */
     function renderMarketResults(filter, filteredList) {
         var box = $("marketResults");
         if (!box) return;
         var f = (filter || "").trim().toLowerCase();
         var list = filteredList || state.markets;
-        if (!f) list = list.filter(function (m) { return isFavorite(m.market); });
-        list = list.slice(0, 12);
-        if (!list.length) {
-            box.innerHTML = f ? '<div class="market-results-note">일치하는 코인이 없습니다.</div>'
-                : '<div class="market-results-note">즐겨찾기한 코인이 여기에 표시됩니다.</div>';
-            box.hidden = !f;
+        if (!f || state.marketTab !== "search") {
+            box.hidden = true;
             return;
         }
-        box.innerHTML = list.map(function (m) {
-            var fav = isFavorite(m.market);
-            return '<div class="market-result" role="option">'
-                + '<button type="button" class="market-open" data-market-open="' + esc(m.market) + '">'
-                + '<b>' + esc(m.korean_name) + '</b><span>' + esc(coinOf(m.market)) + '</span></button>'
-                + '<button type="button" class="favorite-toggle' + (fav ? ' is-favorite' : '') + '"'
-                + ' data-favorite="' + esc(m.market) + '" aria-label="' + (fav ? '즐겨찾기 해제' : '즐겨찾기 등록') + '"'
-                + ' aria-pressed="' + (fav ? 'true' : 'false') + '" title="' + (fav ? '즐겨찾기 해제' : '즐겨찾기 등록') + '">'
-                + (fav ? '★' : '☆') + '</button></div>';
-        }).join("");
+        list = list.slice(0, 12);
+        if (!list.length) {
+            box.innerHTML = '<div class="market-results-note">일치하는 코인이 없습니다.</div>';
+            box.hidden = false;
+            return;
+        }
+        box.innerHTML = list.map(marketResultMarkup).join("");
         box.hidden = false;
+    }
+
+    /** 즐겨찾기 탭의 전체 목록을 거래소별로 그린다. */
+    function renderFavoriteResults() {
+        var box = $("favoriteResults");
+        if (!box) return;
+        var list = state.markets.filter(function (m) { return isFavorite(m.market); });
+        box.innerHTML = list.length
+            ? list.map(marketResultMarkup).join("")
+            : '<div class="market-results-note">등록된 즐겨찾기가 없습니다.<br>코인 검색 탭에서 ☆를 눌러 추가하세요.</div>';
+        box.hidden = false;
+        renderFavoriteCount();
     }
 
     /** 업비트 캔들 -> 엔진 형식. 봉 시작 시각과 완료 여부도 함께 정규화한다. */
@@ -2552,6 +2595,7 @@
             toggleFullscreen();
         });
         $("q").addEventListener("input", function () {
+            setMarketTab("search");
             renderMarketSelect(this.value);
             // 정확한 지표명을 입력하면 선택 단계를 생략하고 바로 차트를 표시한다.
             if (isUsdtDominanceMarket(this.value)) {
@@ -2560,7 +2604,10 @@
                 run();
             }
         });
-        $("marketResults").addEventListener("click", function (e) {
+        [].forEach.call(document.querySelectorAll("[data-market-tab]"), function (b) {
+            b.addEventListener("click", function () { setMarketTab(b.getAttribute("data-market-tab")); });
+        });
+        function onMarketResultClick(e) {
             var favorite = e.target.closest ? e.target.closest("[data-favorite]") : null;
             if (favorite) {
                 toggleFavorite(favorite.getAttribute("data-favorite"));
@@ -2571,15 +2618,24 @@
                 state.sel = open.getAttribute("data-market-open");
                 $("market").value = state.sel;
                 $("q").value = "";
+                setMarketTab("search");
                 renderMarketSelect("");
                 $("marketResults").hidden = true;
                 run();
             }
+        }
+        $("marketResults").addEventListener("click", onMarketResultClick);
+        $("favoriteResults").addEventListener("click", onMarketResultClick);
+        $("q").addEventListener("focus", function () {
+            setMarketTab("search");
+            renderMarketResults(this.value, state.markets);
         });
-        $("q").addEventListener("focus", function () { renderMarketSelect(this.value); });
         document.addEventListener("click", function (e) {
             var picker = document.querySelector(".market-picker");
-            if (picker && !picker.contains(e.target)) $("marketResults").hidden = true;
+            if (picker && !picker.contains(e.target)) {
+                $("marketResults").hidden = true;
+                $("favoriteResults").hidden = true;
+            }
         });
         $("market").addEventListener("change", function () { state.sel = this.value; run(); });
         $("alertBtn").addEventListener("click", toggleAlert);
