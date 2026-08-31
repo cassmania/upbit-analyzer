@@ -193,11 +193,17 @@
 
     function atr(candles, n) {
         n = n || 14;
-        if (candles.length < n + 1) return null;
+        if (candles.length < n) return null;
         const trs = [];
-        for (let i = 1; i < candles.length; i++) {
-            const h = candles[i].h, l = candles[i].l, pc = candles[i - 1].c;
-            trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+        for (let i = 0; i < candles.length; i++) {
+            const h = candles[i].h, l = candles[i].l;
+            if (i === 0) {
+                // 표준 True Range는 이전 종가가 없는 첫 봉에서 high-low를 사용합니다.
+                trs.push(h - l);
+            } else {
+                const pc = candles[i - 1].c;
+                trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+            }
         }
         // TradingView의 ATR과 같은 Wilder RMA: 첫 n개 단순평균으로 시작한 뒤 평활한다.
         let out = trs.slice(0, n).reduce((a, b) => a + b, 0) / n;
@@ -268,13 +274,17 @@
      */
     function supertrend(candles, n, mult) {
         n = n || 10; mult = mult || 3.0;
-        if (candles.length < n + 2) return null;
+        if (candles.length < n + 1) return null;
 
         // 각 시점 ATR(Wilder 평활). 밴드를 이어가려면 시계열이 필요하다.
         const trs = [];
-        for (let i = 1; i < candles.length; i++) {
-            const h = candles[i].h, l = candles[i].l, pc = candles[i - 1].c;
-            trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+        for (let i = 0; i < candles.length; i++) {
+            const h = candles[i].h, l = candles[i].l;
+            if (i === 0) trs.push(h - l);
+            else {
+                const pc = candles[i - 1].c;
+                trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+            }
         }
         if (trs.length < n) return null;
 
@@ -283,10 +293,10 @@
         a /= n;
         if (!(a > 0)) return null;
 
-        // trs[i]는 candles[i+1]의 TR이다. 첫 ATR은 candles[n]에 대응한다.
+        // trs[i]는 candles[i]의 TR이다. 첫 ATR은 candles[n-1]에 대응한다.
         let upper = null, lower = null, up = true;
-        for (let i = n; i < candles.length; i++) {
-            if (i > n) a = (a * (n - 1) + trs[i - 1]) / n;
+        for (let i = n - 1; i < candles.length; i++) {
+            if (i > n - 1) a = (a * (n - 1) + trs[i]) / n;
 
             const c = candles[i];
             const hl2 = (c.h + c.l) / 2;
@@ -618,7 +628,7 @@
     }
 
     const TAEngine = {
-        VERSION: "1.3.0",
+        VERSION: "1.3.1",
         rp, sma, ema, rsi, rsiSeries, stoch, cci, macd, bollinger,
         atr, adx, supertrend, vwap, vwapInfo, trend,
         swings, vpvr, levels,

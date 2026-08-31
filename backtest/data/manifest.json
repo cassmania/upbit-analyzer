@@ -1,0 +1,441 @@
+{
+  "schemaVersion": 1,
+  "fetchedAtUtc": "2026-08-31T03:31:57.635Z",
+  "source": "Binance Spot public API / api/v3/klines",
+  "requestedRange": {
+    "startUtc": "2024-01-01T00:00:00.000Z",
+    "endExclusiveUtc": "2026-08-31T03:00:00.000Z"
+  },
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "timeframes": {
+        "1h": {
+          "bars": 23605,
+          "firstTimeUtc": "2023-12-21T14:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T03:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "4h": {
+          "bars": 6088,
+          "firstTimeUtc": "2023-11-20T08:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "8h": {
+          "bars": 3169,
+          "firstTimeUtc": "2023-10-09T16:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "12h": {
+          "bars": 2196,
+          "firstTimeUtc": "2023-08-29T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1d": {
+          "bars": 1223,
+          "firstTimeUtc": "2023-04-26T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1w": {
+          "bars": 389,
+          "firstTimeUtc": "2019-03-18T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1M": {
+          "bars": 108,
+          "firstTimeUtc": "2017-08-01T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-01T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        }
+      },
+      "file": "BTCUSDT.json.gz",
+      "uncompressedBytes": 3893702,
+      "compressedBytes": 1080735,
+      "sha256": "6168e5f2237dd89bfc5f36c1dcfe63204173007a4e26635a99bb383b6f2ce849"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframes": {
+        "1h": {
+          "bars": 23605,
+          "firstTimeUtc": "2023-12-21T14:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T03:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "4h": {
+          "bars": 6088,
+          "firstTimeUtc": "2023-11-20T08:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "8h": {
+          "bars": 3169,
+          "firstTimeUtc": "2023-10-09T16:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "12h": {
+          "bars": 2196,
+          "firstTimeUtc": "2023-08-29T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1d": {
+          "bars": 1223,
+          "firstTimeUtc": "2023-04-26T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1w": {
+          "bars": 389,
+          "firstTimeUtc": "2019-03-18T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1M": {
+          "bars": 108,
+          "firstTimeUtc": "2017-08-01T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-01T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        }
+      },
+      "file": "ETHUSDT.json.gz",
+      "uncompressedBytes": 3767992,
+      "compressedBytes": 1013534,
+      "sha256": "ccf46356a09f14b74ded285fe14901cf52948cfa8ea26ef445778187825ffcf7"
+    },
+    {
+      "symbol": "BNBUSDT",
+      "timeframes": {
+        "1h": {
+          "bars": 23605,
+          "firstTimeUtc": "2023-12-21T14:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T03:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "4h": {
+          "bars": 6088,
+          "firstTimeUtc": "2023-11-20T08:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "8h": {
+          "bars": 3169,
+          "firstTimeUtc": "2023-10-09T16:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "12h": {
+          "bars": 2196,
+          "firstTimeUtc": "2023-08-29T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1d": {
+          "bars": 1223,
+          "firstTimeUtc": "2023-04-26T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1w": {
+          "bars": 389,
+          "firstTimeUtc": "2019-03-18T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1M": {
+          "bars": 105,
+          "firstTimeUtc": "2017-11-01T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-01T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        }
+      },
+      "file": "BNBUSDT.json.gz",
+      "uncompressedBytes": 3546270,
+      "compressedBytes": 888347,
+      "sha256": "b65bce40d96d9eae5a8c442f5dfc33e04e01ba655738ce5eaa66f8cdd79a74ea"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "timeframes": {
+        "1h": {
+          "bars": 23605,
+          "firstTimeUtc": "2023-12-21T14:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T03:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "4h": {
+          "bars": 6088,
+          "firstTimeUtc": "2023-11-20T08:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "8h": {
+          "bars": 3169,
+          "firstTimeUtc": "2023-10-09T16:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "12h": {
+          "bars": 2196,
+          "firstTimeUtc": "2023-08-29T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1d": {
+          "bars": 1223,
+          "firstTimeUtc": "2023-04-26T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1w": {
+          "bars": 389,
+          "firstTimeUtc": "2019-03-18T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1M": {
+          "bars": 99,
+          "firstTimeUtc": "2018-05-01T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-01T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        }
+      },
+      "file": "XRPUSDT.json.gz",
+      "uncompressedBytes": 3604098,
+      "compressedBytes": 855482,
+      "sha256": "c0a8af97ee7e4a23469c8e2e2c07e87dac5d71d3a7797d71d7292f4fd9b60aa3"
+    },
+    {
+      "symbol": "SOLUSDT",
+      "timeframes": {
+        "1h": {
+          "bars": 23605,
+          "firstTimeUtc": "2023-12-21T14:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T03:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "4h": {
+          "bars": 6088,
+          "firstTimeUtc": "2023-11-20T08:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "8h": {
+          "bars": 3169,
+          "firstTimeUtc": "2023-10-09T16:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "12h": {
+          "bars": 2196,
+          "firstTimeUtc": "2023-08-29T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1d": {
+          "bars": 1223,
+          "firstTimeUtc": "2023-04-26T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1w": {
+          "bars": 316,
+          "firstTimeUtc": "2020-08-10T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-31T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        },
+        "1M": {
+          "bars": 72,
+          "firstTimeUtc": "2020-08-01T00:00:00.000Z",
+          "lastEndTimeUtc": "2026-08-01T00:00:00.000Z",
+          "quality": {
+            "gaps": 0,
+            "invalidOhlc": 0,
+            "zeroVolume": 0,
+            "duplicateOrOutOfOrder": 0
+          }
+        }
+      },
+      "file": "SOLUSDT.json.gz",
+      "uncompressedBytes": 3591254,
+      "compressedBytes": 901193,
+      "sha256": "7fc25988d50dac267f4945e82db79a41d44216c0766de7ed44439fb8aced9408"
+    }
+  ]
+}

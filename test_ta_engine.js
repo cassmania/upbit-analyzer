@@ -171,12 +171,24 @@ console.log('\n[5] ATR / 슈퍼트렌드 / VWAP');
         prev += 0.2;
     }
     const tr = [];
-    for (let i = 1; i < c.length; i++) {
-        tr.push(Math.max(c[i].h - c[i].l, Math.abs(c[i].h - c[i - 1].c), Math.abs(c[i].l - c[i - 1].c)));
+    for (let i = 0; i < c.length; i++) {
+        tr.push(i === 0
+            ? c[i].h - c[i].l
+            : Math.max(c[i].h - c[i].l, Math.abs(c[i].h - c[i - 1].c), Math.abs(c[i].l - c[i - 1].c)));
     }
     let expected = tr.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
     for (let i = 14; i < tr.length; i++) expected = (expected * 13 + tr[i]) / 14;
     assert.ok(Math.abs(TA.atr(c, 14) - expected) < 1e-12);
+});
+
+검증('ATR 첫 시드는 첫 봉의 고가-저가를 포함한다', () => {
+    const c = [
+        { o: 9, h: 10, l: 8, c: 9, v: 1 },
+        { o: 9, h: 11, l: 9, c: 10, v: 1 },
+        { o: 10, h: 12, l: 9, c: 11, v: 1 }
+    ];
+    // 표준 True Range는 첫 봉에서 high-low=2를 사용하므로 (2+2+3)/3입니다.
+    근사(TA.atr(c, 3), 7 / 3, 1e-12, 'ATR 첫 시드');
 });
 
 검증('ADX는 강한 상승 추세에서 25 이상이고 +DI가 우세', () => {

@@ -1,0 +1,24 @@
+{
+  "description": "TAEngine 1.3.0의 ATR 첫 True Range 수정 전 기준선",
+  "holdoutStartUtc": "2025-08-06T21:00:00.000Z",
+  "holdout": {
+    "sample": 88,
+    "winRate": 0.42045454545454547,
+    "profitFactor": 0.7733326361865825,
+    "averageR": -0.17818595447937455,
+    "totalR": -15.68036399418496,
+    "maxDrawdownR": 26.089598125308555
+  },
+  "long": {
+    "sample": 36,
+    "winRate": 0.5277777777777778,
+    "profitFactor": 1.1513585299447007,
+    "averageR": 0.09500811201855368
+  },
+  "short": {
+    "sample": 52,
+    "winRate": 0.34615384615384615,
+    "profitFactor": 0.5899437685120519,
+    "averageR": -0.3673203082087094
+  }
+}

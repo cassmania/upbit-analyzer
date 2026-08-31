@@ -20,11 +20,14 @@ GitHub Pages(`cassmania.github.io/upbit-analyzer/`)는 **쓰지 않는다.**
 | `v3_analysis.js` | 검증된 구조 분석 기반 — ADX 국면, 좌우 5봉 피벗, BOS, FVG, 오더블록 후보, 피보나치 |
 | `v41_analysis.js` | V4.1 데이터 계약·근거군·가용성 호환 계층 |
 | `level_analyzer.js` | 다중 타임프레임 지지·저항 겹침 판정 (crypto-futures-simulator와 동일 엔진) |
+| `signal_engine.js` | 다중 시간봉 방향·구조적 진입/손절/목표를 계산하는 규칙 기반 신호 |
 | `app.js` | 거래소 API 조달 + 실시간 차트 + USDT 도미넌스 + 화면 렌더 |
 | `index.html` | 화면 |
 | `api/coingecko.js` | CoinGecko 전체 시장·USDT 시가총액 서버리스 프록시 |
 | `test_ta_engine.js` | 기술 지표 회귀 검증 |
 | `test_v41_analysis.js` | V4.1 프로토콜 회귀 검증 |
+| `backtest/` | Binance 확정봉 스냅샷 수집 + 비용 포함 시간순 홀드아웃 백테스트 |
+| `test_signal_backtest.js` | 다음 봉 진입·비용·동일 봉 손절 우선·PF·MDD 검증 |
 
 외부 라이브러리 0개. 차트도 캔버스 직접 그리기다.
 
@@ -73,10 +76,28 @@ node test_candle_utils.js
 node test_ta_engine.js
 node test_level_analyzer.js
 node test_signal_engine.js
+node test_market_search.js
 node test_v3_analysis.js
+node test_v41_analysis.js
+node test_signal_backtest.js
 ```
 
-총 106개 통과: 캔들 시간축 7 / TA 58 / 레벨 12 / 신호 23 / V3 구조 6.
+### 비용 포함 신호 백테스트 — 2026-08-31
+
+Binance 현물 BTC/ETH/BNB/XRP/SOL의 2024-01-01 이후 확정봉을 사용했다. 신호는
+1시간봉 확정 후 계산하고, 다음 1시간봉에서 계획 진입가에 도달한 경우만 체결했다.
+수수료 편도 0.10%, 슬리피지 편도 0.02%, 동일 봉 손절 우선, 최대 보유 48시간이다.
+
+- 마지막 40% 홀드아웃: 88거래, 승률 42.0%, Profit Factor 0.773, 평균 -0.178R
+- 롱: 36거래, PF 1.151, 평균 +0.095R
+- 가상 숏: 52거래, PF 0.590, 평균 -0.367R
+- 판정: 전체 규칙 기반 전략 우위 미확인
+
+승률은 지표 공식의 정확도와 같은 뜻이 아니다. RSI·EMA·MACD·완료봉 처리는 기준값과
+일치했고, ATR/SuperTrend의 첫 True Range가 한 봉 늦게 시작하는 오류를 수정했다.
+200봉 입력에서는 해당 수정 전후 백테스트 거래와 성과가 동일했다.
+
+상세 결과는 `backtest/results/signal-report.md`에서 확인할 수 있다.
 
 화면의 `V4.1 브리핑`은 같은 계산 스냅샷에서 USDT(KRW), 데이터 시각,
 PART 0~5, 멀티 타임프레임 추세, FVG·오더블록, 파생상품 가용성,
@@ -139,7 +160,7 @@ CLI(`npx vercel`)는 이 환경에서 한글 관련 오류로 로그인이 안 �
 ## 로컬 실행
 
 ```bash
-python -m http.server 8845 --directory "E:\AI 관련 자료\챗지피티\코인분석\upbit-analyzer"
+python -m http.server 8845 --directory "E:\AI 관련 자료\클로드\upbit_analyzer"
 ```
 
 `file://`로 열면 CORS로 API 호출이 막힌다. 반드시 HTTP 서버로 띄운다.

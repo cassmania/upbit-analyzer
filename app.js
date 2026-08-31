@@ -254,6 +254,14 @@
         renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
 
+    // 2026-08-30 이전 Binance 현물 확정봉 5종목, 마지막 40% 홀드아웃 결과입니다.
+    // 신호의 방향을 수익 보장처럼 보이지 않게 하기 위해 화면 근거로 함께 표시합니다.
+    var SIGNAL_BACKTEST = {
+        status: "전체 전략 우위 미확인",
+        summary: "홀드아웃 88거래 · 승률 42.0% · PF 0.773 · 평균 -0.178R",
+        detail: "롱 36건 PF 1.151 · 가상 숏 52건 PF 0.590"
+    };
+
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
     var maSeries = {};   // 이동평균선. 봉을 바꿔도 재사용한다
 
@@ -2139,7 +2147,7 @@
             청산.forEach(function (x) {
                 var 색 = x.level === "긴급" ? "var(--red)" : "var(--gold)";
                 L.push('<div class="scn"><span class="scn-i" style="color:' + 색 + '">!</span><div>'
-                    + '<b style="color:' + 색 + '">' + (x.side === "long" ? "롱" : "숏") + " 청산 · " + x.level + "</b> — "
+                    + '<b style="color:' + 색 + '">' + (x.side === "long" ? "롱" : "숏") + " 보유 시 청산 검토 · " + x.level + "</b> — "
                     + esc(x.text)
                     + (isFinite(x.price) ? " <b>" + fmt(x.price, dp) + "</b>" : "")
                     + "</div></div>");
@@ -2147,9 +2155,9 @@
         }
 
         return '<section id="sec-signal"><div class="sec-head"><h2>롱·숏 타점</h2>'
-            + '<span class="dim" style="font-size:12.5px">규칙 기반 산출 · 예측 아님</span></div>'
+            + '<span class="dim" style="font-size:12.5px">규칙 기반 산출 · ' + esc(SIGNAL_BACKTEST.status) + '</span></div>'
             + '<div class="card card-pad">' + L.join("")
-            + '<div class="warn">지표에서 기계적으로 계산한 값입니다. 규칙이 틀리면 결과도 틀립니다. '
+            + '<div class="warn">' + esc(SIGNAL_BACKTEST.summary) + ' · ' + esc(SIGNAL_BACKTEST.detail) + '<br>지표에서 기계적으로 계산한 값입니다. 규칙이 틀리면 결과도 틀립니다. '
             + "손절을 반드시 함께 쓰고, 이 화면만 보고 매매하지 마세요.</div></div></section>";
     }
 
@@ -2184,12 +2192,14 @@
                 + " · 목표 " + fmt(e.target1, dp)
                 + (e.target2 ? " → " + fmt(e.target2, dp) : "")
                 + " · " + e.rr.toFixed(2) + "R</span>"
-                + '<span class="sub">' + esc(e.기준벽.reason || "") + "</span>"
+                + '<span class="sub">' + esc(e.기준벽.reason || "") + '<br>'
+                + esc(SIGNAL_BACKTEST.status + " · " + SIGNAL_BACKTEST.summary) + "</span>"
                 + "</div></div>");
         } else if (sig.blocked) {
             H.push('<div class="hsig none"><span class="ico">—</span><div>'
                 + "<b>" + esc(sym) + " 진입 신호 없음</b>"
-                + '<span class="sub">' + esc(sig.blocked) + "</span>"
+                + '<span class="sub">' + esc(sig.blocked) + '<br>'
+                + esc(SIGNAL_BACKTEST.status + " · " + SIGNAL_BACKTEST.summary) + "</span>"
                 + "</div></div>");
         }
 
@@ -2199,7 +2209,7 @@
                 var 긴급 = x.level === "긴급";
                 H.push('<div class="hsig ' + (긴급 ? "urgent" : "warn-x") + '">'
                     + '<span class="ico">' + (긴급 ? "!" : "·") + "</span><div>"
-                    + "<b>" + (k === "long" ? "롱" : "숏") + " 청산 · " + esc(x.level) + "</b> "
+                    + "<b>" + (k === "long" ? "롱" : "숏") + " 보유 시 청산 검토 · " + esc(x.level) + "</b> "
                     + esc(x.text)
                     + (isFinite(x.price) ? ' <span class="nums">' + fmt(x.price, dp) + "</span>" : "")
                     + "</div></div>");
