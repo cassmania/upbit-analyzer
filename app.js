@@ -254,12 +254,14 @@
         renderedFor: null   // 전체 렌더가 끝난 종목. 같으면 부분 갱신만 한다
     };
 
-    // 2026-08-30 이전 Binance 현물 확정봉 5종목, 마지막 40% 홀드아웃 결과입니다.
+    // 2026-09-04 UTC Binance 현물 확정봉 5종목, 마지막 40% 홀드아웃 결과입니다.
     // 신호의 방향을 수익 보장처럼 보이지 않게 하기 위해 화면 근거로 함께 표시합니다.
     var SIGNAL_BACKTEST = {
+        // 2026-09-04 UTC 스냅샷을 같은 비용·홀드아웃 규칙으로 재실행한 결과다.
+        // 화면의 정적 요약과 보고서가 서로 다른 기준선을 가리키지 않도록 갱신한다.
         status: "전체 전략 우위 미확인",
-        summary: "홀드아웃 88거래 · 승률 42.0% · PF 0.773 · 평균 -0.178R",
-        detail: "롱 36건 PF 1.151 · 가상 숏 52건 PF 0.590"
+        summary: "홀드아웃 87거래 · 승률 41.4% · PF 0.756 · 평균 -0.194R",
+        detail: "롱 35건 PF 1.097 · 가상 숏 52건 PF 0.590"
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
@@ -524,8 +526,9 @@
      * 않게 한다. 검색 결과 목록에는 실제 일치한 코인만 보여 TAO를 분석하면서 PUMP를
      * 검색했을 때 TAO가 검색 결과에 섞이는 문제를 막는다.
      */
-    function renderMarketSelect(filter) {
+    function renderMarketSelect(filter, rebuildSelect) {
         var sel = $("market");
+        var shouldRebuild = rebuildSelect !== false;
         var f = (filter || "").trim().toLowerCase();
         var showDominance = isUsdtDominanceMarket(f)
             || f.indexOf("테더") !== -1
@@ -540,14 +543,18 @@
         var dominanceOption = showDominance
             ? '<option value="__USDT_DOMINANCE__">테더 도미넌스 (USDT.D) · 차트</option>'
             : "";
-        sel.innerHTML = dominanceOption + list.map(function (m) {
-            return '<option value="' + m.market + '">' + esc(m.korean_name)
-                + " (" + coinOf(m.market) + ")</option>";
-        }).join("");
-        if (state.sel === "__USDT_DOMINANCE__" && showDominance) {
-            sel.value = state.sel;
-        } else if (list.some(function (m) { return m.market === state.sel; })) {
-            sel.value = state.sel;
+        // 검색 입력 중에는 수백 개 option을 매 키 입력마다 다시 만들지 않는다.
+        // 검색 결과는 아래 팝업만 갱신하고, 종목 select는 선택 확정 때만 다시 그린다.
+        if (shouldRebuild) {
+            sel.innerHTML = dominanceOption + list.map(function (m) {
+                return '<option value="' + m.market + '">' + esc(m.korean_name)
+                    + " (" + coinOf(m.market) + ")</option>";
+            }).join("");
+            if (state.sel === "__USDT_DOMINANCE__" && showDominance) {
+                sel.value = state.sel;
+            } else if (list.some(function (m) { return m.market === state.sel; })) {
+                sel.value = state.sel;
+            }
         }
         renderMarketResults(f, matches);
         renderFavoriteCount();
@@ -2684,7 +2691,7 @@
         });
         $("q").addEventListener("input", function () {
             setMarketTab("search");
-            renderMarketSelect(this.value);
+            renderMarketSelect(this.value, false);
             // 일반 코인 검색은 입력 도중 실행하지 않는다.
             // 예: MEXC에는 심볼 F가 실제로 있으므로 FET를 입력하려는 첫 글자 F만으로
             // 분석이 시작되면 검색어가 지워지고 즐겨찾기 별표를 누를 수 없게 된다.

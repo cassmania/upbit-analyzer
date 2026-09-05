@@ -314,7 +314,9 @@ function markdownReport(report) {
         '- EMA/MACD: SMA 시드 후 표준 지수평활 확인',
         '- 완료봉: 각 거래소 종료 시각을 기준으로 진행 중 봉 제외 확인',
         '- ATR/SuperTrend: 첫 봉의 high-low가 True Range 시드에서 빠진 오류 수정',
-        `- ATR 수정 전후 홀드아웃 차이: 거래 ${report.formulaAudit.delta.sample}, PF ${number(report.formulaAudit.delta.profitFactor)}, 평균 ${number(report.formulaAudit.delta.averageR, 'R')} — 200봉 입력에서는 성과 변화 없음`, '',
+        report.formulaAudit.delta
+            ? `- 동일 분할 기준 ATR 수정 전후 차이: 거래 ${report.formulaAudit.delta.sample}, PF ${number(report.formulaAudit.delta.profitFactor)}, 평균 ${number(report.formulaAudit.delta.averageR, 'R')}`
+            : '- ATR 수정 전후 성과 차이: 데이터 기간·홀드아웃 분할이 달라 직접 비교하지 않음', '',
         '## 마지막 40% 시간순 홀드아웃', '',
         `- 시작: ${report.holdout.startUtc}`,
         `- 진입 신호: ${report.holdout.signalMetrics.signals}, 다음 봉 체결: ${report.holdout.signalMetrics.fills} (${percent(report.holdout.signalMetrics.fillRate)})`,
@@ -372,6 +374,10 @@ function main() {
     const baseline = fs.existsSync(baselinePath)
         ? JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
         : null;
+    const holdoutStartUtc = new Date(splitTime * 1000).toISOString();
+    // 기준선의 분할 시각이 현재 스냅샷과 정확히 같을 때만 공식 수정의 성과 차이를 계산한다.
+    // 기간이 달라진 결과를 ATR 효과로 표시하면 데이터 변화와 공식 변화를 혼동하게 된다.
+    const comparableBaseline = baseline && baseline.holdoutStartUtc === holdoutStartUtc ? baseline : null;
     const verdict = holdoutMetrics.sample >= config.minimumSample
         && holdoutMetrics.averageR > 0
         && holdoutMetrics.profitFactor > 1
@@ -398,8 +404,8 @@ function main() {
         },
         formulaAudit: {
             atrFirstTrueRangeFixed: true,
-            baseline: baseline ? baseline.holdout : null,
-            delta: metricDelta(holdoutMetrics, baseline ? baseline.holdout : null)
+            baseline: comparableBaseline ? comparableBaseline.holdout : null,
+            delta: metricDelta(holdoutMetrics, comparableBaseline ? comparableBaseline.holdout : null)
         },
         train: {
             endUtc: new Date(splitTime * 1000).toISOString(),
@@ -407,7 +413,7 @@ function main() {
             metrics: metrics(trainTrades)
         },
         holdout: {
-            startUtc: new Date(splitTime * 1000).toISOString(),
+            startUtc: holdoutStartUtc,
             signalMetrics: signalMetrics(holdoutSignals),
             metrics: holdoutMetrics,
             bySymbol: groupMetrics(holdoutTrades, 'symbol'),

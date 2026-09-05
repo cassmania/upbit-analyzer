@@ -110,19 +110,25 @@ h1{
 .hsig .nums{font-variant-numeric:tabular-nums}
 
 /* ---------- 컨트롤 ---------- */
-.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:22px 0}
+.controls{display:grid;gap:12px;padding:22px 0}
+.control-row{display:flex;align-items:center;gap:10px;min-width:0}
+.control-row-exchange{justify-content:flex-start}
+.control-row-market{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.82fr);align-items:stretch}
+.control-row-analysis{flex-wrap:wrap}
+.control-row-analysis .tfbar{flex:1 1 auto}
+.control-row-analysis .btn,.control-row-analysis select{min-height:40px}
 input,select,button{font:inherit;font-size:14px}
 input[type=search],select{
   background:var(--surface-lowest);color:var(--on-surface);
   border:1px solid var(--outline);border-radius:var(--r-sm);padding:9px 12px;
   transition:border-color .18s;
 }
-input[type=search]{min-width:180px}
+input[type=search]{min-width:180px;min-height:40px}
 select{min-width:210px;cursor:pointer}
 #interval{min-width:auto;width:auto;padding-right:8px}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
-.market-picker{display:flex;flex-direction:column;align-items:stretch;gap:7px;flex:1 1 360px;min-width:280px;position:relative}
-.market-tabs{display:inline-flex;align-self:flex-start;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
+.market-picker{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:stretch;gap:8px;min-width:0;position:relative}
+.market-tabs{display:inline-flex;align-self:stretch;border:1px solid var(--outline);border-radius:var(--r-sm);overflow:hidden}
 .market-tab{background:transparent;border:0;color:var(--on-variant);padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700}
 .market-tab+.market-tab{border-left:1px solid var(--outline)}
 .market-tab:hover{color:var(--on-surface);background:rgba(255,255,255,.04)}
@@ -142,7 +148,17 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .favorite-toggle{width:34px;height:34px;padding:0;border:1px solid var(--outline);border-radius:var(--r-sm);background:transparent;color:var(--on-variant);cursor:pointer;font-size:18px;line-height:1}
 .favorite-toggle:hover,.favorite-toggle.is-favorite{border-color:var(--gold);color:var(--gold);background:rgba(224,180,74,.1)}
 .market-results-note{padding:8px 9px;color:var(--on-variant);font-size:12px}
-@media(max-width:620px){.market-picker{flex-basis:100%;min-width:0}.market-results,.favorite-results{width:calc(100vw - 48px)}}
+@media(max-width:760px){
+  .control-row{align-items:stretch}
+  .control-row-market{grid-template-columns:1fr}
+  .market-picker{grid-template-columns:1fr}
+  .market-tabs{justify-self:start}
+  .control-row-market #market{width:100%;min-width:0}
+  .control-row-analysis{display:grid;grid-template-columns:1fr 1fr}
+  .control-row-analysis .tfbar{grid-column:1 / -1;width:100%}
+  .control-row-analysis .btn,.control-row-analysis select{width:100%;min-width:0}
+  .market-results,.favorite-results{width:calc(100vw - 48px)}
+}
 .btn{
   padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
   background:transparent;color:var(--on-surface);
@@ -476,48 +492,54 @@ footer b{color:#c9d2ee}
 
 <main class="wrap">
   <div class="controls">
-    <span class="exbar" id="exbar">
-      <button type="button" data-ex="upbit">업비트</button>
-      <button type="button" data-ex="bithumb">빗썸</button>
-      <button type="button" data-ex="binance" class="act">바이낸스</button>
-      <button type="button" data-ex="mexc">MEXC</button>
-    </span>
-    <div class="market-picker">
-      <div class="market-tabs" role="tablist" aria-label="코인 선택 방식">
-        <button type="button" class="market-tab act" id="searchTab" data-market-tab="search" role="tab" aria-selected="true">코인 검색</button>
-        <button type="button" class="market-tab" id="favoritesTab" data-market-tab="favorites" role="tab" aria-selected="false">즐겨찾기 <span class="count" id="favoriteCount">0</span></button>
-      </div>
-      <div class="market-panel" id="marketSearchPanel" role="tabpanel">
-        <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off" aria-label="코인 검색">
-        <div id="marketResults" class="market-results" role="listbox" aria-label="코인 검색 결과" hidden></div>
-      </div>
-      <div class="market-panel" id="marketFavoritesPanel" role="tabpanel" hidden>
-        <div id="favoriteResults" class="favorite-results" role="listbox" aria-label="즐겨찾기 목록"></div>
-      </div>
+    <div class="control-row control-row-exchange">
+      <span class="exbar" id="exbar">
+        <button type="button" data-ex="upbit">업비트</button>
+        <button type="button" data-ex="bithumb">빗썸</button>
+        <button type="button" data-ex="binance" class="act">바이낸스</button>
+        <button type="button" data-ex="mexc">MEXC</button>
+      </span>
     </div>
-    <select id="market"></select>
-    <div class="tfbar" id="tfbar">
-      <button data-tf="1h">1시간</button>
-      <button data-tf="4h" class="act">4시간</button>
-      <button data-tf="8h">8시간</button>
-      <button data-tf="12h">12시간</button>
-      <button data-tf="1d">일봉</button>
-      <button data-tf="1w">주봉</button>
-      <button data-tf="1M">월봉</button>
-      <button data-tf="1y">년봉</button>
+    <div class="control-row control-row-market">
+      <div class="market-picker">
+        <div class="market-tabs" role="tablist" aria-label="코인 선택 방식">
+          <button type="button" class="market-tab act" id="searchTab" data-market-tab="search" role="tab" aria-selected="true">코인 검색</button>
+          <button type="button" class="market-tab" id="favoritesTab" data-market-tab="favorites" role="tab" aria-selected="false">즐겨찾기 <span class="count" id="favoriteCount">0</span></button>
+        </div>
+        <div class="market-panel" id="marketSearchPanel" role="tabpanel">
+          <input type="search" id="q" placeholder="코인 검색 (BTC, 이더…)" autocomplete="off" aria-label="코인 검색">
+          <div id="marketResults" class="market-results" role="listbox" aria-label="코인 검색 결과" hidden></div>
+        </div>
+        <div class="market-panel" id="marketFavoritesPanel" role="tabpanel" hidden>
+          <div id="favoriteResults" class="favorite-results" role="listbox" aria-label="즐겨찾기 목록"></div>
+        </div>
+      </div>
+      <select id="market" aria-label="분석 종목 선택"></select>
     </div>
-    <button class="btn solid" id="run">분석</button>
-    <button class="btn" id="auto">자동갱신 OFF</button>
-    <button class="btn accent" id="briefBtn" title="AI MASTER CRYPTO ANALYST V4.1 형식으로 브리핑 뽑기">V4.1 브리핑</button>
-    <button class="btn" id="alertBtn" title="타점·청산 조건이 성립하면 브라우저 알림을 띄웁니다">타점 알림 OFF</button>
-    <select id="interval" title="지표·레벨 재계산 주기 (시세는 WebSocket으로 항상 실시간)">
-      <option value="1">1초</option>
-      <option value="3">3초</option>
-      <option value="5">5초</option>
-      <option value="10" selected>10초</option>
-      <option value="30">30초</option>
-    </select>
-    <span class="hint" id="apiHint">업비트 공개 API · 무인증 · 200봉</span>
+    <div class="control-row control-row-analysis">
+      <div class="tfbar" id="tfbar">
+        <button data-tf="1h">1시간</button>
+        <button data-tf="4h" class="act">4시간</button>
+        <button data-tf="8h">8시간</button>
+        <button data-tf="12h">12시간</button>
+        <button data-tf="1d">일봉</button>
+        <button data-tf="1w">주봉</button>
+        <button data-tf="1M">월봉</button>
+        <button data-tf="1y">년봉</button>
+      </div>
+      <button class="btn solid" id="run">분석</button>
+      <button class="btn" id="auto">자동갱신 OFF</button>
+      <button class="btn accent" id="briefBtn" title="AI MASTER CRYPTO ANALYST V4.1 형식으로 브리핑 뽑기">V4.1 브리핑</button>
+      <button class="btn" id="alertBtn" title="타점·청산 조건이 성립하면 브라우저 알림을 띄웁니다">타점 알림 OFF</button>
+      <select id="interval" title="지표·레벨 재계산 주기 (시세는 WebSocket으로 항상 실시간)">
+        <option value="1">1초</option>
+        <option value="3">3초</option>
+        <option value="5">5초</option>
+        <option value="10" selected>10초</option>
+        <option value="30">30초</option>
+      </select>
+      <span class="hint" id="apiHint">업비트 공개 API · 무인증 · 200봉</span>
+    </div>
   </div>
 
   <div class="warn" id="rateHint" style="display:none;margin:0 0 20px"></div>

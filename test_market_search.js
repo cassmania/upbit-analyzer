@@ -33,7 +33,7 @@ test("입력 중에는 짧은 심볼과 일치해도 분석을 자동 실행하�
         '$("q").addEventListener("input", function () {',
         '$("q").addEventListener("keydown", function (e) {'
     );
-    assert.ok(inputHandler.includes("renderMarketSelect(this.value)"));
+    assert.ok(inputHandler.includes("renderMarketSelect(this.value, false)"));
     assert.ok(!inputHandler.includes("findExactMarket(this.value)"));
     assert.ok(!inputHandler.includes("selectMarketAndRun("));
 });
