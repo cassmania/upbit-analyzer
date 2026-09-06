@@ -256,12 +256,10 @@
 
     // 2026-09-04 UTC Binance 현물 확정봉 5종목, 마지막 40% 홀드아웃 결과입니다.
     // 신호의 방향을 수익 보장처럼 보이지 않게 하기 위해 화면 근거로 함께 표시합니다.
-    var SIGNAL_BACKTEST = {
-        // 2026-09-04 UTC 스냅샷을 같은 비용·홀드아웃 규칙으로 재실행한 결과다.
-        // 화면의 정적 요약과 보고서가 서로 다른 기준선을 가리키지 않도록 갱신한다.
-        status: "전체 전략 우위 미확인",
-        summary: "홀드아웃 87거래 · 승률 41.4% · PF 0.756 · 평균 -0.194R",
-        detail: "롱 35건 PF 1.097 · 가상 숏 52건 PF 0.590"
+    var SIGNAL_BACKTEST = window.UPBIT_SIGNAL_BACKTEST || {
+        status: "검증 결과 확인 불가",
+        summary: "백테스트 요약을 불러오지 못했습니다",
+        detail: "과거 승률을 대신 표시하지 않습니다"
     };
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
@@ -2165,7 +2163,7 @@
             + '<span class="dim" style="font-size:12.5px">규칙 기반 산출 · ' + esc(SIGNAL_BACKTEST.status) + '</span></div>'
             + '<div class="card card-pad">' + L.join("")
             + '<div class="warn">' + esc(SIGNAL_BACKTEST.summary) + ' · ' + esc(SIGNAL_BACKTEST.detail) + '<br>지표에서 기계적으로 계산한 값입니다. 규칙이 틀리면 결과도 틀립니다. '
-            + "손절을 반드시 함께 쓰고, 이 화면만 보고 매매하지 마세요.</div></div></section>";
+            + '손절을 반드시 함께 쓰고, 이 화면만 보고 매매하지 마세요. <a href="backtest/results/signal-report.md" target="_blank" rel="noopener">백테스트 보고서</a></div></div></section>';
     }
 
     /**

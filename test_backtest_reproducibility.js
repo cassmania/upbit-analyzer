@@ -1,0 +1,17 @@
+'use strict';
+const assert = require('node:assert/strict');
+const {performance} = require('node:perf_hooks');
+const {loadSnapshot,simulateSymbol} = require('./backtest/signal_backtest.js');
+const {sets,manifest} = loadSnapshot();
+const start = Date.parse(manifest.requestedRange.startUtc)/1000;
+const period = {start,end:start+3600*500};
+const t0=performance.now();
+const before=simulateSymbol(sets[0],{...period,cacheConverted:false});
+const t1=performance.now();
+const after=simulateSymbol(sets[0],period);
+const t2=performance.now();
+assert.deepEqual(after,before,'입력 변환 캐시는 신호·거래·차단 사유를 변경하면 안 됨');
+assert.ok(after.trades.every(t=>t.entryTime>=period.start && t.exitTime<=period.end));
+const clipped={...sets[0],timeframes:Object.fromEntries(Object.entries(sets[0].timeframes).map(([tf,rows])=>[tf,rows.filter(r=>r.endTime<=period.end)]))};
+assert.deepEqual(simulateSymbol(clipped,period),after,'구간 밖 미래 데이터를 제거해도 결과는 같아야 함');
+console.log(JSON.stringify({beforeMs:t1-t0,afterMs:t2-t1,trades:after.trades.length,parity:true}));

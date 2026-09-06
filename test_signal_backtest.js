@@ -29,6 +29,13 @@ const pending = {
 };
 const filled = fillPending(pending, { ...rows[1], o: 99 });
 assert.equal(filled.fillPrice, 99);
+assert.equal(fillPending(pending, {...rows[1],o:97}),null,'손절가 아래에서 시작하면 신규 롱 취소');
+const intrabar = fillPending(pending,{...rows[1],o:104,h:105,l:99,c:101});
+assert.equal(evaluatePosition({...intrabar,barsHeld:0},{...rows[1],o:104,h:105,l:99,c:101}),null,'진입 이전 고가를 익절로 오인하지 않음');
+const shortPending={...pending,plan:{side:'SHORT',entry:100,stop:102,target1:97,rr:1.5}};
+assert.equal(fillPending(shortPending,{...rows[1],o:103}),null,'손절가 위에서 시작하면 신규 숏 취소');
+const shortIntrabar=fillPending(shortPending,{...rows[1],o:96,h:101,l:95,c:99});
+assert.equal(evaluatePosition({...shortIntrabar,barsHeld:0},{...rows[1],o:96,h:101,l:95,c:99}),null,'진입 이전 저가를 숏 익절로 오인하지 않음');
 
 const stopped = evaluatePosition({ ...filled, symbol: 'BTCUSDT', barsHeld: 0 }, {
     time: 3600, endTime: 7200, o: 99, h: 104, l: 97, c: 101, v: 1
