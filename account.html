@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>내 MEXC · 코인 분석</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232946d4'/%3E%3Ctext x='8' y='29' fill='white' font-size='26'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="account.css?v=1">
+  <script src="account.js?v=1" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <nav><a href="/">← 공개 분석으로</a><span class="badge">본인 전용</span></nav>
+    <header><p class="eyebrow">PRIVATE ACCOUNT</p><h1>내 MEXC</h1><p>잔고와 활성 포지션을 한곳에서 확인하세요.</p></header>
+    <p id="status" role="status" aria-live="polite">로그인 상태를 확인하고 있습니다.</p>
+    <section id="setup" class="card" hidden>
+      <h2>계정 보호 설정이 필요합니다</h2>
+      <p>본인 인증 설정이 완료되면 로그인할 수 있습니다. 현재 개인 계정 API는 잠겨 있습니다.</p>
+      <p>공개 분석 기능은 계속 이용할 수 있습니다.</p>
+    </section>
+    <section id="login" class="card narrow" hidden>
+      <h2>본인 계정으로 로그인</h2>
+      <p>이 사이트에 등록한 로그인 계정을 입력하세요. MEXC 비밀번호를 입력하는 곳이 아닙니다.</p>
+      <form id="loginForm">
+        <label for="email">로그인 이메일</label><input id="email" type="email" autocomplete="username" required maxlength="254">
+        <label for="password">로그인 비밀번호</label><input id="password" type="password" autocomplete="current-password" required maxlength="1024">
+        <button type="submit">로그인</button>
+      </form>
+    </section>
+    <section id="privateArea" hidden>
+      <div class="toolbar"><span class="badge">조회 전용</span><span id="lastUpdated">아직 조회하지 않았습니다</span>
+        <button id="refresh" type="button" class="secondary">새로고침</button>
+        <label class="inline"><input id="autoRefresh" type="checkbox"> 30초 자동갱신</label>
+        <button id="logout" type="button" class="secondary">로그아웃</button>
+      </div>
+      <details id="connection" class="card">
+        <summary>MEXC API 연결 설정</summary>
+        <p>본인 MEXC에서 발급한 <strong>읽기 전용</strong> API 키를 입력하세요. 키는 암호화하여 저장하고 다시 표시하지 않습니다.</p>
+        <p>필요 권한: 현물 계정 조회, 선물 계정 정보 조회, 주문 정보 조회. 거래·출금 권한은 켜지 마세요.</p>
+        <form id="keyForm">
+          <label for="apiKey">Access Key</label><input id="apiKey" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
+          <label for="secret">Secret Key</label><input id="secret" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
+          <label class="inline"><input id="readOnly" type="checkbox" required> 거래·출금 권한이 없는 읽기 전용 키입니다.</label>
+          <button type="submit">연결 확인 후 저장</button>
+        </form>
+        <button id="disconnect" type="button" class="secondary danger" hidden>저장된 연결 해제</button>
+      </details>
+      <div id="accountData"></div>
+      <p class="footnote">계정 정보는 공개 분석 브리핑에 포함되지 않습니다. 조회 실패 시 이전 계정 값을 지우며, 잔고와 포지션을 브라우저 저장소에 보관하지 않습니다.</p>
+    </section>
+  </main>
+</body>
+</html>
