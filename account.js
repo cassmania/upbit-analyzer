@@ -117,8 +117,26 @@
     $("loginForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
         const input = { action: "login", email: $("email").value.trim(), password: $("password").value };
         $("password").value = "";
-        await api("session", "POST", input); authenticated = true; $("login").hidden = true; $("privateArea").hidden = false;
-        render(await api("mexc"));
+        // 요청 중임을 버튼과 입력창 아래에 함께 표시해 중복 클릭을 줄인다.
+        $("loginButton").textContent = "로그인 확인 중…";
+        $("loginForm").setAttribute("aria-busy", "true");
+        $("loginFeedback").hidden = false; $("loginFeedback").className = "";
+        $("loginFeedback").textContent = "계정을 확인하고 있습니다. 잠시 기다려 주세요.";
+        status("계정을 확인하고 있습니다.");
+        try {
+            await api("session", "POST", input); authenticated = true; $("login").hidden = true; $("privateArea").hidden = false;
+            render(await api("mexc"));
+        } catch (error) {
+            // 작은 화면에서도 실패 안내가 보이도록 입력창 가까이에 표시한다.
+            const message = error.name === "TimeoutError" ? "로그인 응답이 지연되었습니다. 잠시 후 다시 시도해 주세요."
+                : error.message === errors.LOGIN_FAILED ? "로그인이 거부되었습니다. 기존 사이트 인증 계정의 이메일·비밀번호를 확인해 주세요. Google·Vercel·MEXC 비밀번호와는 별개입니다."
+                : error.message;
+            $("loginFeedback").textContent = message; $("loginFeedback").className = "error";
+            if (!$("login").hidden) $("loginFeedback").focus();
+            throw new Error(message);
+        } finally {
+            $("loginButton").textContent = "로그인"; $("loginForm").removeAttribute("aria-busy");
+        }
     }); });
     $("keyForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
         const input = { apiKey: $("apiKey").value.trim(), secret: $("secret").value.trim(), readOnly: $("readOnly").checked };

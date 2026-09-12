@@ -8,7 +8,7 @@
   <title>내 MEXC · 코인 분석</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232946d4'/%3E%3Ctext x='8' y='29' fill='white' font-size='26'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="account.css?v=1">
-  <script src="account.js?v=1" defer></script>
+  <script src="account.js?v=2" defer></script>
 </head>
 <body>
   <main class="shell">
@@ -22,11 +22,12 @@
     </section>
     <section id="login" class="card narrow" hidden>
       <h2>본인 계정으로 로그인</h2>
-      <p>이 사이트에 등록한 로그인 계정을 입력하세요. MEXC 비밀번호를 입력하는 곳이 아닙니다.</p>
+      <p>기존 사이트 인증 계정의 이메일과 비밀번호를 입력하세요. Google·Vercel·MEXC 로그인과는 별개입니다.</p>
       <form id="loginForm">
         <label for="email">로그인 이메일</label><input id="email" type="email" autocomplete="username" required maxlength="254">
         <label for="password">로그인 비밀번호</label><input id="password" type="password" autocomplete="current-password" required maxlength="1024">
-        <button type="submit">로그인</button>
+        <button id="loginButton" type="submit">로그인</button>
+        <p id="loginFeedback" role="status" aria-live="polite" tabindex="-1" hidden></p>
       </form>
     </section>
     <section id="privateArea" hidden>
