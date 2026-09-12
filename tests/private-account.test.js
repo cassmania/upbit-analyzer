@@ -37,6 +37,20 @@ test("세션 쿠키는 암호화 및 Secure HttpOnly SameSite를 적용한다", 
     assert.match(r.headers["set-cookie"], /HttpOnly; Secure; SameSite=Strict/);
     assert.ok(!r.headers["set-cookie"].includes("fixture-token")); assert.deepEqual(r.data, { authenticated: true });
 });
+
+test("사용자 ID가 같아도 지정 이메일과 다르면 로그인과 쿠키 발급을 거부한다", async () => {
+    state.email = "different@example.test";
+    const r = await call(session, "POST", { action: "login", email: state.email, password: "password" });
+    assert.equal(r.code, 403); assert.equal(r.data.error, "OWNER_ONLY");
+    assert.equal(r.headers["set-cookie"], undefined);
+});
+
+test("소유자 이메일 설정이 없으면 기존 소유자도 차단한다", async () => {
+    delete process.env.PRIVATE_OWNER_EMAIL;
+    const r = await call(session);
+    assert.equal(r.code, 503); assert.equal(r.data.error, "SETUP_REQUIRED");
+    assert.equal(state.calls.length, 0);
+});
 test("로그아웃 후 복사한 이전 쿠키의 재사용을 거부한다", async () => {
     const cookie = await login(); assert.equal((await call(session, "POST", { action: "logout" }, cookie)).code, 200);
     const r = await call(mexc, "GET", null, cookie); assert.equal(r.code, 401); assert.equal(r.data.error, "SESSION_EXPIRED");

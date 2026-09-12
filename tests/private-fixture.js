@@ -4,7 +4,7 @@ const OWNER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 function configure(origin = "http://localhost:4177") {
     Object.assign(process.env, { PRIVATE_APP_ORIGIN: origin, PRIVATE_SUPABASE_URL: "https://test-project.supabase.co",
-        PRIVATE_SUPABASE_ANON_KEY: "fixture-anon", PRIVATE_OWNER_ID: OWNER, PRIVATE_ENCRYPTION_KEY: "12".repeat(32) });
+        PRIVATE_SUPABASE_ANON_KEY: "fixture-anon", PRIVATE_OWNER_ID: OWNER, PRIVATE_OWNER_EMAIL: "fixture@example.test", PRIVATE_ENCRYPTION_KEY: "12".repeat(32) });
 }
 function fixture() {
     const state = { active: true, credential: null, calls: [], other: false, deniedMexc: false, limit: true };
@@ -14,7 +14,7 @@ function fixture() {
         const u = new URL(url), path = u.pathname;
         if (u.hostname === "test-project.supabase.co") {
             if (path === "/auth/v1/token") { state.active = true; return reply({ access_token: "fixture-token", expires_in: 3600 }); }
-            if (path === "/auth/v1/user") return reply({ id: state.other ? OTHER : OWNER, email_confirmed_at: "2026-01-01T00:00:00Z" });
+            if (path === "/auth/v1/user") return reply({ id: state.other ? OTHER : OWNER, email: state.email || "fixture@example.test", email_confirmed_at: "2026-01-01T00:00:00Z" });
             if (path === "/auth/v1/logout") { state.active = false; return reply(null, 204); }
             if (path.endsWith("upbit_private_session_active")) return reply(state.active);
             if (path.endsWith("upbit_private_rate_limit") || path.endsWith("upbit_private_login_limit")) return reply(state.limit);

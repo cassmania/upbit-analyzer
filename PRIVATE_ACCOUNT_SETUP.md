@@ -19,6 +19,7 @@
 | PRIVATE_SUPABASE_URL | 선택한 프로젝트의 https://프로젝트참조.supabase.co 주소 |
 | PRIVATE_SUPABASE_ANON_KEY | 해당 프로젝트 Settings → API의 legacy anon JWT 키. service_role 키는 사용하지 않는다 |
 | PRIVATE_OWNER_ID | 본인으로 확인한 Supabase 사용자 UUID |
+| PRIVATE_OWNER_EMAIL | 본인이 직접 지정하고 이메일 인증을 완료한 로그인 이메일. 사용자 UUID와 함께 대조하며 둘 중 하나라도 미설정이면 차단 |
 | PRIVATE_ENCRYPTION_KEY | 안전하게 생성한 무작위 32바이트의 64자리 16진수 값 |
 
 환경 변수는 Production 서버용으로 등록하고 재배포한다. 암호화 키를 바꾸면 저장된 MEXC 키를 다시 연결해야 한다. 키는 채팅, Git, 프런트엔드 환경 변수에 넣지 않는다. 미설정 또는 서비스 장애 시 개인 기능은 차단된다.
