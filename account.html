@@ -8,7 +8,7 @@
   <title>내 MEXC · 코인 분석</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232946d4'/%3E%3Ctext x='8' y='29' fill='white' font-size='26'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="account.css?v=1">
-  <script src="account.js?v=3" defer></script>
+  <script src="account.js?v=4" defer></script>
 </head>
 <body>
   <main class="shell">
@@ -54,7 +54,8 @@
           <label for="apiKey">Access Key</label><input id="apiKey" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
           <label for="secret">Secret Key</label><input id="secret" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
           <label class="inline"><input id="readOnly" type="checkbox" required> 거래·출금 권한이 없는 읽기 전용 키입니다.</label>
-          <button type="submit">연결 확인 후 저장</button>
+          <button id="keySaveButton" type="submit">연결 확인 후 저장</button>
+          <p id="keyFeedback" role="status" aria-live="polite" tabindex="-1" hidden></p>
         </form>
         <button id="disconnect" type="button" class="secondary danger" hidden>저장된 연결 해제</button>
       </details>

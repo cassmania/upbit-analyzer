@@ -19,7 +19,10 @@ module.exports = async function handler(req, res) {
             const snapshot = await M.snapshot(credentials);
             // 최소한 계정 잔고 조회에 성공한 키만 저장한다. 실패한 키로 기존 연결을 덮어쓰지 않는다.
             if (snapshot.sections.spot.status !== "ok" && snapshot.sections.assets.status !== "ok") {
-                throw new S.PrivateError(400, "MEXC_KEY_CHECK_FAILED");
+                // 공급업체 원문 대신 내부에서 정한 오류 코드만 본인에게 전달한다.
+                return res.status(400).json({ error: "MEXC_KEY_CHECK_FAILED", checks: {
+                    spot: snapshot.sections.spot.error, futures: snapshot.sections.assets.error
+                } });
             }
             const ciphertext = S.seal(credentials, "mexc:v1:" + session.user.id);
             await S.supabase("/rest/v1/upbit_private_credentials?on_conflict=user_id", session.token, {

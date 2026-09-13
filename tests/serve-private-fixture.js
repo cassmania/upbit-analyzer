@@ -2,7 +2,11 @@
 const http = require("node:http"), fs = require("node:fs"), path = require("node:path");
 const F = require("./private-fixture");
 const mock = process.argv.includes("--mock");
-if (mock) { F.configure(); global.fetch = F.fixture().fetch; }
+if (mock) {
+    F.configure(); const state = F.fixture();
+    state.deniedMexc = process.argv.includes("--deny-mexc");
+    global.fetch = state.fetch;
+}
 const routes = { "/api/private/session": require("../api/private/session"), "/api/private/mexc": require("../api/private/mexc") };
 const root = path.resolve(__dirname, "../public");
 http.createServer(async (req, res) => {

@@ -20,16 +20,18 @@
         KEY_DECRYPT_FAILED: "저장된 키를 읽을 수 없습니다. 연결 설정에서 키를 다시 등록해 주세요.",
         MEXC_PERMISSION_OR_REQUEST_FAILED: "MEXC 조회 권한·키 유효기간·IP 제한을 확인해 주세요.",
         MEXC_RATE_LIMITED: "MEXC 요청 제한에 도달했습니다. 잠시 후 새로고침해 주세요.",
+        MEXC_ACCESS_DENIED: "거래소가 접근을 거부했습니다. 키 권한·IP 제한·서버 접속 제한을 확인해야 합니다.",
         MEXC_UNAVAILABLE: "MEXC 연결에 실패했습니다.", MEXC_RESPONSE_INVALID: "MEXC 응답 형식을 확인할 수 없습니다."
     };
-    let busy = false, timer = null, generation = 0, authenticated = false;
+    let busy = false, timer = null, generation = 0, authenticated = false, connected = false;
     function status(text, error = false) { $("status").textContent = text; $("status").className = error ? "error" : ""; }
-    function clearPrivate() {
+    function clearPrivate(keepInputs = false) {
         generation++;
         clearTimeout(timer);
         $("accountData").replaceChildren();
         $("lastUpdated").textContent = "아직 조회하지 않았습니다";
-        $("apiKey").value = ""; $("secret").value = ""; $("password").value = "";
+        // 키를 복사하러 탭을 옮길 때는 입력 중인 값만 유지한다. 로그아웃·페이지 종료 때는 지운다.
+        if (!keepInputs) { $("apiKey").value = ""; $("secret").value = ""; $("password").value = ""; }
     }
     function showLogin() { authenticated = false; clearPrivate(); $("privateArea").hidden = true; $("login").hidden = false; }
     async function api(path, method = "GET", payload) {
@@ -40,7 +42,11 @@
         if (!response.ok) {
             if (["LOGIN_REQUIRED", "SESSION_EXPIRED", "OWNER_ONLY"].includes(data.error)) showLogin();
             if (data.error === "SETUP_REQUIRED") { showLogin(); $("login").hidden = true; $("setup").hidden = false; }
-            throw new Error(errors[data.error] || "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+            let message = errors[data.error] || "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+            if (data.error === "MEXC_KEY_CHECK_FAILED" && data.checks) {
+                message += " 현물: " + (errors[data.checks.spot] || "조회 실패") + " 선물: " + (errors[data.checks.futures] || "조회 실패");
+            }
+            throw new Error(message);
         }
         return data;
     }
@@ -64,6 +70,7 @@
         tableEl.append(body); wrap.append(tableEl); card.append(wrap);
     }
     function render(data) {
+        connected = data.connected === true;
         $("accountData").replaceChildren(); $("disconnect").hidden = !data.connected;
         $("connection").open = !data.connected;
         if (!data.connected) { $("lastUpdated").textContent = "MEXC 연결 전"; status("로그인했습니다. 읽기 전용 MEXC API 키를 연결해 주세요."); return; }
@@ -105,7 +112,7 @@
     }
     function schedule() {
         clearTimeout(timer);
-        if (authenticated && $("autoRefresh").checked && !document.hidden) timer = setTimeout(refresh, 30000);
+        if (authenticated && connected && $("autoRefresh").checked && !document.hidden && !$("connection").open) timer = setTimeout(refresh, 30000);
     }
     async function run(action) {
         if (busy) return;
@@ -164,7 +171,17 @@
     $("keyForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
         const input = { apiKey: $("apiKey").value.trim(), secret: $("secret").value.trim(), readOnly: $("readOnly").checked };
         $("apiKey").value = ""; $("secret").value = "";
-        const data = await api("mexc", "POST", input); $("readOnly").checked = false; render(data);
+        $("keySaveButton").textContent = "MEXC 연결 확인 중…";
+        $("keyFeedback").hidden = false; $("keyFeedback").className = "";
+        $("keyFeedback").textContent = "현물·선물 조회 권한을 확인하고 있습니다. 잠시 기다려 주세요.";
+        try {
+            const data = await api("mexc", "POST", input); $("readOnly").checked = false;
+            $("keyFeedback").textContent = "연결 확인 후 암호화하여 저장했습니다."; render(data);
+        } catch (error) {
+            $("keyFeedback").className = "error";
+            $("keyFeedback").textContent = "저장하지 못했습니다. " + error.message;
+            $("keyFeedback").focus(); throw error;
+        } finally { $("keySaveButton").textContent = "연결 확인 후 저장"; }
     }); });
     $("logout").addEventListener("click", () => run(async () => {
         clearPrivate();
@@ -175,8 +192,9 @@
         render(await api("mexc", "DELETE")); status("저장된 MEXC 연결을 해제했습니다.");
     }));
     $("refresh").addEventListener("click", refresh); $("autoRefresh").addEventListener("change", schedule);
+    $("connection").addEventListener("toggle", schedule);
     document.addEventListener("visibilitychange", () => {
-        if (document.hidden) clearPrivate(); else if (authenticated) refresh();
+        if (document.hidden) clearPrivate(true); else if (authenticated && connected && !$("connection").open) refresh();
     });
     // 뒤로 가기 캐시로 개인 값이 복원되는 것을 막는다.
     window.addEventListener("pagehide", () => { clearPrivate(); invitationToken = null; $("newPassword").value = ""; $("confirmPassword").value = ""; });

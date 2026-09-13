@@ -92,6 +92,7 @@ test("MEXC 키 검증 실패는 기존 연결을 덮어쓰지 않고 원문 오�
     const cookie = await login(); state.credential = { ciphertext: "existing" }; state.deniedMexc = true;
     const r = await call(mexc, "POST", { apiKey: "fixture-access-key", secret: "fixture-secret-key", readOnly: true }, cookie);
     assert.equal(r.code, 400); assert.equal(state.credential.ciphertext, "existing");
+    assert.deepEqual(r.data.checks, { spot: "MEXC_ACCESS_DENIED", futures: "MEXC_ACCESS_DENIED" });
     assert.ok(!JSON.stringify(r.data).includes("원문"));
 });
 test("사용자 ID를 요청 본문에 주입해도 서버의 소유자 ID만 저장한다", async () => {
