@@ -1,6 +1,12 @@
 /* 개인 화면은 공개 분석과 분리하고 계정 데이터를 메모리에만 잠시 보관한다. */
 (function () {
     "use strict";
+    // 인증 링크의 토큰은 주소와 브라우저 저장소에 남기지 않는다.
+    const fragment = new URLSearchParams(location.hash.slice(1));
+    let invitationToken = ["invite", "recovery"].includes(fragment.get("type")) ? fragment.get("access_token") : null;
+    const linkFailed = fragment.has("error");
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    [...fragment.keys()].forEach(key => fragment.delete(key));
     const $ = id => document.getElementById(id);
     const errors = {
         SETUP_REQUIRED: "본인 인증을 위한 서버 설정이 아직 완료되지 않았습니다.",
@@ -138,6 +144,23 @@
             $("loginButton").textContent = "로그인"; $("loginForm").removeAttribute("aria-busy");
         }
     }); });
+    $("activationForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
+        if (!invitationToken) throw new Error("초대 또는 비밀번호 설정 메일의 링크를 다시 열어 주세요.");
+        if ($("newPassword").value !== $("confirmPassword").value) {
+            $("activationFeedback").textContent = "두 비밀번호가 일치하지 않습니다."; return;
+        }
+        const password = $("newPassword").value;
+        $("newPassword").value = ""; $("confirmPassword").value = "";
+        $("activationButton").textContent = "저장 중…";
+        $("activationFeedback").textContent = "본인 확인 후 저장하고 있습니다.";
+        try {
+            await api("session", "POST", { action: "set-password", token: invitationToken, password });
+            invitationToken = null; $("activation").hidden = true; showLogin();
+            status("비밀번호를 저장했습니다. 이메일과 새 비밀번호로 로그인해 주세요.");
+        } catch (error) {
+            $("activationFeedback").textContent = error.message; throw error;
+        } finally { $("activationButton").textContent = "비밀번호 저장"; }
+    }); });
     $("keyForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
         const input = { apiKey: $("apiKey").value.trim(), secret: $("secret").value.trim(), readOnly: $("readOnly").checked };
         $("apiKey").value = ""; $("secret").value = "";
@@ -156,9 +179,13 @@
         if (document.hidden) clearPrivate(); else if (authenticated) refresh();
     });
     // 뒤로 가기 캐시로 개인 값이 복원되는 것을 막는다.
-    window.addEventListener("pagehide", clearPrivate);
+    window.addEventListener("pagehide", () => { clearPrivate(); invitationToken = null; $("newPassword").value = ""; $("confirmPassword").value = ""; });
     window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
-    run(async () => {
+    if (invitationToken) {
+        $("activation").hidden = false; status("이메일 확인 링크를 열었습니다. 사이트 비밀번호를 설정해 주세요.");
+    } else if (linkFailed) {
+        showLogin(); status("인증 링크가 만료되었거나 사용할 수 없습니다. 새 링크가 필요합니다.", true);
+    } else run(async () => {
         await api("session"); authenticated = true; $("privateArea").hidden = false; render(await api("mexc"));
     });
 })();

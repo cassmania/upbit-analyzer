@@ -51,6 +51,21 @@ test("소유자 이메일 설정이 없으면 기존 소유자도 차단한다",
     assert.equal(r.code, 503); assert.equal(r.data.error, "SETUP_REQUIRED");
     assert.equal(state.calls.length, 0);
 });
+
+test("다른 이메일의 초대 토큰으로 비밀번호를 설정할 수 없다", async () => {
+    state.email = "different@example.test";
+    const r = await call(session, "POST", { action: "set-password", token: "fixture-invitation-token", password: "test-new-password-123" });
+    assert.equal(r.code, 403);
+    assert.ok(!state.calls.some(x => x.options.method === "PUT"));
+});
+
+test("본인 비밀번호 설정은 검증 후 수행하고 초대 세션을 폐기한다", async () => {
+    const r = await call(session, "POST", { action: "set-password", token: "fixture-invitation-token", password: "test-new-password-123" });
+    assert.equal(r.code, 200); assert.deepEqual(r.data, { passwordUpdated: true });
+    assert.equal(state.active, false);
+    assert.ok(state.calls.some(x => x.url.endsWith('/auth/v1/user') && x.options.method === 'PUT'));
+    assert.ok(!JSON.stringify(r.data).includes('test-new-password'));
+});
 test("로그아웃 후 복사한 이전 쿠키의 재사용을 거부한다", async () => {
     const cookie = await login(); assert.equal((await call(session, "POST", { action: "logout" }, cookie)).code, 200);
     const r = await call(mexc, "GET", null, cookie); assert.equal(r.code, 401); assert.equal(r.data.error, "SESSION_EXPIRED");

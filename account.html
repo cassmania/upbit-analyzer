@@ -8,7 +8,7 @@
   <title>내 MEXC · 코인 분석</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232946d4'/%3E%3Ctext x='8' y='29' fill='white' font-size='26'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="account.css?v=1">
-  <script src="account.js?v=2" defer></script>
+  <script src="account.js?v=3" defer></script>
 </head>
 <body>
   <main class="shell">
@@ -19,6 +19,16 @@
       <h2>계정 보호 설정이 필요합니다</h2>
       <p>본인 인증 설정이 완료되면 로그인할 수 있습니다. 현재 개인 계정 API는 잠겨 있습니다.</p>
       <p>공개 분석 기능은 계속 이용할 수 있습니다.</p>
+    </section>
+    <section id="activation" class="card narrow" hidden>
+      <h2>사이트 로그인 비밀번호 설정</h2>
+      <p>이메일 확인 후 사용할 사이트 전용 비밀번호를 정하세요. 다른 서비스의 비밀번호를 재사용하지 마세요.</p>
+      <form id="activationForm">
+        <label for="newPassword">새 비밀번호 (12~128자)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <label for="confirmPassword">새 비밀번호 확인</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <button id="activationButton" type="submit">비밀번호 저장</button>
+        <p id="activationFeedback" role="status" aria-live="polite"></p>
+      </form>
     </section>
     <section id="login" class="card narrow" hidden>
       <h2>본인 계정으로 로그인</h2>
