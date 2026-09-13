@@ -1227,6 +1227,7 @@
             results: results,
             ticker: t,
             futures: fut,
+            evidence: state.evidence,
             v41: v41,
             v3: v41,
             usdtDominance: usdtDominance
@@ -1648,7 +1649,8 @@
         } else {
             L.push("- 펀딩비/OI: 바이낸스 USDT-M 미상장 또는 조회 실패 — 현재 실시간 데이터 확인 불가");
         }
-        L.push("- CVD/청산맵: 현재 실시간 데이터 확인 불가");
+        L.push("- " + PublicEvidence.cvdText(r.evidence && r.evidence.cvd));
+        L.push("- 청산맵: CoinGlass 등 전문 데이터 API 이용권 미연결");
         L.push("");
 
         L.push("## ■ PART 3. 온체인 데이터와 고래 동향");
@@ -1658,8 +1660,8 @@
         L.push("");
 
         L.push("## ■ PART 4. 토큰노믹스와 프로젝트 펀더멘털");
-        L.push("- 토큰 언락·고래 이동·파트너십·뉴스: 브라우저 OHLCV만으로 검증 불가 — 현재 실시간 데이터 확인 불가");
-        L.push("- 뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행이며 실제 뉴스 부재를 뜻하지 않음");
+        L.push("- 토큰 언락·고래 이동: 전문 데이터 API 이용권 미연결");
+        L.push("- 뉴스: " + PublicEvidence.newsText(r.evidence && r.evidence.news));
         L.push("");
 
         L.push("## ■ PART 5. 리스크 관리와 실행 전략");
@@ -1698,7 +1700,7 @@
         L.push("## ■ 최종 판단");
         L.push("- 우세 시나리오: " + (sig && sig.entry ? (sig.entry.side === "LONG" ? "조건부 롱" : "조건부 숏") : "관망"));
         L.push("- 판단 변경 조건: 상위봉 방향 전환 또는 핵심 지지·저항의 확정 봉 돌파/이탈");
-        L.push("- 확인 불가: 뉴스·언락·고래·온체인·CVD·청산맵");
+        L.push("- 미연결: 언락·고래·온체인·청산맵. CVD·뉴스는 위 조회 상태와 구간을 확인하세요.");
         L.push("- 주요 위험: API 지연, 거래소 간 가격 차이, 미반영 수수료·슬리피지, 급변 이벤트");
         L.push("- 멘탈케어: 좋은 자리는 쫓아가는 자리가 아니라, 조건이 먼저 와서 기다려 주는 자리입니다.");
         L.push("");
@@ -1888,9 +1890,11 @@
             + item("모멘텀", "RSI·CCI·Stochastic(14,3,3)·MACD는 한 근거군 · 중복 점수화 금지")
             + item("VPVR·VWAP", "VPVR은 OHLCV 범위분배 근사 · VWAP은 조회 구간 첫 확정 봉 앵커");
         var part2 = item("펀딩·OI", derivatives)
-            + item("CVD·청산맵", "현재 실시간 데이터 확인 불가");
-        var part3 = item("거래소 순유입·고래·MVRV·SOPR", "검증 가능한 온체인 원자료 없음 · 현재 실시간 데이터 확인 불가");
-        var part4 = item("뉴스·토큰 언락·기관·생태계", "브라우저 OHLCV만으로 검증 불가 · 현재 실시간 데이터 확인 불가");
+            + item("현물 구간 CVD", PublicEvidence.cvdHtml(state.evidence && state.evidence.cvd))
+            + item("청산맵", "CoinGlass 등 전문 데이터 API 이용권 미연결");
+        var part3 = item("거래소 순유입·고래·MVRV·SOPR", "Glassnode·Whale Alert 등 전문 데이터 API 이용권 미연결 · 현재값 확인 불가");
+        var part4 = item("최신 시장 뉴스", PublicEvidence.newsHtml(state.evidence && state.evidence.news))
+            + item("토큰 언락", "Tokenomist 등 일정 API 이용권 미연결 · 비유통량을 락업량으로 대체하지 않음");
         var part5 = item("현재 실행 판단", execution)
             + (conditional.length ? item("조건부 대안", conditional.join("<br>")) : "")
             + item("포지션 관리", "계좌 위험액=평가액×허용 위험률 · 계좌 정보가 없어 고정 레버리지/수량 산정 안 함")
@@ -2341,8 +2345,8 @@
         }
         return '<section><div class="sec-head"><h2>조건부 시나리오</h2></div>'
             + '<div class="card card-pad">' + out.join("")
-            + '<div class="warn">뉴스·락업·언락·고래·온체인은 브라우저 OHLCV만으로 검증할 수 없어 '
-            + "현재 실시간 데이터 확인 불가로 표시합니다.</div></div></section>";
+            + '<div class="warn">CVD·뉴스는 상단 통합 분석의 실제 조회 결과를 확인하세요. '
+            + "락업·언락·고래·온체인은 전문 데이터 API 미연결 상태입니다.</div></div></section>";
     }
 
     // ---------------------------------------------------------------- 실행
@@ -2428,10 +2432,12 @@
                     fetchFutures(sym),
                     fetchUsdtKrw(),
                     fetchBankFx(),
-                    fetchUsdtDominance()
+                    fetchUsdtDominance(),
+                    PublicEvidence.fetch(state.exchange, market)
                 ]);
             })
             .then(function (r) {
+                state.evidence = r[5];
                 render(market, r[0], r[1], r[2], r[3], r[4]);
                 connectWS(market);
             })

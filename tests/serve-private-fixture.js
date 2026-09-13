@@ -7,10 +7,12 @@ if (mock) {
     state.deniedMexc = process.argv.includes("--deny-mexc");
     global.fetch = state.fetch;
 }
-const routes = { "/api/private/session": require("../api/private/session"), "/api/private/mexc": require("../api/private/mexc") };
+const routes = { "/api/private/session": require("../api/private/session"), "/api/private/mexc": require("../api/private/mexc"),
+    "/api/evidence": require("../api/evidence") };
 const root = path.resolve(__dirname, "../public");
 http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost:4177");
+    req.query = Object.fromEntries(url.searchParams);
     if (routes[url.pathname]) {
         let body = ""; for await (const chunk of req) { body += chunk; if (body.length > 8192) { res.writeHead(413).end(); return; } }
         req.body = body; res.status = code => { res.statusCode = code; return res; };
