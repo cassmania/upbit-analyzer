@@ -159,6 +159,8 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
   .control-row-analysis .tfbar{grid-column:1 / -1;width:100%}
   .control-row-analysis .btn,.control-row-analysis select{width:100%;min-width:0}
   .market-results,.favorite-results{width:calc(100vw - 48px)}
+  /* 좁은 화면에서는 검색 목록이 분석 버튼을 덮지 않도록 문서 흐름에 배치한다. */
+  .market-results{position:static;width:100%;margin-top:6px}
 }
 .btn{
   padding:9px 17px;border-radius:var(--r-sm);cursor:pointer;font-weight:600;
