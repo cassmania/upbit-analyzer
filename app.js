@@ -199,13 +199,13 @@
                 // 거래중 표기가 다르다: 바이낸스 "TRADING", MEXC "1"
                 .filter(function (x) {
                     return x.quoteAsset === "USDT"
-                        && (x.status === "TRADING" || x.status === "1" || x.status === "ENABLED");
+                        && (x.status === "TRADING" || String(x.status) === "1" || x.status === "ENABLED");
                 })
                 .map(function (x) {
                     return {
                         market: "USDT-" + x.baseAsset,
                         korean_name: x.baseAsset,
-                        english_name: x.baseAsset
+                        english_name: x.fullName || x.baseAsset
                     };
                 });
         });
@@ -500,6 +500,7 @@
         var f = (filter || "").trim().toLowerCase();
         if (!f) return true;
         return m.market.toLowerCase().indexOf(f) !== -1
+            || bnSymbol(m.market).toLowerCase().indexOf(f.replace(/[\s/_-]/g, "")) !== -1
             || coinOf(m.market).toLowerCase().indexOf(f) !== -1
             || m.korean_name.toLowerCase().indexOf(f) !== -1
             || (m.english_name || "").toLowerCase().indexOf(f) !== -1;
@@ -511,6 +512,7 @@
         if (!q) return null;
         return state.markets.find(function (m) {
             return m.market.toLowerCase() === q
+                || bnSymbol(m.market).toLowerCase() === q.replace(/[\s/_-]/g, "")
                 || coinOf(m.market).toLowerCase() === q
                 || m.korean_name.toLowerCase() === q
                 || (m.english_name || "").toLowerCase() === q;
@@ -579,14 +581,19 @@
         var box = $("marketResults");
         if (!box) return;
         var f = (filter || "").trim().toLowerCase();
-        var list = filteredList || state.markets;
+        // 검색창에 다시 포커스가 와도 현재 검색어로 목록을 다시 좁힌다.
+        var list = (filteredList || state.markets).filter(function (m) { return marketMatchesSearch(m, f); });
+        var exact = findExactMarket(f);
+        if (exact) list = [exact].concat(list.filter(function (m) { return m.market !== exact.market; }));
         if (!f || state.marketTab !== "search") {
             box.hidden = true;
             return;
         }
         list = list.slice(0, 12);
         if (!list.length) {
-            box.innerHTML = '<div class="market-results-note">일치하는 코인이 없습니다.</div>';
+            box.innerHTML = '<div class="market-results-note">' + esc(ex().name)
+                + ' 현물 ' + esc(ex().quote || 'KRW') + ' API 목록에서 “' + esc(filter)
+                + '”을 찾을 수 없습니다.<br>다른 거래소 탭에서 검색해 주세요. 현재 분석 종목은 변경되지 않았습니다.</div>';
             box.hidden = false;
             return;
         }
@@ -617,6 +624,22 @@
         $("marketResults").hidden = true;
         savePreferences();
         run();
+    }
+
+    /** 분석 버튼과 Enter는 검색어를 먼저 확인해 이전 종목을 잘못 실행하지 않는다. */
+    function runMarketSearch() {
+        var query = $("q").value.trim();
+        if (!query) { run(); return; }
+        if (isUsdtDominanceMarket(query)) { showUsdtDominanceChart(); return; }
+        var chosen = findExactMarket(query) || state.markets.find(function (m) {
+            return marketMatchesSearch(m, query);
+        });
+        if (chosen) selectMarketAndRun(chosen.market);
+        else {
+            setMarketTab("search");
+            renderMarketResults(query);
+            $("q").focus();
+        }
     }
 
     /** 업비트 캔들 -> 엔진 형식. 봉 시작 시각과 완료 여부도 함께 정규화한다. */
@@ -2651,7 +2674,7 @@
             b.classList.toggle("act", b.getAttribute("data-ex") === state.exchange);
         });
 
-        $("run").addEventListener("click", run);
+        $("run").addEventListener("click", runMarketSearch);
         $("auto").addEventListener("click", toggleAuto);
         $("briefBtn").addEventListener("click", openBrief);
         $("briefCopy").addEventListener("click", copyBrief);
@@ -2719,12 +2742,7 @@
                 run();
                 return;
             }
-            var exact = findExactMarket(this.value);
-            var candidates = state.markets.filter(function (m) {
-                return marketMatchesSearch(m, $("q").value);
-            });
-            var chosen = exact || candidates[0];
-            if (chosen) selectMarketAndRun(chosen.market);
+            runMarketSearch();
         });
         [].forEach.call(document.querySelectorAll("[data-market-tab]"), function (b) {
             b.addEventListener("click", function () { setMarketTab(b.getAttribute("data-market-tab")); });
@@ -2748,7 +2766,7 @@
         });
         document.addEventListener("click", function (e) {
             var picker = document.querySelector(".market-picker");
-            if (picker && !picker.contains(e.target)) {
+            if (picker && !picker.contains(e.target) && !$("run").contains(e.target)) {
                 $("marketResults").hidden = true;
                 $("favoriteResults").hidden = true;
             }
