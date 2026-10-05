@@ -236,7 +236,7 @@ async function refreshPrivate() {
             "<tr><td>" + esc(o.symbol) + "</td><td>" + esc(o.side) + "</td><td class='mono'>" + fmt.format(o.price) +
             "</td><td>" + esc(o.quantity) + "</td><td></td></tr>").join("") || "<tr><td colspan='5' class='dim'>미체결 없음</td></tr>";
     } catch (e) {
-        $("wState").innerHTML = "로그인 필요 — <a href='/account.html' style='color:#e0b44a'>내 MEXC</a>";
+        $("wState").innerHTML = "로그인 필요 — <a href='account.html' style='color:#e0b44a'>내 MEXC</a>";
     }
     try {
         const st = await priv("trade", "GET");
