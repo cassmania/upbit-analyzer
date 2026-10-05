@@ -70,17 +70,28 @@
       <div class="dim" id="oMsg" role="status"></div>
     </div>
     <div class="card">
+      <div class="tabs"><b>지갑</b><span class="dim" id="wState">로그인 필요</span></div>
+      <div class="mono" id="wallet">-</div>
+      <div class="mono" id="paperBank">모의 예수금 -</div>
+      <div class="twobtn"><button id="paperReset">모의자금 리셋($1M)</button></div>
+    </div>
+  </aside>
+
+  <section class="card ai-wide" aria-label="AI 전략">
+    <div class="ai-sig">
       <div class="tabs"><b>AI 전략</b><span id="aiSig" class="pill">관망</span></div>
       <div class="mono dim" id="aiDetail">신호 대기</div>
+      <div class="dim" id="aiMsg" role="status"></div>
+    </div>
+    <div class="ai-ctrl">
       <div class="twobtn">
         <button id="autoPaper">자동매매(모의) OFF</button>
         <button id="autoLive">자동매매(실매매) OFF</button>
       </div>
       <div class="twobtn">
-        <button id="scanToggle">다종목 스캔 OFF</button>
-        <select id="scanN" aria-label="스캔 종목 수"><option>5</option><option selected>10</option><option>20</option></select>
+        <button id="arm">실매매 승인</button>
+        <button id="kill" class="danger">전체 중지</button>
       </div>
-      <div class="log mono" id="scanList" style="height:90px"></div>
       <div class="settings">
         <label>단일 자동 명목가$ <input id="cfgNotional" inputmode="decimal" value="50"></label>
         <label>스캔 증거금% <input id="cfgRatio" inputmode="decimal" value="1"></label>
@@ -88,19 +99,15 @@
         <label>쿨다운분 <input id="cfgCool" inputmode="numeric" value="5"></label>
       </div>
       <div class="dim">스캔 레버리지는 주문창 값(10X 상한)을 따른다</div>
+    </div>
+    <div class="ai-scan">
       <div class="twobtn">
-        <button id="arm">실매매 승인</button>
-        <button id="kill" class="danger">전체 중지</button>
+        <button id="scanToggle">다종목 스캔 OFF</button>
+        <select id="scanN" aria-label="스캔 종목 수"><option>5</option><option selected>10</option><option>20</option></select>
       </div>
-      <div class="dim" id="aiMsg" role="status"></div>
+      <div class="log mono" id="scanList"></div>
     </div>
-    <div class="card">
-      <div class="tabs"><b>지갑</b><span class="dim" id="wState">로그인 필요</span></div>
-      <div class="mono" id="wallet">-</div>
-      <div class="mono" id="paperBank">모의 예수금 -</div>
-      <div class="twobtn"><button id="paperReset">모의자금 리셋($1M)</button></div>
-    </div>
-  </aside>
+  </section>
 
   <section class="bottom">
     <div class="card paper-card">
