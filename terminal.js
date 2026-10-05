@@ -9,7 +9,36 @@ const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
-    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 } };
+    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 }, fav: [], allSymbols: [] };
+function loadFav() {
+    try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
+    catch { S.fav = []; }
+}
+function saveFav() { try { localStorage.setItem("krta-fav", JSON.stringify(S.fav)); } catch { /* 무시 */ } }
+const isFav = s => S.fav.includes(s);
+function renderFavBtn() {
+    const on = isFav(S.symbol);
+    $("favBtn").classList.toggle("on", on);
+    $("favBtn").firstChild.textContent = on ? "★ " : "☆ ";
+    $("favCount").textContent = S.fav.length;
+}
+function renderSymbolSelect() {
+    const q = ($("symQ").value || "").trim().toUpperCase();
+    const match = x => !q || x.symbol.includes(q) || x.baseCoin.toUpperCase().includes(q);
+    const favs = S.allSymbols.filter(x => isFav(x.symbol) && match(x));
+    const rest = S.allSymbols.filter(x => !isFav(x.symbol) && match(x));
+    $("symbol").innerHTML = favs.map(x => "<option value='" + esc(x.symbol) + "'>★ " + esc(x.baseCoin) + "/USDT</option>").join("") +
+        rest.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
+    if ([...$("symbol").options].some(o => o.value === S.symbol)) $("symbol").value = S.symbol;
+}
+function renderFavPanel() {
+    $("favList").innerHTML = "<div class='favrow' data-add='1'><span>" + (isFav(S.symbol) ? "★" : "☆") +
+        " 현재 심볼 " + esc(S.symbol) + (isFav(S.symbol) ? " 해제" : " 추가") + "</span></div>" +
+        (S.fav.map(s => "<div class='favrow' data-sym='" + esc(s) + "'><span>★ " + esc(s.replace("_USDT", "")) +
+        "/USDT</span><span class='dim mono'>" + fmt.format(S.pxMap[s] || 0) + "</span>" +
+        "<button class='rm' data-rm='" + esc(s) + "' title='삭제'>✕</button></div>").join("") ||
+        "<div class='dim'>즐겨찾기가 비어 있습니다. 검색 후 ☆로 추가하세요.</div>");
+}
 function loadCfg() {
     try {
         const c = JSON.parse(localStorage.getItem("krta-cfg") || "{}");
@@ -446,11 +475,14 @@ async function autoTick() {
 async function loadSymbols() {
     const d = await pub("detail", {});
     const list = d.filter(x => x.quoteCoin === "USDT" && x.state === 0)
-        .sort((a, b) => (b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT"));
-    $("symbol").innerHTML = list.slice(0, 300).map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
-    $("symbol").value = S.symbol;
-    applyDetail(list.find(x => x.symbol === S.symbol));
-    S.detailList = list;
+        .sort((a, b) => ((b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT")) || String(a.symbol).localeCompare(String(b.symbol)));
+    S.allSymbols = list.slice(0, 400);
+    S.detailList = S.allSymbols;
+    renderSymbolSelect();
+    $("symbol").value = S.allSymbols.some(x => x.symbol === S.symbol) ? S.symbol : (S.allSymbols[0] ? S.allSymbols[0].symbol : S.symbol);
+    S.symbol = $("symbol").value;
+    applyDetail(S.allSymbols.find(x => x.symbol === S.symbol));
+    renderFavBtn();
 }
 function applyDetail(info) {
     if (!info) return;
@@ -468,8 +500,30 @@ function bind() {
     });
     $("symbol").addEventListener("change", () => {
         S.symbol = $("symbol").value; applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+        renderFavBtn();
         loadChart().catch(e => log("차트 " + e.message, "down"));
         refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
+    });
+    $("symQ").addEventListener("input", renderSymbolSelect);
+    $("favBtn").addEventListener("click", () => {
+        $("favPanel").classList.toggle("open");
+        renderFavPanel();
+    });
+    $("favList").addEventListener("click", e => {
+        const rm = e.target.closest("[data-rm]");
+        if (rm) { S.fav = S.fav.filter(s => s !== rm.dataset.rm); saveFav(); renderFavBtn(); renderSymbolSelect(); renderFavPanel(); return; }
+        if (e.target.closest("[data-add]")) {
+            S.fav = isFav(S.symbol) ? S.fav.filter(s => s !== S.symbol) : [...S.fav, S.symbol].slice(0, 50);
+            saveFav(); renderFavBtn(); renderSymbolSelect(); renderFavPanel(); return;
+        }
+        const row = e.target.closest("[data-sym]");
+        if (row) {
+            S.symbol = row.dataset.sym;
+            renderSymbolSelect(); renderFavBtn();
+            applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+            loadChart().catch(() => {}); refreshTop().catch(() => {}); refreshBook().catch(() => {});
+            $("favPanel").classList.remove("open");
+        }
     });
     $("otype").addEventListener("click", e => {
         const b = e.target.closest("[data-t]"); if (!b) return;
@@ -511,12 +565,14 @@ function bind() {
         settlePaper(idx, px, "수동");
     });
     $("autoPaper").addEventListener("click", () => {
+        if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
         S.autoPaper = !S.autoPaper;
         $("autoPaper").textContent = "자동매매(모의) " + (S.autoPaper ? "ON" : "OFF");
         $("autoPaper").classList.toggle("on", S.autoPaper);
         log("모의 자동매매 " + (S.autoPaper ? "시작" : "중지"));
     });
     $("autoLive").addEventListener("click", () => {
+        if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
         if (!S.armed || !S.tradeEnabled) { $("aiMsg").textContent = "실매매 승인부터 하세요."; return; }
         S.autoLive = !S.autoLive;
         $("autoLive").textContent = "자동매매(실매매) " + (S.autoLive ? "ON" : "OFF");
@@ -529,12 +585,21 @@ function bind() {
         $("scanToggle").classList.toggle("on", S.scan.on);
         if (S.scan.on) {
             try {
+                if (!S.fav.length) throw new Error("즐겨찾기가 비어 있습니다. ☆ 패널에서 코인을 추가하세요.");
                 const n = Number($("scanN").value) || 10;
                 const [tickers, details] = await Promise.all([pub("ticker", {}), pub("detail", {})]);
-                S.scan.list = window.TerminalAI.pickTopSymbols(tickers, details, n);
+                const size = {};
+                details.forEach(d => { if (d && d.symbol) size[d.symbol] = d; });
+                const favSet = S.fav.slice(0, Math.min(30, n));
+                S.scan.list = favSet.map(s => {
+                    const t = tickers.find(x => x.symbol === s), d = size[s] || {};
+                    return { symbol: s, contractSize: Number(d.contractSize) || S.contractSize,
+                        priceScale: Number(d.priceScale) || 2, lastPrice: Number(t && t.lastPrice) || 0 };
+                }).filter(x => x.contractSize > 0 && x.lastPrice > 0);
+                if (!S.scan.list.length) throw new Error("즐겨찾기 시세를 가져오지 못했습니다.");
                 S.scan.idx = 0;
-                log("다종목 스캔 시작 — 상위 " + S.scan.list.length + "개 (15초당 1종목)");
-            } catch (e) { S.scan.on = false; $("scanToggle").textContent = "다종목 스캔 OFF"; log("스캔 목록 실패 " + e.message, "down"); }
+                log("다종목 스캔 시작 — 즐겨찾기 " + S.scan.list.length + "개 (15초당 1종목)");
+            } catch (e) { S.scan.on = false; $("scanToggle").textContent = "다종목 스캔 OFF"; log("스캔 실패 " + e.message, "down"); }
         } else log("다종목 스캔 중지");
     });
     $("arm").addEventListener("click", async () => {
@@ -561,6 +626,7 @@ function bind() {
         S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
     } catch { S.paper = []; S.bank = 1000000; }
     loadCfg();
+    loadFav();
     bind();
     await loadSymbols();
     await loadChart();
