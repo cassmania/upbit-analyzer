@@ -1,0 +1,355 @@
+/* AI 선물 터미널 — MEXC 선물. 원칙: 기본 관망·모의, 실매매는 승인 후에만 서버 경유.
+   키 원문은 브라우저에 보관하지 않고 입력 즉시 서버로 전송 후 필드를 비운다. */
+(function () {
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
+    last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
+    tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [] };
+
+async function pub(path, params) {
+    const q = new URLSearchParams({ path, ...params });
+    const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
+    if (!r.ok) throw new Error("시세 오류 " + r.status);
+    const j = await r.json();
+    if (j.success !== true || Number(j.code) !== 0) throw new Error("시세 오류");
+    return j.data;
+}
+async function priv(api, method, body) {
+    const r = await fetch("/api/private/" + api, { method: method || "GET", credentials: "same-origin",
+        cache: "no-store", headers: { "X-Private-Request": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(25000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ("오류 " + r.status));
+    return j;
+}
+function log(msg, cls) {
+    const d = document.createElement("div");
+    if (cls) d.className = cls;
+    d.textContent = new Date().toLocaleTimeString("ko-KR", { hourCycle: "h23" }) + " " + msg;
+    $("log").prepend(d);
+    while ($("log").children.length > 80) $("log").lastChild.remove();
+}
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.floor(Math.random() * 1e9));
+
+// ---- 지표 (터미널 자체 타임프레임용 경량 규칙. 관망이 정상 출력이다) ----
+const ema = (a, n) => { const k = 2 / (n + 1); let p = a[0]; return a.map((v, i) => p = i ? v * k + p * (1 - k) : v); };
+const rsi = (a, n = 14) => {
+    if (a.length <= n) return 50;
+    let g = 0, l = 0;
+    for (let i = 1; i <= n; i++) { const d = a[i] - a[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); }
+    g /= n; l /= n;
+    for (let i = n + 1; i < a.length; i++) { const d = a[i] - a[i - 1]; g = (g * (n - 1) + Math.max(d, 0)) / n; l = (l * (n - 1) + Math.max(-d, 0)) / n; }
+    return l === 0 ? (g === 0 ? 50 : 100) : 100 - 100 / (1 + g / l);
+};
+const atr = (c, n = 14) => {
+    const tr = c.map((k, i) => { const p = i ? c[i - 1].close : k.close;
+        return Math.max(k.high - k.low, Math.abs(k.high - p), Math.abs(k.low - p)); });
+    let a = tr.slice(0, n).reduce((s, v) => s + v, 0) / n;
+    for (let i = n; i < tr.length; i++) a = (a * (n - 1) + tr[i]) / n;
+    return a;
+};
+function aiSignal(fast, slow) {
+    // fast: 진입봉 캔들, slow: 방향봉 캔들
+    if (!fast || fast.length < 60 || !slow || slow.length < 60) return { dir: "관망", reason: "봉 부족" };
+    const sc = slow.map(k => k.close), fc = fast.map(k => k.close);
+    const e20 = ema(sc, 20), e50 = ema(sc, 50), l = sc.length - 1;
+    const up = e20[l] > e50[l];
+    const r = rsi(fc, 14), a = atr(fast, 14), f = fast[fast.length - 1];
+    const dist = Math.abs(f.close - e20[l]) / Math.max(a, 1e-9);
+    if (dist > 3) return { dir: "관망", reason: "이격 과대 " + dist.toFixed(1) + "ATR" };
+    if (up && r >= 50 && r <= 75 && f.close > e20[l]) {
+        return { dir: "LONG", entry: f.close, sl: f.close - a * 1.5, tp: f.close + a * 3, reason: "4H 상승·RSI " + r.toFixed(0) };
+    }
+    if (!up && r <= 50 && r >= 25 && f.close < e20[l]) {
+        return { dir: "SHORT", entry: f.close, sl: f.close + a * 1.5, tp: f.close - a * 3, reason: "4H 하락·RSI " + r.toFixed(0) };
+    }
+    return { dir: "관망", reason: "조건 미달 RSI " + r.toFixed(0) };
+}
+
+// ---- 차트 ----
+function ensureChart() {
+    if (S.chart) return;
+    S.chart = LightweightCharts.createChart($("chart"), { layout: { background: { color: "#12161f" }, textColor: "#8b93a7" },
+        grid: { vertLines: { color: "#1a2130" }, horzLines: { color: "#1a2130" } },
+        rightPriceScale: { borderColor: "#222839" }, timeScale: { borderColor: "#222839", timeVisible: true } });
+    S.series = S.chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81", wickDownColor: "#f6465d" });
+    const mk = c => S.chart.addLineSeries({ color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    S.lines = { ma5: mk("#e0b44a"), ma10: mk("#29b6f6"), ma30: mk("#9b59b6"), ma60: mk("#7f8c8d") };
+    new ResizeObserver(() => S.chart.resize($("chart").clientWidth, $("chart").clientHeight)).observe($("chart"));
+}
+const sma = (a, n) => a.map((_, i) => i < n - 1 ? null : a.slice(i - n + 1, i + 1).reduce((s, v) => s + v, 0) / n);
+function resample12h(c) {
+    const out = [];
+    for (let i = 0; i < c.length; i += 12) {
+        const g = c.slice(i, i + 12);
+        if (!g.length) break;
+        out.push({ time: g[0].time, open: g[0].open, high: Math.max(...g.map(k => k.high)),
+            low: Math.min(...g.map(k => k.low)), close: g[g.length - 1].close, vol: g.reduce((s, k) => s + k.vol, 0) });
+    }
+    return out;
+}
+async function loadChart() {
+    ensureChart();
+    const iv = S.tf === "Hour12" ? "Min60" : S.tf;
+    const d = await pub("kline", { symbol: S.symbol, interval: iv });
+    let candles = d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
+    if (S.tf === "Hour12") candles = resample12h(candles);
+    candles = candles.slice(-300);
+    S.candles = candles;
+    S.series.setData(candles);
+    const closes = candles.map(k => k.close);
+    const mas = { ma5: sma(closes, 5), ma10: sma(closes, 10), ma30: sma(closes, 30), ma60: sma(closes, 60) };
+    for (const k of Object.keys(mas)) S.lines[k].setData(candles.map((c, i) => ({ time: c.time, value: mas[k][i] })).filter(p => p.value !== null));
+    const last = candles[candles.length - 1];
+    $("legend").textContent = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
+        " C " + fmt.format(last.close) + " · MA5 " + fmt.format(mas.ma5[mas.ma5.length - 1] || 0);
+    await refreshAI();
+}
+
+// ---- 티커·오더북 ----
+async function refreshTop() {
+    const all = await pub("ticker", {});
+    const t = all.find(x => x.symbol === S.symbol);
+    if (!t) return;
+    S.last = Number(t.lastPrice);
+    $("tLast").textContent = fmt.format(S.last);
+    const chg = Number(t.riseFallRate) * 100;
+    $("tChg").textContent = (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
+    $("tChg").className = "mono " + (chg >= 0 ? "up" : "down");
+    $("tLast").className = "mono " + (chg >= 0 ? "up" : "down");
+    $("tIndex").textContent = fmt.format(t.indexPrice);
+    $("tFair").textContent = fmt.format(t.fairPrice);
+    $("tFund").textContent = (Number(t.fundingRate) * 100).toFixed(4) + "%";
+    $("tHigh").textContent = fmt.format(t.high24Price);
+    $("tLow").textContent = fmt.format(t.lower24Price);
+    $("tVol").textContent = Math.round(Number(t.volume24)).toLocaleString() + " 계약";
+    $("tOi").textContent = Math.round(Number(t.holdVol)).toLocaleString() + " 계약";
+    try {
+        const f = await pub("funding_rate", { symbol: S.symbol });
+        const ms = Number(f.nextSettleTime) - Date.now();
+        $("tFundT").textContent = ms > 0 ? Math.floor(ms / 3600000) + "h " + Math.floor(ms % 3600000 / 60000) + "m" : "-";
+    } catch { /* 펀딩 카운트다운 실패는 무시 */ }
+    const p = $("oPrice");
+    if (!p.value && S.last) p.placeholder = String(S.last);
+    updateNotional();
+}
+async function refreshBook() {
+    const d = await pub("depth", { symbol: S.symbol, limit: "20" });
+    const row = (p, q, a) => "<div><span class='" + a + "'>" + fmt.format(p) + "</span><span>" + fmt.format(q) + "</span><span class='dim'>" + fmt.format(p * q * S.contractSize) + "</span></div>";
+    $("asks").innerHTML = d.asks.slice().reverse().map(x => row(x[0], x[1], "a")).join("");
+    $("bids").innerHTML = d.bids.map(x => row(x[0], x[1], "b")).join("");
+    const a1 = d.asks.length ? d.asks[d.asks.length - 1][0] : 0, b1 = d.bids.length ? d.bids[0][0] : 0;
+    $("mid").textContent = fmt.format((a1 + b1) / 2 || S.last);
+    $("spread").textContent = "스프레드 " + fmt.format(a1 - b1);
+    const bv = d.bids.reduce((s, x) => s + x[1], 0), av = d.asks.reduce((s, x) => s + x[1], 0);
+    $("bidPct").style.width = (bv / Math.max(bv + av, 1e-9) * 100) + "%";
+}
+function updateNotional() {
+    const v = Number($("oVol").value);
+    $("oNotional").textContent = "명목가 " + (v > 0 && S.last ? fmt.format(S.last * v * S.contractSize) : "-") + " USDT";
+}
+
+// ---- AI ----
+async function refreshAI() {
+    try {
+        const [h1, h4] = await Promise.all([
+            pub("kline", { symbol: S.symbol, interval: "Min60" }),
+            pub("kline", { symbol: S.symbol, interval: "Hour4" }),
+        ]);
+        const map = d => d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
+        const sig = aiSignal(map(h1).slice(-200), map(h4).slice(-200));
+        $("aiSig").textContent = sig.dir;
+        $("aiDetail").textContent = sig.reason + (sig.entry ? " · 진입 " + fmt.format(sig.entry) + " SL " + fmt.format(sig.sl) + " TP " + fmt.format(sig.tp) : "");
+        return sig;
+    } catch { $("aiSig").textContent = "오류"; return { dir: "관망" }; }
+}
+
+// ---- 주문 ----
+async function submitOrder(side, auto) {
+    const lev = Number($("lev").value), type = Number(document.querySelector("#otype .act").dataset.t);
+    let vol = Number($("oVol").value);
+    if (auto && !(vol > 0)) {
+        // 자동매매는 주문당 $50 명목가로 고정한다
+        vol = Math.max(1, Math.floor(50 / (S.last * S.contractSize)));
+    }
+    if (!(vol > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
+    const intent = { symbol: S.symbol, side, type, leverage: lev, vol,
+        ...(type === 1 && $("oPrice").value ? { price: Number($("oPrice").value) } : {}) };
+    const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
+    try {
+        $("oMsg").textContent = "서버 검증 중…";
+        const r = await priv("trade", "POST", { action: "submit", intent, live, idempotencyKey: uuid() });
+        if (r.dryRun) {
+            paperFill(side, type === 1 && intent.price ? intent.price : S.last, vol, lev, auto);
+            $("oMsg").textContent = "모의 체결(서버 검증 통과) 약 $" + fmt.format(r.notional);
+            log((side === 1 ? "모의 LONG " : "모의 SHORT ") + vol + "계약 @" + fmt.format(S.last));
+        } else {
+            $("oMsg").textContent = "실주문 접수 " + r.orderId;
+            log("실주문 " + r.orderId + " 약 $" + fmt.format(r.notional), "down");
+        }
+        refreshPrivate();
+    } catch (e) { $("oMsg").textContent = "거부: " + e.message; log("주문 거부 " + e.message, "down"); }
+}
+function paperFill(side, price, vol, lev, auto) {
+    S.paper.push({ symbol: S.symbol, side, price, vol, lev, at: Date.now(), auto: !!auto });
+    try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50))); } catch { /* 저장 실패 무시 */ }
+    renderPaper();
+}
+function renderPaper() {
+    // 미실현 손익은 현재가로 재평가한다
+    const tb = document.querySelector("#posT tbody");
+    const rows = S.paper.filter(p => p.symbol === S.symbol).slice(-6).map((p, i) => {
+        const pnl = (S.last - p.price) * p.vol * S.contractSize * (p.side === 1 || p.side === 4 ? 1 : -1);
+        return "<tr><td>[모의] " + esc(p.symbol) + "</td><td>" + (p.side === 1 ? "롱" : "숏") + "</td><td>" + p.vol +
+            "</td><td class='mono'>" + fmt.format(p.price) + "</td><td>" + p.lev + "X</td><td class='mono " +
+            (pnl >= 0 ? "up" : "down") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><button data-paper='" + i + "'>청산</button></td></tr>";
+    }).join("");
+    tb.dataset.paper = rows;
+    mergePosTable();
+}
+function mergePosTable() {
+    const tb = document.querySelector("#posT tbody");
+    const real = [...tb.querySelectorAll("tr[data-real]")].map(tr => tr.outerHTML).join("");
+    tb.innerHTML = (tb.dataset.paper || "") + real || "<tr><td colspan='7' class='dim'>포지션 없음</td></tr>";
+}
+
+// ---- 비공개 (잔고·포지션·미체결) ----
+async function refreshPrivate() {
+    try {
+        const s = await priv("mexc", "GET");
+        $("wState").textContent = "연결됨";
+        const usdt = (s.sections.assets.rows || []).find(r => r.currency === "USDT");
+        $("wallet").innerHTML = "USDT 가용 " + fmt.format(usdt ? usdt.available : 0) + " · 평가 " + fmt.format(usdt ? usdt.equity : 0);
+        const tb = document.querySelector("#posT tbody");
+        const pos = (s.sections.positions.rows || []).map(p =>
+            "<tr data-real='1'><td>" + esc(p.symbol) + "</td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
+            "</td><td class='mono'>" + fmt.format(p.entryPrice) + "</td><td>" + esc(p.leverage) + "X</td><td class='mono " +
+            ((p.unrealized || 0) >= 0 ? "up" : "down") + "'>" + fmt.format(p.unrealized) + "</td><td></td></tr>").join("");
+        tb.innerHTML = pos;
+        [...tb.querySelectorAll("tr")].forEach(tr => tr.dataset.real = "1");
+        mergePosTable();
+        const ot = document.querySelector("#ordT tbody");
+        ot.innerHTML = (s.sections.futuresOrders.rows || []).map((o, i) =>
+            "<tr><td>" + esc(o.symbol) + "</td><td>" + esc(o.side) + "</td><td class='mono'>" + fmt.format(o.price) +
+            "</td><td>" + esc(o.quantity) + "</td><td></td></tr>").join("") || "<tr><td colspan='5' class='dim'>미체결 없음</td></tr>";
+    } catch (e) {
+        $("wState").innerHTML = "로그인 필요 — <a href='/account.html' style='color:#e0b44a'>내 MEXC</a>";
+    }
+    try {
+        const st = await priv("trade", "GET");
+        S.tradeEnabled = st.tradeEnabled === true;
+        $("mode").textContent = S.tradeEnabled ? (S.armed ? "실매매 ARMED" : "실매매 승인됨") : "모의";
+        $("mode").className = "pill " + (S.armed && S.tradeEnabled ? "live" : "paper");
+    } catch { /* 비공개 미설정 환경에서는 모의만 동작 */ }
+}
+
+// ---- 자동매매 루프 ----
+async function autoTick() {
+    if (!S.autoPaper && !S.autoLive) return;
+    if (Date.now() - S.lastAuto < 5 * 60 * 1000) return;
+    const sig = await refreshAI();
+    if (sig.dir === "관망" || !sig.entry) return;
+    if (S.autoLive && !(S.armed && S.tradeEnabled)) { log("실매매 루프: 승인 없음 — 모의로 전환"); }
+    const liveLoop = S.autoLive && S.armed && S.tradeEnabled;
+    S.lastAuto = Date.now();
+    const side = sig.dir === "LONG" ? 1 : 3;
+    $("oVol").value = "";
+    await submitOrder(side, true);
+    log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매]" : " [모의]"));
+}
+
+// ---- 심볼 목록 ----
+async function loadSymbols() {
+    const d = await pub("detail", {});
+    const list = d.filter(x => x.quoteCoin === "USDT" && x.state === 0)
+        .sort((a, b) => (b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT"));
+    $("symbol").innerHTML = list.slice(0, 300).map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
+    $("symbol").value = S.symbol;
+    applyDetail(list.find(x => x.symbol === S.symbol));
+    S.detailList = list;
+}
+function applyDetail(info) {
+    if (!info) return;
+    S.contractSize = Number(info.contractSize) || S.contractSize;
+    S.maxLev = Math.min(Number(info.maxLeverage) || 10, 10);
+}
+
+// ---- 이벤트 ----
+function bind() {
+    $("tfbar").addEventListener("click", e => {
+        const b = e.target.closest("[data-tf]"); if (!b) return;
+        [...$("tfbar").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
+        S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
+    });
+    $("symbol").addEventListener("change", () => {
+        S.symbol = $("symbol").value; applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+        loadChart().catch(e => log("차트 " + e.message, "down"));
+        refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
+    });
+    $("otype").addEventListener("click", e => {
+        const b = e.target.closest("[data-t]"); if (!b) return;
+        [...$("otype").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
+    });
+    $("oVol").addEventListener("input", updateNotional);
+    $("buy").addEventListener("click", () => submitOrder(1, false));
+    $("sell").addEventListener("click", () => submitOrder(3, false));
+    $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
+    $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
+    document.querySelector("#posT").addEventListener("click", e => {
+        const b = e.target.closest("[data-paper]"); if (!b) return;
+        S.paper.splice(Number(b.dataset.paper), 1);
+        try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50))); } catch {}
+        renderPaper(); log("모의 포지션 청산");
+    });
+    $("autoPaper").addEventListener("click", () => {
+        S.autoPaper = !S.autoPaper;
+        $("autoPaper").textContent = "자동매매(모의) " + (S.autoPaper ? "ON" : "OFF");
+        $("autoPaper").classList.toggle("on", S.autoPaper);
+        log("모의 자동매매 " + (S.autoPaper ? "시작" : "중지"));
+    });
+    $("autoLive").addEventListener("click", () => {
+        if (!S.armed || !S.tradeEnabled) { $("aiMsg").textContent = "실매매 승인부터 하세요."; return; }
+        S.autoLive = !S.autoLive;
+        $("autoLive").textContent = "자동매매(실매매) " + (S.autoLive ? "ON" : "OFF");
+        $("autoLive").classList.toggle("on", S.autoLive);
+        log("실매매 자동 " + (S.autoLive ? "시작" : "중지"), "down");
+    });
+    $("arm").addEventListener("click", async () => {
+        if (!S.tradeEnabled) { $("aiMsg").textContent = "거래 권한 키 미등록 — account 페이지에서 키 등록 후 승인하세요."; return; }
+        S.armed = !S.armed;
+        $("arm").textContent = S.armed ? "실매매 ARMED" : "실매매 승인";
+        $("arm").classList.toggle("armed", S.armed);
+        $("mode").textContent = S.armed ? "실매매 ARMED" : "모의";
+        $("mode").className = "pill " + (S.armed ? "live" : "paper");
+        log(S.armed ? "실매매 ARMED — 수동·자동 주문이 실주문으로 나갑니다" : "실매매 해제 — 모의로 복귀", "down");
+    });
+    $("kill").addEventListener("click", async () => {
+        S.autoPaper = S.autoLive = S.armed = false;
+        $("autoPaper").textContent = "자동매매(모의) OFF"; $("autoLive").textContent = "자동매매(실매매) OFF";
+        $("arm").textContent = "실매매 승인";
+        try { await priv("trade", "POST", { action: "disable" }); S.tradeEnabled = false; } catch {}
+        $("mode").textContent = "모의"; $("mode").className = "pill paper";
+        log("전체 중지 — 자동매매 OFF, 실매매 승인 해제", "down");
+    });
+}
+
+(async function init() {
+    try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]"); } catch { S.paper = []; }
+    bind();
+    await loadSymbols();
+    await loadChart();
+    await refreshTop().catch(e => { $("net").textContent = "시세 실패"; });
+    $("net").textContent = "실시간";
+    await refreshBook().catch(() => {});
+    renderPaper();
+    await refreshPrivate();
+    S.timer.push(setInterval(() => refreshTop().catch(() => {}), 3000));
+    S.timer.push(setInterval(() => refreshBook().catch(() => {}), 3000));
+    S.timer.push(setInterval(autoTick, 10000));
+    S.timer.push(setInterval(() => loadChart().catch(() => {}), 60000));
+    log("터미널 시작 — 기본 모의. 실매매는 승인 후에만 동작합니다.");
+})();
+})();

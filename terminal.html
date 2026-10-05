@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>AI 선물 터미널 — MEXC 모의·실매매</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%230ecb81'/%3E%3Ctext x='8' y='29' fill='white' font-size='22'%3EA%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="terminal.css?v=1">
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script src="terminal.js?v=1" defer></script>
+</head>
+<body>
+<header class="ticker" id="ticker">
+  <a class="home" href="/">KR·TA</a>
+  <select id="symbol" aria-label="심볼 선택"></select>
+  <strong id="tLast" class="mono">-</strong>
+  <span id="tChg" class="mono dim">-</span>
+  <span class="tk">Index <b id="tIndex" class="mono">-</b></span>
+  <span class="tk">Fair <b id="tFair" class="mono">-</b></span>
+  <span class="tk">Funding <b id="tFund" class="mono">-</b> / <b id="tFundT" class="mono">-</b></span>
+  <span class="tk">24H High <b id="tHigh" class="mono">-</b></span>
+  <span class="tk">24H Low <b id="tLow" class="mono">-</b></span>
+  <span class="tk">24H Vol <b id="tVol" class="mono">-</b></span>
+  <span class="tk">OI <b id="tOi" class="mono">-</b></span>
+  <span class="sp"></span>
+  <span id="mode" class="pill paper">모의</span>
+  <span id="net" class="dim mono">연결 중</span>
+</header>
+
+<main class="term">
+  <section class="chartbox">
+    <div class="tfbar" id="tfbar">
+      <button data-tf="Min15">15m</button><button data-tf="Min60" class="act">1H</button><button data-tf="Hour4">4H</button>
+      <button data-tf="Hour8">8H</button><button data-tf="Hour12">12H</button><button data-tf="Day1">1D</button><button data-tf="Week1">1W</button>
+    </div>
+    <div id="chart"></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <aside class="right">
+    <div class="card">
+      <div class="tabs"><b>오더북</b><span class="dim" id="spread"></span></div>
+      <div class="ob" id="asks"></div>
+      <div class="mid mono" id="mid">-</div>
+      <div class="ob" id="bids"></div>
+      <div class="bsbar"><i id="bidPct"></i></div>
+    </div>
+    <div class="card">
+      <div class="tabs"><b>주문</b><span class="pill iso">격리 고정</span></div>
+      <label>레버리지 <select id="lev"><option>1</option><option>2</option><option>3</option><option selected>5</option><option>10</option></select>X</label>
+      <div class="seg" id="otype"><button data-t="1" class="act">지정가</button><button data-t="5">시장가</button></div>
+      <label>가격 <input id="oPrice" inputmode="decimal" placeholder="시장가"></label>
+      <label>수량(계약) <input id="oVol" inputmode="decimal" placeholder="0"></label>
+      <input id="oPct" type="range" min="0" max="100" value="10" step="5" aria-label="증거금 비율">
+      <div class="dim mono" id="oNotional">명목가 - USDT</div>
+      <div class="twobtn">
+        <button id="buy" class="long">Buy/Long</button>
+        <button id="sell" class="short">Sell/Short</button>
+      </div>
+      <div class="dim" id="oMsg" role="status"></div>
+    </div>
+    <div class="card">
+      <div class="tabs"><b>AI 전략</b><span id="aiSig" class="pill">관망</span></div>
+      <div class="mono dim" id="aiDetail">신호 대기</div>
+      <div class="twobtn">
+        <button id="autoPaper">자동매매(모의) OFF</button>
+        <button id="autoLive">자동매매(실매매) OFF</button>
+      </div>
+      <div class="twobtn">
+        <button id="arm">실매매 승인</button>
+        <button id="kill" class="danger">전체 중지</button>
+      </div>
+      <div class="dim" id="aiMsg" role="status"></div>
+    </div>
+    <div class="card">
+      <div class="tabs"><b>지갑</b><span class="dim" id="wState">로그인 필요</span></div>
+      <div class="mono" id="wallet">-</div>
+    </div>
+  </aside>
+
+  <section class="bottom">
+    <div class="card">
+      <div class="tabs"><b>포지션</b><button id="refresh">새로고침</button></div>
+      <div class="scroll"><table id="posT"><thead><tr><th>심볼</th><th>방향</th><th>수량</th><th>진입가</th><th>레버리지</th><th>미실현PNL</th><th></th></tr></thead><tbody><tr><td colspan="7" class="dim">로그인 후 조회</td></tr></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="tabs"><b>미체결 주문</b></div>
+      <div class="scroll"><table id="ordT"><thead><tr><th>심볼</th><th>방향</th><th>가격</th><th>수량</th><th></th></tr></thead><tbody><tr><td colspan="5" class="dim">로그인 후 조회</td></tr></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="tabs"><b>매매 로그</b><button id="clearLog">지우기</button></div>
+      <div class="log mono" id="log"></div>
+    </div>
+  </section>
+</main>
+<footer class="warn">투자 권유가 아닙니다. 실매매는 승인된 거래 권한 키로 서버에서만 체결되며, 주문당 최대 $300·격리·최대 10X 상한이 강제됩니다. 레버리지 선물은 원금 초과 손실이 발생할 수 있습니다.</footer>
+</body>
+</html>
