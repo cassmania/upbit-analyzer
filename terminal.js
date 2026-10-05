@@ -299,6 +299,18 @@ async function submitOrder(side, auto, opts) {
         ...(opts && opts.sl ? { stopLossPrice: opts.sl } : {}),
         ...(opts && opts.tp ? { takeProfitPrice: opts.tp } : {}) };
     const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
+    // 모의는 로그인 없이 로컬 체결한다 (서버 검증은 실주문 경로 전용)
+    if (!live) {
+        const px = type === 1 && intent.price ? intent.price : S.last;
+        if (!(px > 0)) { $("oMsg").textContent = "현재가 없음 — 잠시 후 재시도"; return; }
+        const ok = paperFill(side, px, vol, lev, auto,
+            { sl: intent.stopLossPrice || null, tp: intent.takeProfitPrice || null });
+        if (ok) {
+            $("oMsg").textContent = "모의 체결 약 $" + fmt.format(Math.round(px * vol * S.contractSize * 100) / 100);
+            log((side === 1 ? "모의 LONG " : "모의 SHORT ") + vol + "계약 @" + fmt.format(px));
+        }
+        return;
+    }
     // 10X 초과는 모의 전용. 실주문은 서버 상한에서 거부된다
     if (live && lev > 10) { $("oMsg").textContent = "10X 초과 실주문 차단 — 레버리지를 낮추세요."; return; }
     if (!live && lev > 10) {
