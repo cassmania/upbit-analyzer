@@ -1,6 +1,15 @@
 /* 개인 화면은 공개 분석과 분리하고 계정 데이터를 메모리에만 잠시 보관한다. */
 (function () {
     "use strict";
+    // file:// 로컬 파일로 열면 서버 API가 없어 전부 실패한다. 배포 주소로 안내하고 중단한다.
+    if (location.protocol === "file:") {
+        document.addEventListener("DOMContentLoaded", () => {
+            document.body.insertAdjacentHTML("afterbegin",
+                "<div style='background:#7f1d1d;color:#fff;padding:12px 16px;font-size:14px'>로컬 파일로는 동작하지 않습니다. " +
+                "https://upbit-analyzer.vercel.app/account.html 로 접속하세요. 폴더 안 파일을 더블클릭하면 안 됩니다.</div>");
+        });
+        return;
+    }
     // 인증 링크의 토큰은 주소와 브라우저 저장소에 남기지 않는다.
     const fragment = new URLSearchParams(location.hash.slice(1));
     let invitationToken = ["invite", "recovery"].includes(fragment.get("type")) ? fragment.get("access_token") : null;

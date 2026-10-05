@@ -856,6 +856,13 @@ async function boot() {
     booting = false;
 }
 (async function init() {
+    // file:// 로컬 파일로 열면 서버 API가 없어 전부 실패한다. 안내 후 중단한다.
+    if (location.protocol === "file:") {
+        document.body.insertAdjacentHTML("afterbegin",
+            "<div style='background:#7f1d1d;color:#fff;padding:12px 16px;font-size:14px'>로컬 파일로는 동작하지 않습니다. " +
+            "https://upbit-analyzer.vercel.app/terminal.html 로 접속하세요. 폴더 안 파일을 더블클릭하면 안 됩니다.</div>");
+        return;
+    }
     try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
         S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
         S.hist = JSON.parse(localStorage.getItem("krta-hist") || "[]") || [];
