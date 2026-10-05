@@ -180,6 +180,16 @@ async function submitOrder(side, auto) {
     const intent = { symbol: S.symbol, side, type, leverage: lev, vol,
         ...(type === 1 && $("oPrice").value ? { price: Number($("oPrice").value) } : {}) };
     const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
+    // 10X 초과는 모의 전용. 실주문은 서버 상한에서 거부된다
+    if (live && lev > 10) { $("oMsg").textContent = "10X 초과 실주문 차단 — 레버리지를 낮추세요."; return; }
+    if (!live && lev > 10) {
+        const px = type === 1 && intent.price ? intent.price : S.last;
+        if (paperFill(side, px, vol, lev, auto)) {
+            $("oMsg").textContent = "모의 체결(고레버리지 로컬) 약 $" + fmt.format(Math.round(px * vol * S.contractSize));
+            log((side === 1 ? "모의 LONG " : "모의 SHORT ") + vol + "계약 " + lev + "X @" + fmt.format(S.last));
+        }
+        return;
+    }
     try {
         $("oMsg").textContent = "서버 검증 중…";
         const r = await priv("trade", "POST", { action: "submit", intent, live, idempotencyKey: uuid() });
