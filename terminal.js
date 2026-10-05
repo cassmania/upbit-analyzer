@@ -24,12 +24,33 @@ function renderFavBtn() {
 }
 function renderSymbolSelect() {
     const q = ($("symQ").value || "").trim().toUpperCase();
-    const match = x => !q || x.symbol.includes(q) || x.baseCoin.toUpperCase().includes(q);
-    const favs = S.allSymbols.filter(x => isFav(x.symbol) && match(x));
-    const rest = S.allSymbols.filter(x => !isFav(x.symbol) && match(x)).slice(0, 200);
-    $("symbol").innerHTML = favs.map(x => "<option value='" + esc(x.symbol) + "'>★ " + esc(x.baseCoin) + "/USDT</option>").join("") +
-        rest.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
+    const sym = x => String(x.symbol || "");
+    const base = x => String(x.baseCoin || "");
+    const match = x => !q || sym(x).includes(q) || base(x).toUpperCase().includes(q);
+    const favs = S.allSymbols.filter(x => isFav(sym(x)) && match(x));
+    const rest = S.allSymbols.filter(x => !isFav(sym(x)) && match(x)).slice(0, 200);
+    $("symbol").innerHTML = favs.map(x => "<option value='" + esc(sym(x)) + "'>★ " + esc(base(x)) + "/USDT</option>").join("") +
+        rest.map(x => "<option value='" + esc(sym(x)) + "'>" + esc(base(x)) + "/USDT</option>").join("");
     if ([...$("symbol").options].some(o => o.value === S.symbol)) $("symbol").value = S.symbol;
+    // 검색 결과가 보이게: 상위 8개를 드롭다운으로 (select만 필터하면 입력해도 화면이 안 바뀌어 보인다)
+    const box = $("symResults");
+    if (!q) { box.hidden = true; box.innerHTML = ""; return; }
+    const top = [...favs, ...rest].slice(0, 8);
+    box.innerHTML = top.map(x => "<div class='symrow' data-sym='" + esc(sym(x)) + "'><span class='star'>" +
+        (isFav(sym(x)) ? "★" : "") + "</span><span><b>" + esc(base(x)) + "/USDT</b></span>" +
+        "<span class='px mono'>" + fmt.format(S.pxMap[sym(x)] || 0) + "</span></div>").join("") ||
+        "<div class='symrow'><span>검색 결과 없음</span></div>";
+    box.hidden = false;
+}
+function selectSymbol(sym) {
+    S.symbol = sym;
+    renderSymbolSelect();
+    $("symQ").value = "";
+    $("symResults").hidden = true;
+    renderFavBtn();
+    applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+    loadChart().catch(e => log("차트 " + e.message, "down"));
+    refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
 }
 function renderFavPanel() {
     $("favList").innerHTML = "<div class='favrow' data-add='1'><span>" + (isFav(S.symbol) ? "★" : "☆") +
@@ -601,13 +622,21 @@ function bind() {
         [...$("tfbar").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
         S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
     });
-    $("symbol").addEventListener("change", () => {
-        S.symbol = $("symbol").value; applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
-        renderFavBtn();
-        loadChart().catch(e => log("차트 " + e.message, "down"));
-        refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
-    });
+    $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
     $("symQ").addEventListener("input", renderSymbolSelect);
+    $("symQ").addEventListener("keydown", e => {
+        if (e.key === "Escape") { $("symResults").hidden = true; return; }
+        if (e.key !== "Enter") return;
+        const first = $("symResults").querySelector("[data-sym]");
+        if (first) selectSymbol(first.dataset.sym);
+    });
+    $("symResults").addEventListener("mousedown", e => {
+        const row = e.target.closest("[data-sym]");
+        if (row) { e.preventDefault(); selectSymbol(row.dataset.sym); }
+    });
+    document.addEventListener("click", e => {
+        if (!e.target.closest(".searchWrap")) $("symResults").hidden = true;
+    });
     $("favBtn").addEventListener("click", () => {
         $("favPanel").classList.toggle("open");
         renderFavPanel();
@@ -620,13 +649,7 @@ function bind() {
             saveFav(); renderFavBtn(); renderSymbolSelect(); renderFavPanel(); return;
         }
         const row = e.target.closest("[data-sym]");
-        if (row) {
-            S.symbol = row.dataset.sym;
-            renderSymbolSelect(); renderFavBtn();
-            applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
-            loadChart().catch(() => {}); refreshTop().catch(() => {}); refreshBook().catch(() => {});
-            $("favPanel").classList.remove("open");
-        }
+        if (row) { selectSymbol(row.dataset.sym); $("favPanel").classList.remove("open"); }
     });
     $("otype").addEventListener("click", e => {
         const b = e.target.closest("[data-t]"); if (!b) return;

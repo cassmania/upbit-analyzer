@@ -5,6 +5,13 @@
 .ticker .home{color:var(--txt);text-decoration:none;font-weight:800}
 .ticker select,.right select,.right input{background:#0d1119;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 .ticker input[type=search]{background:#0d1119;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:150px}
+.searchWrap{position:relative}
+.sym-results{position:absolute;top:calc(100% + 6px);left:0;width:280px;max-height:320px;overflow:auto;background:var(--panel);border:1px solid #29b6f6;border-radius:8px;z-index:60;padding:6px;display:grid;gap:2px}
+.sym-results[hidden]{display:none}
+.symrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:#fff}
+.symrow:hover{background:var(--panel2)}
+.symrow .star{color:var(--gold);width:16px}
+.symrow .px{margin-left:auto;color:var(--dim)}
 #favBtn{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:15px}
 #favBtn.on{color:var(--gold);border-color:var(--gold)}
 #favPanel{overflow:hidden;max-height:0;transition:max-height .25s ease;background:var(--panel);border-bottom:0 solid var(--line)}

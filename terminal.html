@@ -18,7 +18,10 @@
 <body>
 <header class="ticker" id="ticker">
   <a class="home" href="index.html">KR·TA</a>
-  <input id="symQ" type="search" placeholder="코인 검색 (BTC…)" autocomplete="off" aria-label="코인 검색">
+  <div class="searchWrap">
+    <input id="symQ" type="search" placeholder="코인 검색 (BTC…)" autocomplete="off" aria-label="코인 검색">
+    <div id="symResults" class="sym-results" hidden></div>
+  </div>
   <button id="favBtn" title="즐겨찾기 목록">☆ <span id="favCount">0</span></button>
   <select id="symbol" aria-label="심볼 선택"></select>
   <strong id="tLast" class="mono">-</strong>
