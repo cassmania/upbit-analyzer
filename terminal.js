@@ -85,11 +85,9 @@ function loadCfg() {
         if (Number(c.slPct) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number(c.slPct)));
         if (typeof c.noOverlap === "boolean") S.cfg.noOverlap = c.noOverlap;
     } catch { /* 기본값 유지 */ }
-    $("cfgNotional").value = S.cfg.notional;
-    $("cfgRatio").value = S.cfg.ratioPct;
-    $("cfgMaxPos").value = S.cfg.maxPos;
-    $("cfgCool").value = S.cfg.coolMin;
     $("cfgMargin").value = S.cfg.ratioPct;
+    $("cfgMaxPos2").value = String(S.cfg.maxPos);
+    $("cfgCool2").value = String(S.cfg.coolMin);
     $("cfgLev").value = String(S.cfg.autoLev);
     document.querySelectorAll("input[name=tpMode]").forEach(r => r.checked = r.value === S.cfg.tpMode);
     document.querySelectorAll("input[name=slMode]").forEach(r => r.checked = r.value === S.cfg.slMode);
@@ -433,8 +431,8 @@ async function submitOrder(side, auto, opts) {
     const type = Number(document.querySelector("#otype .act").dataset.t);
     let vol = Number($("oVol").value);
     if (auto && !(vol > 0)) {
-        // 단일 자동매매는 설정 명목가로 고정한다
-        vol = Math.max(1, Math.floor(S.cfg.notional / (S.last * S.contractSize)));
+        // 단일 자동매매도 AI 설정 증거금 비율로 진입한다
+        vol = Math.max(1, Math.floor((S.bank * (S.cfg.ratioPct / 100)) * lev / (S.last * S.contractSize)));
     }
     if (!(vol > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
     const reduceOnly = $("oReduce").checked;
@@ -845,7 +843,6 @@ function bind() {
     });
     $("cfgMargin").addEventListener("input", () => {
         S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number($("cfgMargin").value) || 1));
-        $("cfgRatio").value = S.cfg.ratioPct;
         saveCfg(); cfgPreview();
     });
     $("cfgLev").addEventListener("change", () => {
@@ -871,16 +868,15 @@ function bind() {
         S.cfg.noOverlap = $("cfgOverlap").checked; saveCfg();
         log("중복 진입 방지 " + (S.cfg.noOverlap ? "ON" : "OFF"));
     });
-    ["cfgNotional", "cfgRatio", "cfgMaxPos", "cfgCool"].forEach(id => {
-        $(id).addEventListener("change", () => {
-            const v = Number($(id).value);
-            if (id === "cfgNotional" && v > 0) S.cfg.notional = Math.min(50000, Math.max(5, v));
-            if (id === "cfgRatio" && v > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.1, v));
-            if (id === "cfgMaxPos" && v > 0) S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(v)));
-            if (id === "cfgCool" && v > 0) S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(v)));
-            saveCfg(); loadCfg();
-            log("자동매매 설정 저장 — 명목가$" + S.cfg.notional + " 증거금" + S.cfg.ratioPct + "% 최대" + S.cfg.maxPos + " 쿨다운" + S.cfg.coolMin + "분");
-        });
+    $("cfgMaxPos2").addEventListener("change", () => {
+        S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(Number($("cfgMaxPos2").value) || 5)));
+        saveCfg();
+        log("최대 포지션 " + S.cfg.maxPos + "개");
+    });
+    $("cfgCool2").addEventListener("change", () => {
+        S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(Number($("cfgCool2").value) || 5)));
+        saveCfg();
+        log("재진입 쿨다운 " + S.cfg.coolMin + "분");
     });
     $("paperReset").addEventListener("click", () => {
         S.paper = []; S.bank = 1000000; savePaper(); renderPaper();

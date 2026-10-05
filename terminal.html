@@ -13,7 +13,7 @@
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=10" defer></script>
+<script src="terminal.js?v=11" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -113,6 +113,8 @@
           <input id="cfgMargin" type="range" min="0.1" max="10" step="0.1" value="1" aria-label="진입 증거금 비율">
           <div class="cfg-row"><span>실시간 연동 레버리지 배수</span><b><select id="cfgLev" aria-label="자동매매 레버리지"><option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option><option value="5">5x</option><option value="10">10x</option></select></b></div>
           <div class="cfg-row"><span>동일 코인 중복 진입 방지 (Anti-Overlapping)</span><label class="switch"><input type="checkbox" id="cfgOverlap" checked><i></i></label></div>
+          <div class="cfg-row"><span>최대 포지션 수</span><b><select id="cfgMaxPos2" aria-label="최대 포지션 수"><option value="1">1</option><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select></b></div>
+          <div class="cfg-row"><span>종목별 재진입 쿨다운 (분)</span><b><select id="cfgCool2" aria-label="쿨다운 분"><option value="1">1</option><option value="3">3</option><option value="5" selected>5</option><option value="15">15</option><option value="30">30</option><option value="60">60</option></select></b></div>
         </div>
         <div>
           <div class="cfg-sub">익절 타점 설정 (Take Profit)</div>
@@ -140,13 +142,7 @@
         <button id="arm">실매매 승인</button>
         <button id="kill" class="danger">전체 중지</button>
       </div>
-      <div class="settings">
-        <label>단일 자동 명목가$ <input id="cfgNotional" inputmode="decimal" value="50"></label>
-        <label>스캔 증거금% <input id="cfgRatio" inputmode="decimal" value="1"></label>
-        <label>최대포지션 <input id="cfgMaxPos" inputmode="numeric" value="5"></label>
-        <label>쿨다운분 <input id="cfgCool" inputmode="numeric" value="5"></label>
-      </div>
-      <div class="dim">자동매매 레버리지·TP/SL은 위 AI 설정값을 따른다</div>
+      <div class="dim">자동매매 증거금·레버리지·TP/SL은 위 AI 설정값을 따른다</div>
     </div>
     <div class="ai-scan">
       <div class="twobtn">
