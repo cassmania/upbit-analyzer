@@ -239,21 +239,45 @@ function ticketPx() {
     const type = Number(document.querySelector("#otype .act").dataset.t);
     return (type === 1 && Number($("oPrice").value) > 0) ? Number($("oPrice").value) : S.last;
 }
+function ticketAvail() {
+    return (S.armed && S.tradeEnabled && S.liveAvail > 0) ? S.liveAvail : S.bank;
+}
+function syncFromUsdt() {
+    const px = ticketPx(), u = Number($("oUsdt").value);
+    if (px > 0 && u > 0) {
+        const vol = Math.max(0, Math.floor(u / (px * S.contractSize)));
+        $("oVol").value = vol;
+        syncFromVol();
+    } else updateTicket();
+}
 function syncFromMargin() {
     const lev = Number($("lev").value) || 1, px = ticketPx(), m = Number($("oMargin").value);
     $("oVol").value = (px > 0 && m > 0) ? Math.max(0, Math.floor(m * lev / (px * S.contractSize))) : $("oVol").value;
-    updateNotional();
+    updateTicket();
 }
 function syncFromVol() {
     const lev = Number($("lev").value) || 1, px = ticketPx(), v = Number($("oVol").value);
-    if (px > 0 && v > 0) $("oMargin").value = Math.round(v * px * S.contractSize / lev * 100) / 100;
-    updateNotional();
+    const n = (px > 0 && v > 0) ? v * px * S.contractSize : 0;
+    if (n > 0) {
+        $("oMargin").value = Math.round(n / lev * 100) / 100;
+        $("oUsdt").value = Math.round(n * 100) / 100;
+    }
+    updateTicket();
 }
-function updateNotional() {
-    const v = Number($("oVol").value), px = ticketPx();
+function updateTicket() {
+    const v = Number($("oVol").value), px = ticketPx(), lev = Number($("lev").value) || 1;
     const n = (v > 0 && px > 0) ? v * px * S.contractSize : 0;
-    $("oNotional").textContent = "명목가 " + (n > 0 ? fmt.format(Math.round(n * 100) / 100) : "-") + " USDT";
+    const m = n > 0 ? n / lev : 0;
+    const avail = ticketAvail(), maxN = avail * lev;
+    $("availAmt").textContent = fmt.format(Math.round(avail * 100) / 100);
+    $("buyAmt").textContent = fmt.format(Math.round(n * 100) / 100) + " USDT";
+    $("sellAmt").textContent = fmt.format(Math.round(n * 100) / 100) + " USDT";
+    $("maxLong").textContent = fmt.format(Math.round(maxN)) + " USDT";
+    $("maxShort").textContent = fmt.format(Math.round(maxN)) + " USDT";
+    $("mBuy").textContent = fmt.format(Math.round(m * 100) / 100) + " USDT";
+    $("mSell").textContent = fmt.format(Math.round(m * 100) / 100) + " USDT";
 }
+function updateNotional() { updateTicket(); }
 
 // ---- AI (V4.1 파이프라인: TAEngine→LevelEngine→SignalEngine. 실패 시 내장 경량 규칙) ----
 async function refreshAI() {
@@ -334,15 +358,28 @@ async function submitOrder(side, auto, opts) {
         vol = Math.max(1, Math.floor(S.cfg.notional / (S.last * S.contractSize)));
     }
     if (!(vol > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
+    const reduceOnly = $("oReduce").checked;
+    if (reduceOnly && !S.paper.some(p => p.symbol === S.symbol)) { $("oMsg").textContent = "리듀스 온리: 보유 포지션이 없습니다."; return; }
     const intent = { symbol: S.symbol, side, type, leverage: lev, vol,
         ...(type === 1 && $("oPrice").value ? { price: Number($("oPrice").value) } : {}),
         ...(opts && opts.sl ? { stopLossPrice: opts.sl } : {}),
-        ...(opts && opts.tp ? { takeProfitPrice: opts.tp } : {}) };
+        ...(opts && opts.tp ? { takeProfitPrice: opts.tp } : {}),
+        ...(!auto && $("oTpsl").checked && $("oSL").value ? { stopLossPrice: Number($("oSL").value) } : {}),
+        ...(!auto && $("oTpsl").checked && $("oTP").value ? { takeProfitPrice: Number($("oTP").value) } : {}) };
     const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
+    if (live && reduceOnly) { $("oMsg").textContent = "리듀스 온리는 모의 전용입니다."; return; }
     // 모의는 로그인 없이 로컬 체결한다 (서버 검증은 실주문 경로 전용)
     if (!live) {
         const px = type === 1 && intent.price ? intent.price : S.last;
         if (!(px > 0)) { $("oMsg").textContent = "현재가 없음 — 잠시 후 재시도"; return; }
+        if (reduceOnly) {
+            const idx = S.paper.findIndex(p => p.symbol === S.symbol);
+            if (idx < 0) { $("oMsg").textContent = "리듀스 온리: 보유 포지션이 없습니다."; return; }
+            const p = S.paper[idx], isOpp = (side === 1 && (p.side === 3 || p.side === 4)) || (side === 3 && p.side === 1);
+            if (!isOpp) { $("oMsg").textContent = "리듀스 온리: 반대 방향만 됩니다."; return; }
+            settlePaper(idx, px, "리듀스온리 청산");
+            return;
+        }
         const ok = paperFill(side, px, vol, lev, auto,
             { sl: intent.stopLossPrice || null, tp: intent.takeProfitPrice || null });
         if (ok) {
@@ -420,6 +457,13 @@ function renderBank() {
         " (" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + ")";
     $("paperBank").textContent = txt;
     if ($("paperBankTop")) $("paperBankTop").textContent = txt;
+    if ($("wState").textContent !== "연결됨") {
+        $("wUnreal").textContent = (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + " USDT";
+        $("wUnreal").className = "mono " + (unreal >= 0 ? "up" : "down");
+        $("wBal").textContent = fmt.format(Math.round(S.bank)) + " USDT";
+        $("wEq").textContent = fmt.format(Math.round(eq)) + " USDT";
+        $("wAvail").textContent = fmt.format(Math.round(S.bank)) + " USDT";
+    }
 }
 function settlePaper(idx, px, reason) {
     const p = S.paper[idx];
@@ -498,7 +542,15 @@ async function refreshPrivate() {
         const s = await priv("mexc", "GET");
         $("wState").textContent = "연결됨";
         const usdt = (s.sections.assets.rows || []).find(r => r.currency === "USDT");
-        $("wallet").innerHTML = "USDT 가용 " + fmt.format(usdt ? usdt.available : 0) + " · 평가 " + fmt.format(usdt ? usdt.equity : 0);
+        S.liveAvail = usdt && usdt.available > 0 ? usdt.available : 0;
+        const unreal = (s.sections.positions.rows || []).reduce((sum, p) => sum + (Number(p.unrealized) || 0), 0);
+        const eq = (usdt ? usdt.equity : 0) || 0;
+        $("wUnreal").textContent = (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal * 100) / 100) + " USDT";
+        $("wUnreal").className = "mono " + (unreal >= 0 ? "up" : "down");
+        $("wBal").textContent = fmt.format(eq) + " USDT";
+        $("wEq").textContent = fmt.format(eq) + " USDT";
+        $("wAvail").textContent = fmt.format(S.liveAvail) + " USDT";
+        updateTicket();
         const tb = document.querySelector("#posT tbody");
         tb.innerHTML = (s.sections.positions.rows || []).map(p =>
             "<tr><td>" + esc(p.symbol) + "</td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
@@ -683,16 +735,19 @@ function bind() {
     $("otype").addEventListener("click", e => {
         const b = e.target.closest("[data-t]"); if (!b) return;
         [...$("otype").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
+        document.querySelector(".hide-when-market").style.display = b.dataset.t === "5" ? "none" : "";
+        updateTicket();
     });
+    $("oTpsl").addEventListener("change", () => { $("tpslBox").hidden = !$("oTpsl").checked; });
+    $("oUsdt").addEventListener("input", syncFromUsdt);
     $("oVol").addEventListener("input", syncFromVol);
     $("oMargin").addEventListener("input", syncFromMargin);
     $("oPrice").addEventListener("input", syncFromMargin);
     $("oPct").addEventListener("input", () => {
-        // 슬라이더: 모의 지갑의 %를 증거금으로 넣고 수량 환산한다
-        $("oMargin").value = Math.round(S.bank * (Number($("oPct").value) / 100) * 100) / 100;
+        $("oMargin").value = Math.round(ticketAvail() * (Number($("oPct").value) / 100) * 100) / 100;
         syncFromMargin();
     });
-    $("lev").addEventListener("change", () => { syncFromMargin(); });
+    $("lev").addEventListener("change", () => { syncFromMargin(); updateTicket(); });
     $("buy").addEventListener("click", () => submitOrder(1, false));
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });

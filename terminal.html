@@ -13,7 +13,7 @@
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=7" defer></script>
+<script src="terminal.js?v=8" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -60,26 +60,47 @@
       <div class="ob" id="bids"></div>
       <div class="bsbar"><i id="bidPct"></i></div>
     </div>
-    <div class="card">
+    <div class="card ticket">
       <div class="tabs"><b>주문</b><span class="pill iso">격리 고정</span></div>
-      <label>레버리지 <select id="lev"><option>1</option><option>2</option><option>3</option><option selected>5</option><option>10</option><option>20</option><option>50</option><option>100</option><option>200</option><option>500</option></select>X <span class="dim" id="levNote">10X 초과는 모의 전용</span></label>
+      <div class="trow">
+        <select id="lev" aria-label="레버리지"><option value="1">1X</option><option value="2">2X</option><option value="3">3X</option><option value="5" selected>5X</option><option value="10">10X</option><option value="20">20X</option><option value="50">50X</option><option value="100">100X</option><option value="200">200X</option><option value="500">500X</option></select>
+        <span class="dim" id="levNote">10X 초과는 모의 전용</span>
+      </div>
       <div class="seg" id="otype"><button data-t="1" class="act">지정가</button><button data-t="5">시장가</button></div>
-      <label>가격 <input id="oPrice" inputmode="decimal" placeholder="시장가"></label>
+      <div class="dim" id="availLine">가용 <b class="mono" id="availAmt">-</b> USDT</div>
+      <label>수량(USDT) <input id="oUsdt" inputmode="decimal" placeholder="0"></label>
       <label>증거금(USDT) <input id="oMargin" inputmode="decimal" placeholder="0"></label>
       <label>수량(계약) <input id="oVol" inputmode="decimal" placeholder="0"></label>
-      <input id="oPct" type="range" min="0" max="100" value="10" step="5" aria-label="증거금 비율">
-      <div class="dim mono" id="oNotional">명목가 - USDT</div>
-      <div class="twobtn">
-        <button id="buy" class="long">Buy/Long</button>
-        <button id="sell" class="short">Sell/Short</button>
+      <label class="hide-when-market">가격 <input id="oPrice" inputmode="decimal" placeholder="시장가"></label>
+      <input id="oPct" type="range" min="0" max="100" value="10" step="5" aria-label="수량 비율">
+      <div class="pctmarks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+      <div class="tworow mono"><span>매수 <b id="buyAmt">0 USDT</b></span><span>매도 <b id="sellAmt">0 USDT</b></span></div>
+      <div class="tworow dim"><span>최대 롱 <b class="mono" id="maxLong">-</b></span><span>최대 숏 <b class="mono" id="maxShort">-</b></span></div>
+      <label class="check"><input type="checkbox" id="oReduce"> 리듀스 온리 (보유 수량까지만)</label>
+      <label class="check"><input type="checkbox" id="oTpsl"> TP/SL</label>
+      <div id="tpslBox" hidden>
+        <label>손절가 <input id="oSL" inputmode="decimal" placeholder="선택"></label>
+        <label>목표가 <input id="oTP" inputmode="decimal" placeholder="선택"></label>
       </div>
+      <div class="twobtn">
+        <button id="buy" class="long">매수/롱</button>
+        <button id="sell" class="short">매도/숏</button>
+      </div>
+      <div class="tworow dim"><span>증거금 <b class="mono" id="mBuy">0 USDT</b></span><span>증거금 <b class="mono" id="mSell">0 USDT</b></span></div>
       <div class="dim" id="oMsg" role="status"></div>
+      <div class="feebox">수수료율<br><b>Maker 0.04% / Taker 0.04%</b><br><span class="dim">진입·청산 양쪽 반영(모의)</span></div>
     </div>
-    <div class="card">
-      <div class="tabs"><b>지갑</b><span class="dim" id="wState">로그인 필요</span></div>
-      <div class="mono" id="wallet">-</div>
-      <div class="mono" id="paperBank">모의 예수금 -</div>
-      <div class="twobtn"><button id="paperReset">모의자금 리셋($1M)</button></div>
+    <div class="card wallet">
+      <div class="tabs"><b>지갑</b><span class="dim">USDT</span><span class="dim" id="wState">로그인 필요</span></div>
+      <div class="twobtn">
+        <button id="paperReset">모의자금 리셋</button>
+        <a class="golink" href="account.html">키 연결</a>
+      </div>
+      <div class="wrow"><span>미실현 손익</span><b class="mono" id="wUnreal">-</b></div>
+      <div class="wrow"><span>지갑 잔고</span><b class="mono" id="wBal">-</b></div>
+      <div class="wrow"><span>총 평가금액</span><b class="mono" id="wEq">-</b></div>
+      <div class="wrow"><span>가용 증거금</span><b class="mono" id="wAvail">-</b></div>
+      <div class="mono dim" id="paperBank">모의 예수금 -</div>
     </div>
   </aside>
 
