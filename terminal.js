@@ -8,7 +8,24 @@ const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
 const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
-    bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} } };
+    bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
+    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 } };
+function loadCfg() {
+    try {
+        const c = JSON.parse(localStorage.getItem("krta-cfg") || "{}");
+        if (Number(c.notional) > 0) S.cfg.notional = Math.min(50000, Math.max(5, Number(c.notional)));
+        if (Number(c.ratioPct) > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number(c.ratioPct)));
+        if (Number(c.maxPos) > 0) S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(Number(c.maxPos))));
+        if (Number(c.coolMin) > 0) S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(Number(c.coolMin))));
+    } catch { /* 기본값 유지 */ }
+    $("cfgNotional").value = S.cfg.notional;
+    $("cfgRatio").value = S.cfg.ratioPct;
+    $("cfgMaxPos").value = S.cfg.maxPos;
+    $("cfgCool").value = S.cfg.coolMin;
+}
+function saveCfg() {
+    try { localStorage.setItem("krta-cfg", JSON.stringify(S.cfg)); } catch { /* 무시 */ }
+}
 
 async function pub(path, params) {
     const q = new URLSearchParams({ path, ...params });
@@ -214,8 +231,8 @@ async function submitOrder(side, auto, opts) {
     const lev = Number($("lev").value), type = Number(document.querySelector("#otype .act").dataset.t);
     let vol = Number($("oVol").value);
     if (auto && !(vol > 0)) {
-        // 자동매매는 주문당 $50 명목가로 고정한다
-        vol = Math.max(1, Math.floor(50 / (S.last * S.contractSize)));
+        // 단일 자동매매는 설정 명목가로 고정한다
+        vol = Math.max(1, Math.floor(S.cfg.notional / (S.last * S.contractSize)));
     }
     if (!(vol > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
     const intent = { symbol: S.symbol, side, type, leverage: lev, vol,
@@ -389,11 +406,11 @@ async function scanTick() {
         renderScan();
         if (!r.ok || !r.entry) return;
         if (S.paper.some(p => p.symbol === item.symbol)) return; // 종목당 1포지션
-        if (S.paper.length >= 5) return; // 동시 최대 5포지션
-        if (Date.now() - (S.scan.cool[item.symbol] || 0) < 5 * 60 * 1000) return;
+        if (S.paper.length >= S.cfg.maxPos) return;
+        if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolMin * 60 * 1000) return;
         const lev = Math.min(Number($("lev").value) || 5, 10); // 스캔 자동은 10X 상한
         const px = S.pxMap[item.symbol] || item.lastPrice;
-        const vol = Math.floor((S.bank * 0.01) * lev / (px * item.contractSize));
+        const vol = Math.floor((S.bank * (S.cfg.ratioPct / 100)) * lev / (px * item.contractSize));
         if (!(vol >= 1)) return;
         const round = v => window.TerminalAI.roundToScale(v, item.priceScale);
         S.scan.cool[item.symbol] = Date.now();
@@ -471,6 +488,17 @@ function bind() {
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
     $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
+    ["cfgNotional", "cfgRatio", "cfgMaxPos", "cfgCool"].forEach(id => {
+        $(id).addEventListener("change", () => {
+            const v = Number($(id).value);
+            if (id === "cfgNotional" && v > 0) S.cfg.notional = Math.min(50000, Math.max(5, v));
+            if (id === "cfgRatio" && v > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.1, v));
+            if (id === "cfgMaxPos" && v > 0) S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(v)));
+            if (id === "cfgCool" && v > 0) S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(v)));
+            saveCfg(); loadCfg();
+            log("자동매매 설정 저장 — 명목가$" + S.cfg.notional + " 증거금" + S.cfg.ratioPct + "% 최대" + S.cfg.maxPos + " 쿨다운" + S.cfg.coolMin + "분");
+        });
+    });
     $("paperReset").addEventListener("click", () => {
         S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
         log("모의자금 리셋 — $1,000,000");
@@ -532,6 +560,7 @@ function bind() {
     try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
         S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
     } catch { S.paper = []; S.bank = 1000000; }
+    loadCfg();
     bind();
     await loadSymbols();
     await loadChart();

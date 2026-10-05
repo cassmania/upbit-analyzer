@@ -77,6 +77,13 @@
         <select id="scanN" aria-label="스캔 종목 수"><option>5</option><option selected>10</option><option>20</option></select>
       </div>
       <div class="log mono" id="scanList" style="height:90px"></div>
+      <div class="settings">
+        <label>단일 자동 명목가$ <input id="cfgNotional" inputmode="decimal" value="50"></label>
+        <label>스캔 증거금% <input id="cfgRatio" inputmode="decimal" value="1"></label>
+        <label>최대포지션 <input id="cfgMaxPos" inputmode="numeric" value="5"></label>
+        <label>쿨다운분 <input id="cfgCool" inputmode="numeric" value="5"></label>
+      </div>
+      <div class="dim">스캔 레버리지는 주문창 값(10X 상한)을 따른다</div>
       <div class="twobtn">
         <button id="arm">실매매 승인</button>
         <button id="kill" class="danger">전체 중지</button>
