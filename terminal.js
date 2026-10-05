@@ -7,7 +7,8 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
 const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
-    tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [] };
+    tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
+    bank: 1000000 };
 
 async function pub(path, params) {
     const q = new URLSearchParams({ path, ...params });
@@ -183,9 +184,11 @@ async function submitOrder(side, auto) {
         $("oMsg").textContent = "서버 검증 중…";
         const r = await priv("trade", "POST", { action: "submit", intent, live, idempotencyKey: uuid() });
         if (r.dryRun) {
-            paperFill(side, type === 1 && intent.price ? intent.price : S.last, vol, lev, auto);
-            $("oMsg").textContent = "모의 체결(서버 검증 통과) 약 $" + fmt.format(r.notional);
-            log((side === 1 ? "모의 LONG " : "모의 SHORT ") + vol + "계약 @" + fmt.format(S.last));
+            const ok = paperFill(side, type === 1 && intent.price ? intent.price : S.last, vol, lev, auto);
+            if (ok) {
+                $("oMsg").textContent = "모의 체결(서버 검증 통과) 약 $" + fmt.format(r.notional);
+                log((side === 1 ? "모의 LONG " : "모의 SHORT ") + vol + "계약 @" + fmt.format(S.last));
+            }
         } else {
             $("oMsg").textContent = "실주문 접수 " + r.orderId;
             log("실주문 " + r.orderId + " 약 $" + fmt.format(r.notional), "down");
@@ -194,21 +197,43 @@ async function submitOrder(side, auto) {
     } catch (e) { $("oMsg").textContent = "거부: " + e.message; log("주문 거부 " + e.message, "down"); }
 }
 function paperFill(side, price, vol, lev, auto) {
+    const notional = price * vol * S.contractSize;
+    const need = notional / lev;
+    if (need > paperAvail()) { $("oMsg").textContent = "모의 증거금 부족(필요 $" + fmt.format(Math.round(need)) + ")"; return false; }
     S.paper.push({ symbol: S.symbol, side, price, vol, lev, at: Date.now(), auto: !!auto });
-    try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50))); } catch { /* 저장 실패 무시 */ }
+    savePaper();
     renderPaper();
+    return true;
+}
+function savePaper() {
+    try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50)));
+        localStorage.setItem("krta-bank", JSON.stringify({ bank: S.bank })); } catch { /* 저장 실패 무시 */ }
+}
+function paperUnreal(p) {
+    return (S.last - p.price) * p.vol * S.contractSize * (p.side === 1 || p.side === 4 ? 1 : -1);
+}
+function paperLocked() {
+    return S.paper.reduce((s, p) => s + (p.price * p.vol * S.contractSize) / p.lev, 0);
+}
+function paperAvail() { return S.bank - paperLocked(); }
+function paperEquity() { return S.bank + S.paper.reduce((s, p) => s + paperUnreal(p), 0); }
+function renderBank() {
+    const eq = paperEquity(), pnl = eq - 1000000;
+    $("paperBank").textContent = "모의 예수금 $" + fmt.format(Math.round(S.bank)) + " · 평가 $" + fmt.format(Math.round(eq)) +
+        " (" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + ")";
 }
 function renderPaper() {
     // 미실현 손익은 현재가로 재평가한다
     const tb = document.querySelector("#posT tbody");
     const rows = S.paper.filter(p => p.symbol === S.symbol).slice(-6).map((p, i) => {
-        const pnl = (S.last - p.price) * p.vol * S.contractSize * (p.side === 1 || p.side === 4 ? 1 : -1);
+        const pnl = paperUnreal(p);
         return "<tr><td>[모의] " + esc(p.symbol) + "</td><td>" + (p.side === 1 ? "롱" : "숏") + "</td><td>" + p.vol +
             "</td><td class='mono'>" + fmt.format(p.price) + "</td><td>" + p.lev + "X</td><td class='mono " +
-            (pnl >= 0 ? "up" : "down") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><button data-paper='" + i + "'>청산</button></td></tr>";
+            (pnl >= 0 ? "up" : "down") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><button data-paper='" + S.paper.indexOf(p) + "'>청산</button></td></tr>";
     }).join("");
     tb.dataset.paper = rows;
     mergePosTable();
+    renderBank();
 }
 function mergePosTable() {
     const tb = document.querySelector("#posT tbody");
@@ -294,15 +319,28 @@ function bind() {
         [...$("otype").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
     });
     $("oVol").addEventListener("input", updateNotional);
+    $("oPct").addEventListener("input", () => {
+        // 슬라이더: 모의 가용금의 %를 증거금으로 쓰는 수량으로 환산한다
+        const lev = Number($("lev").value) || 1;
+        const margin = paperAvail() * (Number($("oPct").value) / 100);
+        $("oVol").value = S.last > 0 ? Math.max(0, Math.floor(margin * lev / (S.last * S.contractSize))) : 0;
+        updateNotional();
+    });
+    $("lev").addEventListener("change", () => $("oPct").dispatchEvent(new Event("input")));
     $("buy").addEventListener("click", () => submitOrder(1, false));
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
     $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
+    $("paperReset").addEventListener("click", () => {
+        S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
+        log("모의자금 리셋 — $1,000,000");
+    });
     document.querySelector("#posT").addEventListener("click", e => {
         const b = e.target.closest("[data-paper]"); if (!b) return;
-        S.paper.splice(Number(b.dataset.paper), 1);
-        try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50))); } catch {}
-        renderPaper(); log("모의 포지션 청산");
+        const p = S.paper[Number(b.dataset.paper)];
+        if (p) { S.bank = Math.round((S.bank + paperUnreal(p)) * 100) / 100; S.paper.splice(S.paper.indexOf(p), 1); }
+        savePaper();
+        renderPaper(); log("모의 포지션 청산·정산");
     });
     $("autoPaper").addEventListener("click", () => {
         S.autoPaper = !S.autoPaper;
@@ -337,7 +375,9 @@ function bind() {
 }
 
 (async function init() {
-    try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]"); } catch { S.paper = []; }
+    try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
+        S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
+    } catch { S.paper = []; S.bank = 1000000; }
     bind();
     await loadSymbols();
     await loadChart();
