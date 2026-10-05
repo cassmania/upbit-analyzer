@@ -14,7 +14,14 @@ function loadFav() {
     try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
     catch { S.fav = []; }
 }
-function saveFav() { try { localStorage.setItem("krta-fav", JSON.stringify(S.fav)); } catch { /* 무시 */ } }
+function saveFav() {
+    try { localStorage.setItem("krta-fav", JSON.stringify(S.fav)); return true; }
+    catch {
+        log("즐겨찾기 저장 실패 — 브라우저 저장소가 차단됐습니다", "down");
+        const m = $("aiMsg"); if (m) m.textContent = "즐겨찾기 저장 실패: 브라우저 저장소 허용 필요";
+        return false;
+    }
+}
 const isFav = s => S.fav.includes(s);
 function renderFavBtn() {
     const on = isFav(S.symbol);
@@ -36,8 +43,9 @@ function renderSymbolSelect() {
     const box = $("symResults");
     if (!q) { box.hidden = true; box.innerHTML = ""; return; }
     const top = [...favs, ...rest].slice(0, 8);
-    box.innerHTML = top.map(x => "<div class='symrow' data-sym='" + esc(sym(x)) + "'><span class='star'>" +
-        (isFav(sym(x)) ? "★" : "") + "</span><span><b>" + esc(base(x)) + "/USDT</b></span>" +
+    box.innerHTML = top.map(x => "<div class='symrow' data-sym='" + esc(sym(x)) + "'><button class='fstar" +
+        (isFav(sym(x)) ? " on" : "") + "' data-fav='" + esc(sym(x)) + "' title='즐겨찾기'>" +
+        (isFav(sym(x)) ? "★" : "☆") + "</button><span><b>" + esc(base(x)) + "/USDT</b></span>" +
         "<span class='px mono'>" + fmt.format(S.pxMap[sym(x)] || 0) + "</span></div>").join("") ||
         (S.allSymbols.length ? "<div class='symrow'><span>검색 결과 없음</span></div>"
             : "<div class='symrow'><span>심볼 목록 로딩 실패 — 상단 연결중 클릭</span></div>");
@@ -643,6 +651,15 @@ function bind() {
         if (first) selectSymbol(first.dataset.sym);
     });
     $("symResults").addEventListener("mousedown", e => {
+        const star = e.target.closest("[data-fav]");
+        if (star) {
+            e.preventDefault(); e.stopPropagation();
+            const s = star.dataset.fav;
+            S.fav = isFav(s) ? S.fav.filter(x => x !== s) : [...S.fav, s].slice(0, 50);
+            if (!saveFav()) return;
+            renderFavBtn(); renderSymbolSelect(); renderFavPanel();
+            return;
+        }
         const row = e.target.closest("[data-sym]");
         if (row) { e.preventDefault(); selectSymbol(row.dataset.sym); }
     });

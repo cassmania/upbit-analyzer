@@ -11,6 +11,8 @@
 .symrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:#fff}
 .symrow:hover{background:var(--panel2)}
 .symrow .star{color:var(--gold);width:16px}
+.symrow .fstar{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:15px;padding:0 2px}
+.symrow .fstar.on{color:var(--gold)}
 .symrow .px{margin-left:auto;color:var(--dim)}
 #favBtn{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:15px}
 #favBtn.on{color:var(--gold);border-color:var(--gold)}
