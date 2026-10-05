@@ -393,6 +393,20 @@ function renderPaper() {
     renderBank();
 }
 
+let modalCb = null;
+function openModal(title, bodyHtml, label, defVal, okText, cb) {
+    $("mTitle").textContent = title;
+    $("mBody").innerHTML = bodyHtml;
+    $("mLabel").textContent = label;
+    $("mInput").value = defVal;
+    $("mOk").textContent = okText;
+    modalCb = cb;
+    $("modalOv").hidden = false;
+    $("mInput").focus();
+    $("mInput").select();
+}
+function closeModal() { $("modalOv").hidden = true; modalCb = null; }
+
 // ---- 비공개 (잔고·포지션·미체결) ----
 async function refreshPrivate() {
     try {
@@ -584,6 +598,9 @@ function bind() {
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
     $("refreshPaper").addEventListener("click", () => { renderPaper(); });
+    $("mOk").addEventListener("click", () => { const cb = modalCb, v = $("mInput").value; closeModal(); if (cb) cb(v); });
+    $("mCancel").addEventListener("click", closeModal);
+    $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
     $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
     ["cfgNotional", "cfgRatio", "cfgMaxPos", "cfgCool"].forEach(id => {
         $(id).addEventListener("change", () => {
@@ -607,37 +624,68 @@ function bind() {
             if (p) { p.guard = g.checked; savePaper(); log("자동 마진 " + (g.checked ? "ON" : "OFF") + " " + p.symbol); }
             return;
         }
+        const posPx = p => S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
         const c = e.target.closest("[data-close]");
         if (c) {
             const idx = Number(c.dataset.close), p = S.paper[idx];
             if (!p) return;
-            const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
-            settlePaper(idx, px, "수동");
+            const px = posPx(p), pnl = paperUnreal(p, px);
+            openModal("시장가 청산", esc(p.symbol) + " " + (p.side === 1 ? "롱" : "숏") + " " + p.vol + "계약<br>현재가 " +
+                fmt.format(px) + " · 예상 손익 " + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl * 100) / 100),
+                "청산 수량 (보유 " + p.vol + ")", p.vol, "청산", v => {
+                    const qty = Number(v);
+                    if (!(qty > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
+                    if (qty >= p.vol) { settlePaper(idx, px, "수동"); return; }
+                    const ratio = qty / p.vol;
+                    const share = p.margin * ratio, pnlShare = pnl * ratio;
+                    const feeOut = px * qty * (p.cs || S.contractSize) * 0.0004;
+                    const credit = share + pnlShare - feeOut;
+                    p.vol = Math.round((p.vol - qty) * 1e8) / 1e8;
+                    p.margin = Math.round((p.margin - share) * 100) / 100;
+                    S.bank = Math.round((S.bank + credit) * 100) / 100;
+                    savePaper(); renderPaper();
+                    log("모의 부분청산 " + p.symbol + " " + qty + "계약 손익 " + (pnlShare >= 0 ? "+" : "") + fmt.format(Math.round(pnlShare * 100) / 100));
+                });
             return;
         }
         const rv = e.target.closest("[data-rev]");
         if (rv) {
             const idx = Number(rv.dataset.rev), p = S.paper[idx];
             if (!p) return;
-            const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
-            const opposite = p.side === 1 ? 3 : 1;
-            settlePaper(idx, px, "역방향 전환");
-            paperFill(opposite, px, p.vol, p.lev, p.auto, { symbol: p.symbol, cs: p.cs, sl: null, tp: null });
-            log("역방향 진입 " + p.symbol);
+            const px = posPx(p);
+            const need = (px * p.vol * (p.cs || S.contractSize)) / p.lev;
+            openModal("역방향 진입", esc(p.symbol) + " " + (p.side === 1 ? "롱→숏" : "숏→롱") + "<br>필요 증거금 약 $" +
+                fmt.format(Math.round(need)) + " (가용 $" + fmt.format(Math.round(S.bank)) + ")",
+                "역방향 수량 (보유 " + p.vol + ")", p.vol, "역방향 진입", v => {
+                    const qty = Number(v);
+                    if (!(qty > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
+                    const opposite = p.side === 1 ? 3 : 1;
+                    const cs = p.cs, lev = p.lev, sym = p.symbol;
+                    settlePaper(idx, px, "역방향 전환");
+                    if (!paperFill(opposite, px, qty, lev, p.auto,
+                        { symbol: sym, cs, sl: null, tp: null })) log("역방향 진입 실패 — 증거금 부족", "down");
+                    else log("역방향 진입 " + sym);
+                });
             return;
         }
         const ad = e.target.closest("[data-add]");
         if (ad) {
             const p = S.paper[Number(ad.dataset.add)];
             if (!p) return;
-            const add = Math.round(p.margin * 0.2 * 100) / 100;
-            if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return; }
-            S.bank = Math.round((S.bank - add) * 100) / 100;
-            p.margin = Math.round((p.margin + add) * 100) / 100;
-            const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
-            p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
-            savePaper(); renderPaper();
-            log("마진 추가 " + p.symbol + " $" + add);
+            const def = Math.round(p.margin * 0.2 * 100) / 100;
+            openModal("마진 추가", esc(p.symbol) + " 투입마진 $" + fmt.format(p.margin) + "<br>현재 청산가 " +
+                fmt.format(p.liq) + " · 가용 $" + fmt.format(Math.round(S.bank)),
+                "추가 금액 USDT (기본 20%)", def, "추가", v => {
+                    const add = Math.round(Number(v) * 100) / 100;
+                    if (!(add > 0)) { $("oMsg").textContent = "금액을 입력하세요."; return; }
+                    if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return; }
+                    S.bank = Math.round((S.bank - add) * 100) / 100;
+                    p.margin = Math.round((p.margin + add) * 100) / 100;
+                    const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
+                    p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
+                    savePaper(); renderPaper();
+                    log("마진 추가 " + p.symbol + " $" + add + " 새 청산가 " + fmt.format(Math.round(p.liq * 100) / 100));
+                });
             return;
         }
     });
