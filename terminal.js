@@ -9,7 +9,7 @@ const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
-    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5, autoLev: 3,
+    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
         tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
     try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
@@ -75,9 +75,10 @@ function loadCfg() {
     try {
         const c = JSON.parse(localStorage.getItem("krta-cfg") || "{}");
         if (Number(c.notional) > 0) S.cfg.notional = Math.min(50000, Math.max(5, Number(c.notional)));
-        if (Number(c.ratioPct) > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number(c.ratioPct)));
-        if (Number(c.maxPos) > 0) S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(Number(c.maxPos))));
-        if (Number(c.coolMin) > 0) S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(Number(c.coolMin))));
+        if (Number(c.ratioPct) > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.01, Number(c.ratioPct)));
+        if (Number(c.maxPos) > 0) S.cfg.maxPos = Math.min(100, Math.max(1, Math.round(Number(c.maxPos))));
+        if (Number(c.coolSec) > 0) S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(c.coolSec))));
+        else if (Number(c.coolMin) > 0) S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(c.coolMin)) * 60));
         if ([1, 2, 3, 5, 10].includes(Number(c.autoLev))) S.cfg.autoLev = Number(c.autoLev);
         if (["ai", "manual"].includes(c.tpMode)) S.cfg.tpMode = c.tpMode;
         if (Number(c.tpPct) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number(c.tpPct)));
@@ -87,7 +88,7 @@ function loadCfg() {
     } catch { /* 기본값 유지 */ }
     $("cfgMargin").value = S.cfg.ratioPct;
     $("cfgMaxPos2").value = String(S.cfg.maxPos);
-    $("cfgCool2").value = String(S.cfg.coolMin);
+    $("cfgCool2").value = String(S.cfg.coolSec);
     $("cfgLev").value = String(S.cfg.autoLev);
     document.querySelectorAll("input[name=tpMode]").forEach(r => r.checked = r.value === S.cfg.tpMode);
     document.querySelectorAll("input[name=slMode]").forEach(r => r.checked = r.value === S.cfg.slMode);
@@ -98,7 +99,28 @@ function loadCfg() {
 }
 function cfgPreview() {
     $("cfgMarginPctView").textContent = S.cfg.ratioPct + "%";
-    $("cfgMarginUsdt").textContent = fmt.format(Math.round(S.bank * S.cfg.ratioPct / 100));
+    const usdt = Math.round(S.bank * S.cfg.ratioPct / 100);
+    if (document.activeElement !== $("cfgMarginUsdtIn")) $("cfgMarginUsdtIn").value = usdt;
+}
+// 테마: 라이트/다크. 차트 색상까지 함께 바꾼다
+function chartPalette() {
+    return document.documentElement.dataset.theme === "light"
+        ? { bg: "#ffffff", text: "#5b6472", grid: "#e6e9f0", border: "#d4dae4" }
+        : { bg: "#12161f", text: "#8b93a7", grid: "#1a2130", border: "#222839" };
+}
+function applyThemeToChart() {
+    if (!S.chart) return;
+    const p = chartPalette();
+    S.chart.applyOptions({ layout: { background: { color: p.bg }, textColor: p.text },
+        grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border } });
+}
+function loadTheme() {
+    let t = "dark";
+    try { t = localStorage.getItem("krta-theme") || "dark"; } catch {}
+    if (t !== "light") t = "dark";
+    document.documentElement.dataset.theme = t;
+    const b = $("themeBtn"); if (b) b.textContent = t === "light" ? "☾" : "☀";
 }
 // 자동매매 SL/TP: AI 모드는 신호값, 수동 모드는 진입가 대비 %
 function autoTPSL(entry, px, long, ps) {
@@ -234,9 +256,10 @@ function aiSignal(fast, slow) {
 // ---- 차트 ----
 function ensureChart() {
     if (S.chart) return;
-    S.chart = LightweightCharts.createChart($("chart"), { layout: { background: { color: "#12161f" }, textColor: "#8b93a7" },
-        grid: { vertLines: { color: "#1a2130" }, horzLines: { color: "#1a2130" } },
-        rightPriceScale: { borderColor: "#222839" }, timeScale: { borderColor: "#222839", timeVisible: true } });
+    const p = chartPalette();
+    S.chart = LightweightCharts.createChart($("chart"), { layout: { background: { color: p.bg }, textColor: p.text },
+        grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true } });
     S.series = S.chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81", wickDownColor: "#f6465d" });
     const mk = c => S.chart.addLineSeries({ color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     S.lines = { ma5: mk("#e0b44a"), ma10: mk("#29b6f6"), ma30: mk("#9b59b6"), ma60: mk("#7f8c8d") };
@@ -707,7 +730,7 @@ async function scanTick() {
         if (!r.ok || !r.entry) return;
         if (S.paper.some(p => p.symbol === item.symbol)) return; // 종목당 1포지션
         if (S.paper.length >= S.cfg.maxPos) return;
-        if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolMin * 60 * 1000) return;
+        if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolSec * 1000) return;
         const lev = Math.min(S.cfg.autoLev, 10); // 스캔 자동은 10X 상한
         const px = S.pxMap[item.symbol] || item.lastPrice;
         const vol = Math.floor((S.bank * (S.cfg.ratioPct / 100)) * lev / (px * item.contractSize));
@@ -730,7 +753,7 @@ function renderScan() {
 // ---- 자동매매 루프 ----
 async function autoTick() {
     if (!S.autoPaper && !S.autoLive) return;
-    if (Date.now() - S.lastAuto < 5 * 60 * 1000) return;
+    if (Date.now() - S.lastAuto < S.cfg.coolSec * 1000) return;
     const sig = await refreshAI();
     if (sig.dir === "관망" || !sig.entry) return;
     if (S.autoLive && !(S.armed && S.tradeEnabled)) { log("실매매 루프: 승인 없음 — 모의로 전환"); }
@@ -835,16 +858,44 @@ function bind() {
     $("mOk").addEventListener("click", () => { const cb = modalCb, v = $("mInput").value; closeModal(); if (cb) cb(v); });
     $("mCancel").addEventListener("click", closeModal);
     $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
-    $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
+    $("themeBtn").addEventListener("click", () => {
+        const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem("krta-theme", next); } catch {}
+        $("themeBtn").textContent = next === "light" ? "☾" : "☀";
+        applyThemeToChart();
+        queueSaveUi();
+    });
+    bindCfgMargin();
     $("cfgFold").addEventListener("click", () => {
         const b = $("cfgBody").classList.toggle("collapsed");
         $("cfgFold").textContent = b ? "∨" : "∧";
         queueSaveUi();
     });
-    $("cfgMargin").addEventListener("input", () => {
-        S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number($("cfgMargin").value) || 1));
-        saveCfg(); cfgPreview();
+function setMaxPos(v) {
+    S.cfg.maxPos = Math.min(100, Math.max(1, Math.round(Number(v) || 5)));
+    $("cfgMaxPos2").value = String(S.cfg.maxPos);
+    saveCfg();
+    log("최대 포지션 " + S.cfg.maxPos + "개");
+}
+function setCoolSec(v) {
+    S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(v) || 300)));
+    $("cfgCool2").value = String(S.cfg.coolSec);
+    saveCfg();
+    log("재진입 쿨다운 " + S.cfg.coolSec + "초");
+}
+function setRatioPct(v) {
+    S.cfg.ratioPct = Math.min(10, Math.max(0.01, Number(v) || 1));
+    $("cfgMargin").value = S.cfg.ratioPct;
+    saveCfg(); cfgPreview();
+}
+function bindCfgMargin() {
+    $("cfgMargin").addEventListener("input", () => setRatioPct($("cfgMargin").value));
+    $("cfgMarginUsdtIn").addEventListener("input", () => {
+        const usdt = Number($("cfgMarginUsdtIn").value);
+        if (usdt > 0 && S.bank > 0) setRatioPct(usdt / S.bank * 100);
     });
+}
     $("cfgLev").addEventListener("change", () => {
         S.cfg.autoLev = [1, 2, 3, 5, 10].includes(Number($("cfgLev").value)) ? Number($("cfgLev").value) : 3;
         saveCfg();
@@ -868,16 +919,14 @@ function bind() {
         S.cfg.noOverlap = $("cfgOverlap").checked; saveCfg();
         log("중복 진입 방지 " + (S.cfg.noOverlap ? "ON" : "OFF"));
     });
-    $("cfgMaxPos2").addEventListener("change", () => {
-        S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(Number($("cfgMaxPos2").value) || 5)));
-        saveCfg();
-        log("최대 포지션 " + S.cfg.maxPos + "개");
-    });
-    $("cfgCool2").addEventListener("change", () => {
-        S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(Number($("cfgCool2").value) || 5)));
-        saveCfg();
-        log("재진입 쿨다운 " + S.cfg.coolMin + "분");
-    });
+    $("cfgMaxPos2").addEventListener("change", () => setMaxPos(Number($("cfgMaxPos2").value)));
+    $("cfgCool2").addEventListener("change", () => setCoolSec(Number($("cfgCool2").value)));
+    document.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => {
+        const [k, d] = b.dataset.step.split(",");
+        const step = Number(d);
+        if (k === "maxPos") setMaxPos(S.cfg.maxPos + step);
+        else if (k === "coolSec") setCoolSec(S.cfg.coolSec + step);
+    }));
     $("paperReset").addEventListener("click", () => {
         S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
         log("모의자금 리셋 — $1,000,000");
@@ -1054,6 +1103,7 @@ async function boot() {
     loadCfg();
     loadFav();
     loadUi();
+    loadTheme();
     bind();
     document.addEventListener("input", queueSaveUi);
     document.addEventListener("change", queueSaveUi);
