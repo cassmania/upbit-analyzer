@@ -59,4 +59,28 @@ if (r.entry) {
 
 // 엔진 미로드·현재가 없음 fail-soft
 assert.equal(AI.runPipeline({}, {}, 0, null).dir, "관망");
+
+// 스캔 대상 선정: 거래대금순, USDT 선물만, contractSize 필수
+const picks = AI.pickTopSymbols(
+    [{ symbol: "BTC_USDT", amount24: 3000000000, lastPrice: 86500 },
+     { symbol: "DOGE_USDT", amount24: 500000000, lastPrice: 0.2 },
+     { symbol: "BTC_USDC", amount24: 9999999999, lastPrice: 86500 },
+     { symbol: "JUNK_USDT", amount24: 100, lastPrice: 1 }],
+    [{ symbol: "BTC_USDT", contractSize: 0.0001, priceScale: 1 },
+     { symbol: "DOGE_USDT", contractSize: 10, priceScale: 5 },
+     { symbol: "JUNK_USDT", contractSize: 0, priceScale: 2 }], 10);
+assert.deepEqual(picks.map(p => p.symbol), ["BTC_USDT", "DOGE_USDT"]);
+assert.equal(picks[1].contractSize, 10);
+
+// 모의 정산: 수수료 0.04%·유지마진 0.5% 청산가
+const oc = AI.openCalc(86500, 10, 5, 0.0001); // 명목가 $86.5
+assert.ok(Math.abs(oc.notional - 86.5) < 1e-9);
+assert.ok(Math.abs(oc.margin - 17.3) < 1e-9);
+assert.ok(Math.abs(oc.feeIn - 86.5 * 0.0004) < 1e-9);
+assert.ok(Math.abs(oc.liqLong - 86500 * (1 - 0.2 + 0.005)) < 1e-9);
+assert.ok(Math.abs(oc.liqShort - 86500 * (1 + 0.2 - 0.005)) < 1e-9);
+assert.equal(AI.openCalc(86500, 0, 5, 0.0001), null);
+const st = AI.settleCalc({ price: 86500, vol: 10, cs: 0.0001, side: 1, margin: oc.margin, feeIn: oc.feeIn }, 87500);
+assert.ok(Math.abs(st.pnl - 1.0) < 1e-9); // (87500-86500)*10*0.0001
+assert.ok(Math.abs(st.credit - (oc.margin + 1.0 - 87500 * 10 * 0.0001 * 0.0004)) < 1e-6);
 console.log("terminal-ai: ALL PASS");

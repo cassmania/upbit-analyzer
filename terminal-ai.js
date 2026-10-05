@@ -74,8 +74,40 @@
             exits: sig.exits || { long: [], short: [] }, atr: sig.atr, raw: sig };
     }
 
-    var TerminalAI = { VERSION: "1.0.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
-        resample: resample, roundToScale: roundToScale, runPipeline: runPipeline };
+    // 거래대금 상위 USDT 선물을 스캔 대상으로 고른다 (유동성 낮은 잡코인 제외)
+    function pickTopSymbols(tickers, details, n) {
+        var size = {};
+        (details || []).forEach(function (d) {
+            if (d && d.symbol) size[d.symbol] = { cs: Number(d.contractSize), ps: Number(d.priceScale) };
+        });
+        return (tickers || [])
+            .filter(function (t) { return t && /_USDT$/.test(t.symbol) && Number(t.amount24) > 0 && size[t.symbol]
+                && Number(size[t.symbol].cs) > 0; })
+            .sort(function (a, b) { return Number(b.amount24) - Number(a.amount24); })
+            .slice(0, Math.max(1, Math.min(30, n || 10)))
+            .map(function (t) { return { symbol: t.symbol, contractSize: size[t.symbol].cs,
+                priceScale: size[t.symbol].ps || 2, lastPrice: Number(t.lastPrice) }; });
+    }
+
+    // 시뮬레이터식 모의 정산: 진입수수료 0.04%·유지마진 0.5% 가정 청산가·종료수수료
+    var PAPER_FEE = 0.0004, PAPER_MM = 0.005;
+    function openCalc(price, vol, lev, cs) {
+        var p = Number(price), v = Number(vol), l = Number(lev), c = Number(cs);
+        if (!([p, v, l, c].every(isFinite)) || v <= 0 || l < 1 || c <= 0) return null;
+        var notional = p * v * c;
+        return { notional: notional, margin: notional / l, feeIn: notional * PAPER_FEE,
+            liqLong: p * (1 - 1 / l + PAPER_MM), liqShort: p * (1 + 1 / l - PAPER_MM) };
+    }
+    function settleCalc(pos, exitPx) {
+        var dir = (pos.side === 1 || pos.side === 4) ? 1 : -1;
+        var pnl = (Number(exitPx) - pos.price) * pos.vol * pos.cs * dir;
+        var feeOut = Number(exitPx) * pos.vol * pos.cs * PAPER_FEE;
+        return { pnl: pnl, feeOut: feeOut, credit: pos.margin + pnl - feeOut };
+    }
+
+    var TerminalAI = { VERSION: "1.2.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
+        resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, pickTopSymbols: pickTopSymbols,
+        openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE };
     global.TerminalAI = TerminalAI;
     if (typeof module !== "undefined" && module.exports) module.exports = TerminalAI;
 })(typeof window !== "undefined" ? window : globalThis);
