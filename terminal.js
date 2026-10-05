@@ -153,8 +153,46 @@ function updateNotional() {
     $("oNotional").textContent = "명목가 " + (v > 0 && S.last ? fmt.format(S.last * v * S.contractSize) : "-") + " USDT";
 }
 
-// ---- AI ----
+// ---- AI (V4.1 파이프라인: TAEngine→LevelEngine→SignalEngine. 실패 시 내장 경량 규칙) ----
 async function refreshAI() {
+    try {
+        if (!window.TerminalAI || !window.TAEngine || !window.LevelEngine || !window.SignalEngine) throw new Error("engine-missing");
+        const [h1, h4, h1b, d1] = await Promise.all([
+            pub("kline", { symbol: S.symbol, interval: "Min60" }),
+            pub("kline", { symbol: S.symbol, interval: "Hour4" }),
+            pub("kline", { symbol: S.symbol, interval: "Min60" }),
+            pub("kline", { symbol: S.symbol, interval: "Day1" }),
+        ]);
+        let funding = null;
+        try { funding = Number((await pub("funding_rate", { symbol: S.symbol })).fundingRate); } catch { /* 펀딩 실패는 null */ }
+        const r = window.TerminalAI.runPipeline(
+            { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine },
+            { "1h": h1, "4h": h4, "12h": h1b, "1d": d1 }, S.last, funding);
+        S.ai = r;
+        $("aiSig").textContent = r.dir;
+        if (r.ok && r.entry) {
+            const e = r.entry;
+            $("aiDetail").textContent = r.dir + " 진입 " + fmt.format(e.entry) + " SL " + fmt.format(e.stop) +
+                " TP1 " + fmt.format(e.target1) + " " + e.rr.toFixed(2) + "R · 합의 " + r.agree + "%";
+            markSignal(r.dir);
+        } else {
+            $("aiDetail").textContent = "관망 · " + (r.blocked || r.reason || "");
+            markSignal(null);
+        }
+        return r.dir === "LONG" || r.dir === "SHORT" ? { dir: r.dir, entry: r.entry } : { dir: "관망" };
+    } catch (e) {
+        return legacyAI();
+    }
+}
+function markSignal(dir) {
+    if (!S.series || !S.candles || !S.candles.length) return;
+    if (!dir) { S.series.setMarkers([]); return; }
+    S.series.setMarkers([{ time: S.candles[S.candles.length - 1].time,
+        position: dir === "LONG" ? "belowBar" : "aboveBar",
+        color: dir === "LONG" ? "#0ecb81" : "#f6465d",
+        shape: dir === "LONG" ? "arrowUp" : "arrowDown", text: dir }]);
+}
+async function legacyAI() {
     try {
         const [h1, h4] = await Promise.all([
             pub("kline", { symbol: S.symbol, interval: "Min60" }),
@@ -162,14 +200,16 @@ async function refreshAI() {
         ]);
         const map = d => d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
         const sig = aiSignal(map(h1).slice(-200), map(h4).slice(-200));
+        S.ai = null;
         $("aiSig").textContent = sig.dir;
         $("aiDetail").textContent = sig.reason + (sig.entry ? " · 진입 " + fmt.format(sig.entry) + " SL " + fmt.format(sig.sl) + " TP " + fmt.format(sig.tp) : "");
+        markSignal(null);
         return sig;
     } catch { $("aiSig").textContent = "오류"; return { dir: "관망" }; }
 }
 
 // ---- 주문 ----
-async function submitOrder(side, auto) {
+async function submitOrder(side, auto, opts) {
     const lev = Number($("lev").value), type = Number(document.querySelector("#otype .act").dataset.t);
     let vol = Number($("oVol").value);
     if (auto && !(vol > 0)) {
@@ -178,7 +218,9 @@ async function submitOrder(side, auto) {
     }
     if (!(vol > 0)) { $("oMsg").textContent = "수량을 입력하세요."; return; }
     const intent = { symbol: S.symbol, side, type, leverage: lev, vol,
-        ...(type === 1 && $("oPrice").value ? { price: Number($("oPrice").value) } : {}) };
+        ...(type === 1 && $("oPrice").value ? { price: Number($("oPrice").value) } : {}),
+        ...(opts && opts.sl ? { stopLossPrice: opts.sl } : {}),
+        ...(opts && opts.tp ? { takeProfitPrice: opts.tp } : {}) };
     const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
     // 10X 초과는 모의 전용. 실주문은 서버 상한에서 거부된다
     if (live && lev > 10) { $("oMsg").textContent = "10X 초과 실주문 차단 — 레버리지를 낮추세요."; return; }
@@ -291,8 +333,9 @@ async function autoTick() {
     const liveLoop = S.autoLive && S.armed && S.tradeEnabled;
     S.lastAuto = Date.now();
     const side = sig.dir === "LONG" ? 1 : 3;
+    const round = v => window.TerminalAI ? window.TerminalAI.roundToScale(v, S.priceScale) : v;
     $("oVol").value = "";
-    await submitOrder(side, true);
+    await submitOrder(side, true, { sl: round(sig.entry.stop), tp: round(sig.entry.target1) });
     log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매]" : " [모의]"));
 }
 
@@ -310,6 +353,7 @@ function applyDetail(info) {
     if (!info) return;
     S.contractSize = Number(info.contractSize) || S.contractSize;
     S.maxLev = Math.min(Number(info.maxLeverage) || 10, 10);
+    if (Number.isFinite(Number(info.priceScale))) S.priceScale = Number(info.priceScale);
 }
 
 // ---- 이벤트 ----

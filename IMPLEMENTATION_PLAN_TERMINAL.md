@@ -26,6 +26,14 @@
 - `lib/trade-guards.js` — 순수 검증 (`node test_trade_guards.js`)
 - `test_trade_guards.js`, `supabase/migrations/002_trade_state.sql`
 
+## AI (V4.1 파이프라인 직결)
+
+- 터미널 AI는 `terminal-ai.js` 접착을 거쳐 본 사이트와 동일한 엔진을 쓴다:
+  `TAEngine.analyzeTf(1h·4h·12h·1d)` → `LevelEngine.analyze` → `SignalEngine.analyze`
+- 12h는 60m봉 리샘플, 미완성봉 제외, 펀딩비 전달. 조건 미달이면 관망이 정상 출력
+- 자동매매 진입 시 신호의 손절·1차목표를 주문에 첨부 (서버가 방향 검증)
+- 엔진 로드 실패 시에만 내장 경량 규칙으로 폴백. `node test_terminal_ai.js`로 검증
+
 ## 한계 (v1)
 
 - 12H봉은 MEXC에 없어 60m봉 리샘플로 표시한다
