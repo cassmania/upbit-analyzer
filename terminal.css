@@ -43,6 +43,7 @@
 #autoPaper.on,#autoLive.on{outline:2px solid var(--gold)}
 #arm.armed{outline:2px solid var(--down)}
 .bottom{grid-column:1/-1;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}
+.bottom .paper-card{grid-column:1/-1}
 .scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12.5px}
 th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
 th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:3px 9px;cursor:pointer}
@@ -51,5 +52,13 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .settings label{display:grid;gap:3px;font-size:11px;color:var(--dim)}
 .settings input{background:#0d1119;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;width:100%}
 .warn{padding:12px 14px;color:var(--gold);font-size:12px}
+.paper-card{border-top:2px solid #29b6f6}
+.paper-title{color:#29b6f6}
+.paper-bank{color:#fff}
+.paper-card .p-long{color:#29b6f6;font-weight:700}
+.paper-card .p-short{color:var(--down);font-weight:700}
+.paper-card .p-pos{color:#fff;font-weight:700}
+.paper-card .p-neg{color:var(--down)}
+.paper-card td button{background:var(--panel2);border:1px solid #29b6f6;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer}
 .up{color:var(--up)}.down{color:var(--down)}
 @media(max-width:1100px){.term{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}#chart{height:420px}}

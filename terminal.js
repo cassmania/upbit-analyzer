@@ -329,9 +329,11 @@ function renderBank() {
     const unreal = S.paper.reduce((s, p) => s + paperUnreal(p, S.pxMap[p.symbol]), 0);
     const eq = S.bank + unreal + paperLocked();
     const pnl = eq - 1000000;
-    $("paperBank").textContent = "모의 지갑 $" + fmt.format(Math.round(S.bank)) + " · 미실현 " +
+    const txt = "모의 지갑 $" + fmt.format(Math.round(S.bank)) + " · 미실현 " +
         (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + " · 평가 $" + fmt.format(Math.round(eq)) +
         " (" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + ")";
+    $("paperBank").textContent = txt;
+    if ($("paperBankTop")) $("paperBankTop").textContent = txt;
 }
 function settlePaper(idx, px, reason) {
     const p = S.paper[idx];
@@ -345,24 +347,19 @@ function settlePaper(idx, px, reason) {
         (r.pnl >= 0 ? "+" : "") + fmt.format(Math.round(r.pnl * 100) / 100) + " (수수료 " + fmt.format(Math.round((p.feeIn + r.feeOut) * 100) / 100) + ")");
 }
 function renderPaper() {
-    // 전 종목 모의 포지션을 최신순으로 보여준다
-    const tb = document.querySelector("#posT tbody");
-    const rows = S.paper.slice(-10).reverse().map((p) => {
+    // 모의 포지션 전용 카드에 전 종목 표시 (블루·레드·화이트)
+    const tb = document.querySelector("#paperT tbody");
+    tb.innerHTML = S.paper.slice().reverse().map((p) => {
         const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : undefined;
         const pnl = paperUnreal(p, px);
-        return "<tr><td>[모의] " + esc(p.symbol) + "</td><td>" + (p.side === 1 ? "롱" : "숏") + "</td><td>" + p.vol +
+        const long = p.side === 1;
+        return "<tr><td>" + esc(p.symbol) + "</td><td class='" + (long ? "p-long" : "p-short") + "'>" +
+            (long ? "롱" : "숏") + "</td><td>" + p.vol +
             "</td><td class='mono'>" + fmt.format(p.price) + "</td><td>" + p.lev + "X</td><td class='mono " +
-            (pnl >= 0 ? "up" : "down") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><span class='dim mono'>liq " +
+            (pnl >= 0 ? "p-pos" : "p-neg") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><span class='dim mono'>" +
             fmt.format(Math.round(p.liq * 100) / 100) + "</span> <button data-paper='" + S.paper.indexOf(p) + "'>청산</button></td></tr>";
-    }).join("");
-    tb.dataset.paper = rows;
-    mergePosTable();
+    }).join("") || "<tr><td colspan='7' class='dim'>모의 포지션 없음</td></tr>";
     renderBank();
-}
-function mergePosTable() {
-    const tb = document.querySelector("#posT tbody");
-    const real = [...tb.querySelectorAll("tr[data-real]")].map(tr => tr.outerHTML).join("");
-    tb.innerHTML = (tb.dataset.paper || "") + real || "<tr><td colspan='7' class='dim'>포지션 없음</td></tr>";
 }
 
 // ---- 비공개 (잔고·포지션·미체결) ----
@@ -373,13 +370,11 @@ async function refreshPrivate() {
         const usdt = (s.sections.assets.rows || []).find(r => r.currency === "USDT");
         $("wallet").innerHTML = "USDT 가용 " + fmt.format(usdt ? usdt.available : 0) + " · 평가 " + fmt.format(usdt ? usdt.equity : 0);
         const tb = document.querySelector("#posT tbody");
-        const pos = (s.sections.positions.rows || []).map(p =>
-            "<tr data-real='1'><td>" + esc(p.symbol) + "</td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
+        tb.innerHTML = (s.sections.positions.rows || []).map(p =>
+            "<tr><td>" + esc(p.symbol) + "</td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
             "</td><td class='mono'>" + fmt.format(p.entryPrice) + "</td><td>" + esc(p.leverage) + "X</td><td class='mono " +
-            ((p.unrealized || 0) >= 0 ? "up" : "down") + "'>" + fmt.format(p.unrealized) + "</td><td></td></tr>").join("");
-        tb.innerHTML = pos;
-        [...tb.querySelectorAll("tr")].forEach(tr => tr.dataset.real = "1");
-        mergePosTable();
+            ((p.unrealized || 0) >= 0 ? "up" : "down") + "'>" + fmt.format(p.unrealized) + "</td><td></td></tr>").join("") ||
+            "<tr><td colspan='7' class='dim'>실포지션 없음</td></tr>";
         const ot = document.querySelector("#ordT tbody");
         ot.innerHTML = (s.sections.futuresOrders.rows || []).map((o, i) =>
             "<tr><td>" + esc(o.symbol) + "</td><td>" + esc(o.side) + "</td><td class='mono'>" + fmt.format(o.price) +
@@ -541,6 +536,7 @@ function bind() {
     $("buy").addEventListener("click", () => submitOrder(1, false));
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
+    $("refreshPaper").addEventListener("click", () => { renderPaper(); });
     $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
     ["cfgNotional", "cfgRatio", "cfgMaxPos", "cfgCool"].forEach(id => {
         $(id).addEventListener("change", () => {
@@ -557,7 +553,7 @@ function bind() {
         S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
         log("모의자금 리셋 — $1,000,000");
     });
-    document.querySelector("#posT").addEventListener("click", e => {
+    document.querySelector("#paperT").addEventListener("click", e => {
         const b = e.target.closest("[data-paper]"); if (!b) return;
         const idx = Number(b.dataset.paper), p = S.paper[idx];
         if (!p) return;
