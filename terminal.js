@@ -39,7 +39,8 @@ function renderSymbolSelect() {
     box.innerHTML = top.map(x => "<div class='symrow' data-sym='" + esc(sym(x)) + "'><span class='star'>" +
         (isFav(sym(x)) ? "★" : "") + "</span><span><b>" + esc(base(x)) + "/USDT</b></span>" +
         "<span class='px mono'>" + fmt.format(S.pxMap[sym(x)] || 0) + "</span></div>").join("") ||
-        "<div class='symrow'><span>검색 결과 없음</span></div>";
+        (S.allSymbols.length ? "<div class='symrow'><span>검색 결과 없음</span></div>"
+            : "<div class='symrow'><span>심볼 목록 로딩 실패 — 상단 연결중 클릭</span></div>");
     box.hidden = false;
 }
 function selectSymbol(sym) {
@@ -77,13 +78,23 @@ function saveCfg() {
     try { localStorage.setItem("krta-cfg", JSON.stringify(S.cfg)); } catch { /* 무시 */ }
 }
 
-async function pub(path, params) {
-    const q = new URLSearchParams({ path, ...params });
-    const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
-    if (!r.ok) throw new Error("시세 오류 " + r.status);
-    const j = await r.json();
-    if (j.success !== true || Number(j.code) !== 0) throw new Error("시세 오류");
-    return j.data;
+async function pub(path, params, tries) {
+    tries = tries || 3;
+    let last;
+    for (let i = 0; i < tries; i++) {
+        try {
+            const q = new URLSearchParams({ path, ...params });
+            const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
+            if (!r.ok) throw new Error("시세 오류 " + r.status);
+            const j = await r.json();
+            if (j.success !== true || Number(j.code) !== 0) throw new Error("시세 오류");
+            return j.data;
+        } catch (e) {
+            last = e;
+            if (i + 1 < tries) await new Promise(r => setTimeout(r, 600 * (i + 1)));
+        }
+    }
+    throw last;
 }
 async function priv(api, method, body) {
     const r = await fetch("/api/private/" + api, { method: method || "GET", credentials: "same-origin",
@@ -596,7 +607,8 @@ async function autoTick() {
 // ---- 심볼 목록 ----
 async function loadSymbols() {
     const d = await pub("detail", {});
-    const list = d.filter(x => x.quoteCoin === "USDT" && x.state === 0)
+    if (!Array.isArray(d) || !d.length) throw new Error("심볼 목록 형식 오류");
+    const list = d.filter(x => x && x.quoteCoin === "USDT" && x.state === 0)
         .sort((a, b) => ((b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT")) || String(a.symbol).localeCompare(String(b.symbol)));
     S.allSymbols = list;
     S.detailList = S.allSymbols;
@@ -820,6 +832,29 @@ function bind() {
     });
 }
 
+let booting = false;
+async function boot() {
+    if (booting) return;
+    booting = true;
+    $("net").textContent = "연결 중";
+    try {
+        await loadSymbols();
+    } catch (e) {
+        $("net").textContent = "심볼 로딩 실패 — 클릭 재시도";
+        log("부팅 실패(symbol): " + e.message, "down");
+        booting = false;
+        return;
+    }
+    try { await loadChart(); }
+    catch (e) { log("부팅 실패(chart): " + e.message, "down"); }
+    await refreshTop().catch(() => {});
+    if (!S.last) $("net").textContent = "시세 실패 — 클릭 재시도";
+    else $("net").textContent = "실시간";
+    await refreshBook().catch(() => {});
+    renderPaper();
+    await refreshPrivate();
+    booting = false;
+}
 (async function init() {
     try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
         S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
@@ -828,13 +863,10 @@ function bind() {
     loadCfg();
     loadFav();
     bind();
-    await loadSymbols();
-    await loadChart();
-    await refreshTop().catch(e => { $("net").textContent = "시세 실패"; });
-    $("net").textContent = "실시간";
-    await refreshBook().catch(() => {});
-    renderPaper();
-    await refreshPrivate();
+    $("net").style.cursor = "pointer";
+    $("net").title = "클릭하면 다시 연결합니다";
+    $("net").addEventListener("click", boot);
+    await boot();
     S.timer.push(setInterval(() => refreshTop().catch(() => {}), 3000));
     S.timer.push(setInterval(() => refreshBook().catch(() => {}), 3000));
     S.timer.push(setInterval(autoTick, 10000));
