@@ -61,6 +61,7 @@ function selectSymbol(sym) {
     applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
     loadChart().catch(e => log("차트 " + e.message, "down"));
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
+    queueSaveUi();
 }
 function renderFavPanel() {
     $("favList").innerHTML = "<div class='favrow' data-add='1'><span>" + (isFav(S.symbol) ? "★" : "☆") +
@@ -114,6 +115,52 @@ function autoTPSL(entry, px, long, ps) {
 }
 function saveCfg() {
     try { localStorage.setItem("krta-cfg", JSON.stringify(S.cfg)); } catch { /* 무시 */ }
+}
+// 화면 상태 저장/복원: 재접속해도 심볼·봉·주문창·토글 그대로
+let uiSaveTimer = 0;
+function saveUi() {
+    try {
+        const t = document.querySelector("#otype .act");
+        localStorage.setItem("krta-ui", JSON.stringify({
+            symbol: S.symbol, tf: S.tf,
+            lev: $("lev").value, otype: t ? t.dataset.t : "1",
+            oPrice: $("oPrice").value, oMargin: $("oMargin").value, oVol: $("oVol").value,
+            oUsdt: $("oUsdt").value, oPct: $("oPct").value,
+            oTpsl: $("oTpsl").checked, oSL: $("oSL").value, oTP: $("oTP").value, oReduce: $("oReduce").checked,
+            scanN: $("scanN").value, ptab: S.ptab, autoPaper: S.autoPaper,
+            cfgFold: $("cfgBody").classList.contains("collapsed")
+        }));
+    } catch { /* 무시 */ }
+}
+function queueSaveUi() {
+    clearTimeout(uiSaveTimer);
+    uiSaveTimer = setTimeout(saveUi, 400);
+}
+function loadUi() {
+    let u = {};
+    try { u = JSON.parse(localStorage.getItem("krta-ui") || "{}"); } catch { u = {}; }
+    if (typeof u.symbol === "string" && u.symbol) S.symbol = u.symbol;
+    const TFS = ["Min15", "Min60", "Hour4", "Hour8", "Hour12", "Day1", "Week1"];
+    if (TFS.includes(u.tf)) {
+        S.tf = u.tf;
+        [...$("tfbar").children].forEach(x => x.classList.toggle("act", x.dataset.tf === u.tf));
+    }
+    const set = (id, v) => { if (v !== undefined && v !== null && $(id)) $(id).value = v; };
+    const hasOpt = (id, v) => $(id) && [...$(id).options].some(o => o.value === String(v));
+    if (hasOpt("lev", u.lev)) $("lev").value = u.lev;
+    set("oPrice", u.oPrice); set("oMargin", u.oMargin); set("oVol", u.oVol);
+    set("oUsdt", u.oUsdt); set("oPct", u.oPct); set("oSL", u.oSL); set("oTP", u.oTP);
+    if (hasOpt("scanN", u.scanN)) $("scanN").value = u.scanN;
+    if (u.otype) [...$("otype").children].forEach(x => x.classList.toggle("act", x.dataset.t === String(u.otype)));
+    if ($("oTpsl")) $("oTpsl").checked = !!u.oTpsl;
+    if ($("oReduce")) $("oReduce").checked = !!u.oReduce;
+    if (typeof u.ptab === "string" && u.ptab) S.ptab = u.ptab;
+    if ($("tpslBox")) $("tpslBox").hidden = !$("oTpsl").checked;
+    if (u.cfgFold && $("cfgBody")) { $("cfgBody").classList.add("collapsed"); $("cfgFold").textContent = "∨"; }
+    if (u.autoPaper) {
+        S.autoPaper = true;
+        $("autoPaper").textContent = "자동매매(모의) ON"; $("autoPaper").classList.toggle("on", true);
+    }
 }
 
 async function pub(path, params, tries) {
@@ -727,6 +774,7 @@ function bind() {
         const b = e.target.closest("[data-tf]"); if (!b) return;
         [...$("tfbar").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
         S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
+        queueSaveUi();
     });
     $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
     $("symQ").addEventListener("input", renderSymbolSelect);
@@ -793,6 +841,7 @@ function bind() {
     $("cfgFold").addEventListener("click", () => {
         const b = $("cfgBody").classList.toggle("collapsed");
         $("cfgFold").textContent = b ? "∨" : "∧";
+        queueSaveUi();
     });
     $("cfgMargin").addEventListener("input", () => {
         S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number($("cfgMargin").value) || 1));
@@ -911,7 +960,7 @@ function bind() {
     });
     document.querySelector("#ptabs").addEventListener("click", e => {
         const b = e.target.closest("[data-pt]"); if (!b) return;
-        S.ptab = b.dataset.pt; renderPaper();
+        S.ptab = b.dataset.pt; renderPaper(); queueSaveUi();
     });
     $("autoPaper").addEventListener("click", () => {
         if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
@@ -919,6 +968,7 @@ function bind() {
         $("autoPaper").textContent = "자동매매(모의) " + (S.autoPaper ? "ON" : "OFF");
         $("autoPaper").classList.toggle("on", S.autoPaper);
         log("모의 자동매매 " + (S.autoPaper ? "시작" : "중지"));
+        queueSaveUi();
     });
     $("autoLive").addEventListener("click", () => {
         if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
@@ -1007,7 +1057,11 @@ async function boot() {
     } catch { S.paper = []; S.bank = 1000000; S.hist = []; }
     loadCfg();
     loadFav();
+    loadUi();
     bind();
+    document.addEventListener("input", queueSaveUi);
+    document.addEventListener("change", queueSaveUi);
+    window.addEventListener("beforeunload", saveUi);
     $("net").style.cursor = "pointer";
     $("net").title = "클릭하면 다시 연결합니다";
     $("net").addEventListener("click", boot);
@@ -1018,5 +1072,6 @@ async function boot() {
     S.timer.push(setInterval(scanTick, 15000));
     S.timer.push(setInterval(() => loadChart().catch(() => {}), 60000));
     log("터미널 시작 — 기본 모의. 실매매는 승인 후에만 동작합니다.");
+    if (S.autoPaper) log("이전 설정 복원: 모의 자동매매가 켜진 상태로 재개됩니다.");
 })();
 })();
