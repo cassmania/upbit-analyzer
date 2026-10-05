@@ -9,7 +9,7 @@ const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
-    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 }, fav: [], allSymbols: [] };
+    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
     try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
     catch { S.fav = []; }
@@ -313,7 +313,8 @@ function paperFill(side, price, vol, lev, auto, opts) {
 }
 function savePaper() {
     try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50)));
-        localStorage.setItem("krta-bank", JSON.stringify({ bank: S.bank })); } catch { /* 저장 실패 무시 */ }
+        localStorage.setItem("krta-bank", JSON.stringify({ bank: S.bank }));
+        localStorage.setItem("krta-hist", JSON.stringify(S.hist.slice(-100))); } catch { /* 저장 실패 무시 */ }
 }
 function paperUnreal(p, px) {
     if (px === undefined) px = (p.symbol === S.symbol && S.last > 0) ? S.last : p.price;
@@ -341,24 +342,54 @@ function settlePaper(idx, px, reason) {
     const r = window.TerminalAI.settleCalc(p, px);
     S.bank = Math.round((S.bank + r.credit) * 100) / 100;
     S.paper.splice(idx, 1);
+    S.hist.push({ symbol: p.symbol, side: p.side, pnl: Math.round(r.pnl * 100) / 100, reason,
+        when: new Date().toLocaleString("ko-KR", { hourCycle: "h23" }) });
     savePaper();
     renderPaper();
     log("모의 청산[" + reason + "] " + p.symbol + " " + (p.side === 1 ? "롱" : "숏") + " 손익 " +
         (r.pnl >= 0 ? "+" : "") + fmt.format(Math.round(r.pnl * 100) / 100) + " (수수료 " + fmt.format(Math.round((p.feeIn + r.feeOut) * 100) / 100) + ")");
 }
 function renderPaper() {
-    // 모의 포지션 전용 카드에 전 종목 표시 (블루·레드·화이트)
+    // 참고 화면식: 뱃지 방향·현재가·투입마진·자동마진·수익률·3액션
     const tb = document.querySelector("#paperT tbody");
+    const tab = S.ptab || "active";
+    document.querySelectorAll("#ptabs button").forEach(b => b.classList.toggle("act", b.dataset.pt === tab));
+    $("pCount").textContent = S.paper.length;
+    $("oCount").textContent = "0";
+    if (tab === "history") {
+        tb.innerHTML = S.hist.slice().reverse().slice(0, 20).map(h =>
+            "<tr><td>" + esc(h.symbol) + "</td><td colspan='8' class='dim'>" + esc(h.reason) + " · " +
+            esc(h.when) + "</td><td class='mono " + (h.pnl >= 0 ? "p-pos" : "p-neg") + "'>" +
+            (h.pnl >= 0 ? "+" : "") + fmt.format(Math.round(h.pnl * 100) / 100) + "</td><td></td></tr>").join("") ||
+            "<tr><td colspan='11' class='dim'>거래 이력 없음</td></tr>";
+        renderBank();
+        return;
+    }
+    if (tab === "pending") {
+        tb.innerHTML = "<tr><td colspan='11' class='dim'>대기 주문 없음 (예약·트리거 주문 미지원)</td></tr>";
+        renderBank();
+        return;
+    }
     tb.innerHTML = S.paper.slice().reverse().map((p) => {
         const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : undefined;
+        const cur = px !== undefined ? px : p.price;
         const pnl = paperUnreal(p, px);
+        const base = p.price * p.vol * (p.cs || S.contractSize);
+        const pct = base > 0 ? pnl / p.margin * 100 : 0;
         const long = p.side === 1;
-        return "<tr><td>" + esc(p.symbol) + "</td><td class='" + (long ? "p-long" : "p-short") + "'>" +
-            (long ? "롱" : "숏") + "</td><td>" + p.vol +
-            "</td><td class='mono'>" + fmt.format(p.price) + "</td><td>" + p.lev + "X</td><td class='mono " +
-            (pnl >= 0 ? "p-pos" : "p-neg") + "'>" + fmt.format(Math.round(pnl * 100) / 100) + "</td><td><span class='dim mono'>" +
-            fmt.format(Math.round(p.liq * 100) / 100) + "</span> <button data-paper='" + S.paper.indexOf(p) + "'>청산</button></td></tr>";
-    }).join("") || "<tr><td colspan='7' class='dim'>모의 포지션 없음</td></tr>";
+        const idx = S.paper.indexOf(p);
+        return "<tr><td>" + esc(p.symbol) + "</td><td><span class='badge " + (long ? "long" : "short") + "'>" +
+            (long ? "LONG" : "SHORT") + "</span></td><td>" + p.lev + "x</td><td>" + p.vol + "</td>" +
+            "<td class='mono'>" + fmt.format(p.price) + "</td><td class='mono'>" + fmt.format(cur) + "</td>" +
+            "<td class='mono down'>" + fmt.format(Math.round(p.liq * 100) / 100) + "</td>" +
+            "<td class='mono'>" + fmt.format(Math.round(p.margin * 100) / 100) + "</td>" +
+            "<td><label class='switch'><input type='checkbox' data-guard='" + idx + "'" + (p.guard === false ? "" : " checked") + "><i></i></label></td>" +
+            "<td class='mono " + (pnl >= 0 ? "p-pos" : "p-neg") + "'>" + (pnl >= 0 ? "+" : "") +
+            fmt.format(Math.round(pnl * 100) / 100) + " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)</td>" +
+            "<td><button class='abtn' data-close='" + idx + "'>시장가 청산</button> " +
+            "<button class='abtn go' data-rev='" + idx + "'>역방향</button> " +
+            "<button class='abtn add' data-add='" + idx + "'>마진 추가</button></td></tr>";
+    }).join("") || "<tr><td colspan='11' class='dim'>모의 포지션 없음</td></tr>";
     renderBank();
 }
 
@@ -399,6 +430,22 @@ async function scanTick() {
         for (let i = S.paper.length - 1; i >= 0; i--) {
             const p = S.paper[i], px = S.pxMap[p.symbol];
             if (!(px > 0)) continue;
+            // 자동 마진: 청산가 2% 접근 시 투입마진 20% 수혈 (5분 쿨다운, 잔고 한도)
+            if (p.guard !== false) {
+                const dist = p.side === 1 ? (px - p.liq) / px : (p.liq - px) / px;
+                if (dist < 0.02 && Date.now() - (p.guardAt || 0) > 5 * 60 * 1000) {
+                    const add = Math.round(p.margin * 0.2 * 100) / 100;
+                    if (add <= S.bank && add > 0) {
+                        S.bank = Math.round((S.bank - add) * 100) / 100;
+                        p.margin = Math.round((p.margin + add) * 100) / 100;
+                        const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
+                        p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
+                        p.guardAt = Date.now();
+                        savePaper(); renderPaper();
+                        log("자동 마진 " + p.symbol + " $" + add);
+                    }
+                }
+            }
             if (p.side === 1) {
                 if (px <= p.liq) settlePaper(i, p.liq, "강제청산");
                 else if (p.sl && px <= p.sl) settlePaper(i, p.sl, "손절");
@@ -554,11 +601,49 @@ function bind() {
         log("모의자금 리셋 — $1,000,000");
     });
     document.querySelector("#paperT").addEventListener("click", e => {
-        const b = e.target.closest("[data-paper]"); if (!b) return;
-        const idx = Number(b.dataset.paper), p = S.paper[idx];
-        if (!p) return;
-        const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
-        settlePaper(idx, px, "수동");
+        const g = e.target.closest("[data-guard]");
+        if (g) {
+            const p = S.paper[Number(g.dataset.guard)];
+            if (p) { p.guard = g.checked; savePaper(); log("자동 마진 " + (g.checked ? "ON" : "OFF") + " " + p.symbol); }
+            return;
+        }
+        const c = e.target.closest("[data-close]");
+        if (c) {
+            const idx = Number(c.dataset.close), p = S.paper[idx];
+            if (!p) return;
+            const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
+            settlePaper(idx, px, "수동");
+            return;
+        }
+        const rv = e.target.closest("[data-rev]");
+        if (rv) {
+            const idx = Number(rv.dataset.rev), p = S.paper[idx];
+            if (!p) return;
+            const px = S.pxMap[p.symbol] !== undefined ? S.pxMap[p.symbol] : (p.symbol === S.symbol ? S.last : p.price);
+            const opposite = p.side === 1 ? 3 : 1;
+            settlePaper(idx, px, "역방향 전환");
+            paperFill(opposite, px, p.vol, p.lev, p.auto, { symbol: p.symbol, cs: p.cs, sl: null, tp: null });
+            log("역방향 진입 " + p.symbol);
+            return;
+        }
+        const ad = e.target.closest("[data-add]");
+        if (ad) {
+            const p = S.paper[Number(ad.dataset.add)];
+            if (!p) return;
+            const add = Math.round(p.margin * 0.2 * 100) / 100;
+            if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return; }
+            S.bank = Math.round((S.bank - add) * 100) / 100;
+            p.margin = Math.round((p.margin + add) * 100) / 100;
+            const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
+            p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
+            savePaper(); renderPaper();
+            log("마진 추가 " + p.symbol + " $" + add);
+            return;
+        }
+    });
+    document.querySelector("#ptabs").addEventListener("click", e => {
+        const b = e.target.closest("[data-pt]"); if (!b) return;
+        S.ptab = b.dataset.pt; renderPaper();
     });
     $("autoPaper").addEventListener("click", () => {
         if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
@@ -620,7 +705,8 @@ function bind() {
 (async function init() {
     try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
         S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
-    } catch { S.paper = []; S.bank = 1000000; }
+        S.hist = JSON.parse(localStorage.getItem("krta-hist") || "[]") || [];
+    } catch { S.paper = []; S.bank = 1000000; S.hist = []; }
     loadCfg();
     loadFav();
     bind();
