@@ -22,6 +22,8 @@
 .tfbar{display:flex;gap:2px;padding:8px;border-bottom:1px solid var(--line)}
 .tfbar button{background:transparent;border:0;color:var(--dim);padding:5px 10px;cursor:pointer;border-radius:5px;font-weight:600}
 .tfbar button.act{background:var(--panel2);color:#fff}
+.zoom-sep{width:1px;align-self:stretch;background:var(--line);margin:4px 2px}
+.tfbar button[data-zoom]{color:#fff;font-weight:800}
 #chart{height:520px;position:relative}.legend{padding:8px 12px;font-size:12px;color:var(--dim);border-top:1px solid var(--line)}
 .right{display:flex;flex-direction:column;gap:10px;min-width:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}

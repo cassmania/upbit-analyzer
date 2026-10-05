@@ -42,6 +42,8 @@
     <div class="tfbar" id="tfbar">
       <button data-tf="Min15">15m</button><button data-tf="Min60" class="act">1H</button><button data-tf="Hour4">4H</button>
       <button data-tf="Hour8">8H</button><button data-tf="Hour12">12H</button><button data-tf="Day1">1D</button><button data-tf="Week1">1W</button>
+      <span class="zoom-sep"></span>
+      <button data-zoom="in" title="확대">+</button><button data-zoom="out" title="축소">−</button><button data-zoom="reset" title="리셋">리셋</button>
     </div>
     <div id="chart"></div>
     <div class="legend" id="legend"></div>
@@ -60,6 +62,7 @@
       <label>레버리지 <select id="lev"><option>1</option><option>2</option><option>3</option><option selected>5</option><option>10</option><option>20</option><option>50</option><option>100</option><option>200</option><option>500</option></select>X <span class="dim" id="levNote">10X 초과는 모의 전용</span></label>
       <div class="seg" id="otype"><button data-t="1" class="act">지정가</button><button data-t="5">시장가</button></div>
       <label>가격 <input id="oPrice" inputmode="decimal" placeholder="시장가"></label>
+      <label>증거금(USDT) <input id="oMargin" inputmode="decimal" placeholder="0"></label>
       <label>수량(계약) <input id="oVol" inputmode="decimal" placeholder="0"></label>
       <input id="oPct" type="range" min="0" max="100" value="10" step="5" aria-label="증거금 비율">
       <div class="dim mono" id="oNotional">명목가 - USDT</div>

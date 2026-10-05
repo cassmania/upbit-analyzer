@@ -26,7 +26,7 @@ function renderSymbolSelect() {
     const q = ($("symQ").value || "").trim().toUpperCase();
     const match = x => !q || x.symbol.includes(q) || x.baseCoin.toUpperCase().includes(q);
     const favs = S.allSymbols.filter(x => isFav(x.symbol) && match(x));
-    const rest = S.allSymbols.filter(x => !isFav(x.symbol) && match(x));
+    const rest = S.allSymbols.filter(x => !isFav(x.symbol) && match(x)).slice(0, 200);
     $("symbol").innerHTML = favs.map(x => "<option value='" + esc(x.symbol) + "'>★ " + esc(x.baseCoin) + "/USDT</option>").join("") +
         rest.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
     if ([...$("symbol").options].some(o => o.value === S.symbol)) $("symbol").value = S.symbol;
@@ -195,9 +195,24 @@ async function refreshBook() {
     const bv = d.bids.reduce((s, x) => s + x[1], 0), av = d.asks.reduce((s, x) => s + x[1], 0);
     $("bidPct").style.width = (bv / Math.max(bv + av, 1e-9) * 100) + "%";
 }
+function ticketPx() {
+    const type = Number(document.querySelector("#otype .act").dataset.t);
+    return (type === 1 && Number($("oPrice").value) > 0) ? Number($("oPrice").value) : S.last;
+}
+function syncFromMargin() {
+    const lev = Number($("lev").value) || 1, px = ticketPx(), m = Number($("oMargin").value);
+    $("oVol").value = (px > 0 && m > 0) ? Math.max(0, Math.floor(m * lev / (px * S.contractSize))) : $("oVol").value;
+    updateNotional();
+}
+function syncFromVol() {
+    const lev = Number($("lev").value) || 1, px = ticketPx(), v = Number($("oVol").value);
+    if (px > 0 && v > 0) $("oMargin").value = Math.round(v * px * S.contractSize / lev * 100) / 100;
+    updateNotional();
+}
 function updateNotional() {
-    const v = Number($("oVol").value);
-    $("oNotional").textContent = "명목가 " + (v > 0 && S.last ? fmt.format(S.last * v * S.contractSize) : "-") + " USDT";
+    const v = Number($("oVol").value), px = ticketPx();
+    const n = (v > 0 && px > 0) ? v * px * S.contractSize : 0;
+    $("oNotional").textContent = "명목가 " + (n > 0 ? fmt.format(Math.round(n * 100) / 100) : "-") + " USDT";
 }
 
 // ---- AI (V4.1 파이프라인: TAEngine→LevelEngine→SignalEngine. 실패 시 내장 경량 규칙) ----
@@ -230,6 +245,21 @@ async function refreshAI() {
     } catch (e) {
         return legacyAI();
     }
+}
+function chartZoom(mode) {
+    if (!S.chart) return;
+    const ts = S.chart.timeScale();
+    if (mode === "reset") {
+        const n = S.candles ? S.candles.length : 0;
+        const count = Math.min(120, n || 120);
+        ts.setVisibleLogicalRange({ from: Math.max(0, n - count), to: Math.max(0, n - 1) });
+        return;
+    }
+    const r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    const f = mode === "in" ? 0.7 : 1.4;
+    const center = (r.from + r.to) / 2, half = Math.max(6, (r.to - r.from) / 2 * f);
+    ts.setVisibleLogicalRange({ from: center - half, to: center + half });
 }
 function markSignal(dir) {
     if (!S.series || !S.candles || !S.candles.length) return;
@@ -298,6 +328,9 @@ async function submitOrder(side, auto, opts) {
 }
 function paperFill(side, price, vol, lev, auto, opts) {
     opts = opts || {};
+    const sym = opts.symbol || S.symbol;
+    // 같은 코인은 롱·숏 통틀어 1포지션만 (역방향은 기존 청산 후 진입이라 통과)
+    if (S.paper.some(p => p.symbol === sym)) { $("oMsg").textContent = "같은 코인은 1포지션만 — 청산·역방향 이용"; return false; }
     const cs = Number(opts.cs) || S.contractSize;
     const calc = window.TerminalAI ? window.TerminalAI.openCalc(price, vol, lev, cs) : null;
     if (!calc) { $("oMsg").textContent = "수량·가격 오류"; return false; }
@@ -532,7 +565,7 @@ async function loadSymbols() {
     const d = await pub("detail", {});
     const list = d.filter(x => x.quoteCoin === "USDT" && x.state === 0)
         .sort((a, b) => ((b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT")) || String(a.symbol).localeCompare(String(b.symbol)));
-    S.allSymbols = list.slice(0, 400);
+    S.allSymbols = list;
     S.detailList = S.allSymbols;
     renderSymbolSelect();
     $("symbol").value = S.allSymbols.some(x => x.symbol === S.symbol) ? S.symbol : (S.allSymbols[0] ? S.allSymbols[0].symbol : S.symbol);
@@ -550,6 +583,8 @@ function applyDetail(info) {
 // ---- 이벤트 ----
 function bind() {
     $("tfbar").addEventListener("click", e => {
+        const z = e.target.closest("[data-zoom]");
+        if (z) { chartZoom(z.dataset.zoom); return; }
         const b = e.target.closest("[data-tf]"); if (!b) return;
         [...$("tfbar").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
         S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
@@ -585,15 +620,15 @@ function bind() {
         const b = e.target.closest("[data-t]"); if (!b) return;
         [...$("otype").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
     });
-    $("oVol").addEventListener("input", updateNotional);
+    $("oVol").addEventListener("input", syncFromVol);
+    $("oMargin").addEventListener("input", syncFromMargin);
+    $("oPrice").addEventListener("input", syncFromMargin);
     $("oPct").addEventListener("input", () => {
-        // 슬라이더: 모의 가용금의 %를 증거금으로 쓰는 수량으로 환산한다
-        const lev = Number($("lev").value) || 1;
-        const margin = S.bank * (Number($("oPct").value) / 100);
-        $("oVol").value = S.last > 0 ? Math.max(0, Math.floor(margin * lev / (S.last * S.contractSize))) : 0;
-        updateNotional();
+        // 슬라이더: 모의 지갑의 %를 증거금으로 넣고 수량 환산한다
+        $("oMargin").value = Math.round(S.bank * (Number($("oPct").value) / 100) * 100) / 100;
+        syncFromMargin();
     });
-    $("lev").addEventListener("change", () => $("oPct").dispatchEvent(new Event("input")));
+    $("lev").addEventListener("change", () => { syncFromMargin(); });
     $("buy").addEventListener("click", () => submitOrder(1, false));
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
