@@ -13,7 +13,7 @@
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=8" defer></script>
+<script src="terminal.js?v=9" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -104,6 +104,27 @@
     </div>
   </aside>
 
+  <section class="card ai-config" aria-label="AI 자동매매 세부 설정">
+    <div class="tabs"><b>⚙️🤖 AI 자동매매 세부 설정 (AI Config)</b><span class="sp"></span><button id="cfgFold" title="접기/펼치기">∧</button></div>
+    <div id="cfgBody">
+      <div class="cfg-grid">
+        <div>
+          <div class="cfg-row"><span>진입 증거금 비율 (Margin Allocation)</span><b class="mono"><span id="cfgMarginUsdt">-</span> USDT · <span id="cfgMarginPctView">1%</span></b></div>
+          <input id="cfgMargin" type="range" min="0.1" max="10" step="0.1" value="1" aria-label="진입 증거금 비율">
+          <div class="cfg-row"><span>실시간 연동 레버리지 배수</span><b><select id="cfgLev" aria-label="자동매매 레버리지"><option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option><option value="5">5x</option><option value="10">10x</option></select></b></div>
+          <div class="cfg-row"><span>동일 코인 중복 진입 방지 (Anti-Overlapping)</span><label class="switch"><input type="checkbox" id="cfgOverlap" checked><i></i></label></div>
+        </div>
+        <div>
+          <div class="cfg-sub">익절 타점 설정 (Take Profit)</div>
+          <label class="check"><input type="radio" name="tpMode" value="ai" checked> AI 정밀 자동 연산 (신호 목표가)</label>
+          <label class="check"><input type="radio" name="tpMode" value="manual"> 수동 지정: 진입가 대비 + <input id="cfgTpPct" inputmode="decimal" value="5" class="mini"> %</label>
+          <div class="cfg-sub">손절 타점 설정 (Stop Loss)</div>
+          <label class="check"><input type="radio" name="slMode" value="ai" checked> AI 정밀 자동 연산 (신호 손절가)</label>
+          <label class="check"><input type="radio" name="slMode" value="manual"> 수동 지정: 진입가 대비 − <input id="cfgSlPct" inputmode="decimal" value="3" class="mini"> %</label>
+        </div>
+      </div>
+    </div>
+  </section>
   <section class="card ai-wide" aria-label="AI 전략">
     <div class="ai-sig">
       <div class="tabs"><b>AI 전략</b><span id="aiSig" class="pill">관망</span></div>
@@ -125,7 +146,7 @@
         <label>최대포지션 <input id="cfgMaxPos" inputmode="numeric" value="5"></label>
         <label>쿨다운분 <input id="cfgCool" inputmode="numeric" value="5"></label>
       </div>
-      <div class="dim">스캔 레버리지는 주문창 값(10X 상한)을 따른다</div>
+      <div class="dim">자동매매 레버리지·TP/SL은 위 AI 설정값을 따른다</div>
     </div>
     <div class="ai-scan">
       <div class="twobtn">

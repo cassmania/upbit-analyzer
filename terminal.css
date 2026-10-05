@@ -53,6 +53,17 @@
 .feebox{margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:12px}
 .wrow{display:flex;justify-content:space-between;font-size:13px;padding:5px 0}
 .golink{display:inline-flex;align-items:center;justify-content:center;padding:10px;border-radius:8px;border:1px solid #29b6f6;color:#fff;text-decoration:none;font-weight:800}
+.ai-config{grid-column:1/-1;padding:16px 18px}
+.ai-config .tabs b{font-size:16px}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px}
+.cfg-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.cfg-row b{color:#29b6f6}
+.cfg-sub{font-weight:800;margin:12px 0 4px;font-size:14px}
+input.mini{width:76px;background:#0d1119;color:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
+#cfgMargin{width:100%;accent-color:#29b6f6}
+#cfgLev{background:#0d1119;color:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit}
+#cfgBody.collapsed{display:none}
+@media(max-width:1100px){.cfg-grid{grid-template-columns:1fr}}
 .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:6px 0}
 .seg button{flex:1;background:transparent;border:0;color:var(--dim);padding:7px;cursor:pointer}
 .seg button.act{background:var(--panel2);color:#fff}

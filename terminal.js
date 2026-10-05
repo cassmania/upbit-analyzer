@@ -9,7 +9,8 @@ const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
-    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5 }, fav: [], allSymbols: [], hist: [], ptab: "active" };
+    cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolMin: 5, autoLev: 3,
+        tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
     try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
     catch { S.fav = []; }
@@ -76,11 +77,40 @@ function loadCfg() {
         if (Number(c.ratioPct) > 0) S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number(c.ratioPct)));
         if (Number(c.maxPos) > 0) S.cfg.maxPos = Math.min(10, Math.max(1, Math.round(Number(c.maxPos))));
         if (Number(c.coolMin) > 0) S.cfg.coolMin = Math.min(60, Math.max(1, Math.round(Number(c.coolMin))));
+        if ([1, 2, 3, 5, 10].includes(Number(c.autoLev))) S.cfg.autoLev = Number(c.autoLev);
+        if (["ai", "manual"].includes(c.tpMode)) S.cfg.tpMode = c.tpMode;
+        if (Number(c.tpPct) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number(c.tpPct)));
+        if (["ai", "manual"].includes(c.slMode)) S.cfg.slMode = c.slMode;
+        if (Number(c.slPct) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number(c.slPct)));
+        if (typeof c.noOverlap === "boolean") S.cfg.noOverlap = c.noOverlap;
     } catch { /* 기본값 유지 */ }
     $("cfgNotional").value = S.cfg.notional;
     $("cfgRatio").value = S.cfg.ratioPct;
     $("cfgMaxPos").value = S.cfg.maxPos;
     $("cfgCool").value = S.cfg.coolMin;
+    $("cfgMargin").value = S.cfg.ratioPct;
+    $("cfgLev").value = String(S.cfg.autoLev);
+    document.querySelectorAll("input[name=tpMode]").forEach(r => r.checked = r.value === S.cfg.tpMode);
+    document.querySelectorAll("input[name=slMode]").forEach(r => r.checked = r.value === S.cfg.slMode);
+    $("cfgTpPct").value = S.cfg.tpPct;
+    $("cfgSlPct").value = S.cfg.slPct;
+    $("cfgOverlap").checked = S.cfg.noOverlap;
+    cfgPreview();
+}
+function cfgPreview() {
+    $("cfgMarginPctView").textContent = S.cfg.ratioPct + "%";
+    $("cfgMarginUsdt").textContent = fmt.format(Math.round(S.bank * S.cfg.ratioPct / 100));
+}
+// 자동매매 SL/TP: AI 모드는 신호값, 수동 모드는 진입가 대비 %
+function autoTPSL(entry, px, long, ps) {
+    const round = v => window.TerminalAI ? window.TerminalAI.roundToScale(v, ps) : v;
+    const tp = S.cfg.tpMode === "manual"
+        ? (long ? px * (1 + S.cfg.tpPct / 100) : px * (1 - S.cfg.tpPct / 100))
+        : entry.target1;
+    const sl = S.cfg.slMode === "manual"
+        ? (long ? px * (1 - S.cfg.slPct / 100) : px * (1 + S.cfg.slPct / 100))
+        : entry.stop;
+    return { sl: round(sl), tp: round(tp) };
 }
 function saveCfg() {
     try { localStorage.setItem("krta-cfg", JSON.stringify(S.cfg)); } catch { /* 무시 */ }
@@ -351,7 +381,9 @@ async function legacyAI() {
 
 // ---- 주문 ----
 async function submitOrder(side, auto, opts) {
-    const lev = Number($("lev").value), type = Number(document.querySelector("#otype .act").dataset.t);
+    // 자동매매는 AI 설정 레버리지, 수동은 주문창 값을 쓴다
+    const lev = auto ? (Number(opts && opts.lev) || S.cfg.autoLev) : (Number($("lev").value) || S.cfg.autoLev);
+    const type = Number(document.querySelector("#otype .act").dataset.t);
     let vol = Number($("oVol").value);
     if (auto && !(vol > 0)) {
         // 단일 자동매매는 설정 명목가로 고정한다
@@ -419,7 +451,7 @@ function paperFill(side, price, vol, lev, auto, opts) {
     opts = opts || {};
     const sym = opts.symbol || S.symbol;
     // 같은 코인은 롱·숏 통틀어 1포지션만 (역방향은 기존 청산 후 진입이라 통과)
-    if (S.paper.some(p => p.symbol === sym)) { $("oMsg").textContent = "같은 코인은 1포지션만 — 청산·역방향 이용"; return false; }
+    if (S.cfg.noOverlap && S.paper.some(p => p.symbol === sym)) { $("oMsg").textContent = "같은 코인은 1포지션만 — 청산·역방향 이용"; return false; }
     const cs = Number(opts.cs) || S.contractSize;
     const calc = window.TerminalAI ? window.TerminalAI.openCalc(price, vol, lev, cs) : null;
     if (!calc) { $("oMsg").textContent = "수량·가격 오류"; return false; }
@@ -457,6 +489,7 @@ function renderBank() {
         " (" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + ")";
     $("paperBank").textContent = txt;
     if ($("paperBankTop")) $("paperBankTop").textContent = txt;
+    cfgPreview();
     if ($("wState").textContent !== "연결됨") {
         $("wUnreal").textContent = (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + " USDT";
         $("wUnreal").className = "mono " + (unreal >= 0 ? "up" : "down");
@@ -630,14 +663,15 @@ async function scanTick() {
         if (S.paper.some(p => p.symbol === item.symbol)) return; // 종목당 1포지션
         if (S.paper.length >= S.cfg.maxPos) return;
         if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolMin * 60 * 1000) return;
-        const lev = Math.min(Number($("lev").value) || 5, 10); // 스캔 자동은 10X 상한
+        const lev = Math.min(S.cfg.autoLev, 10); // 스캔 자동은 10X 상한
         const px = S.pxMap[item.symbol] || item.lastPrice;
         const vol = Math.floor((S.bank * (S.cfg.ratioPct / 100)) * lev / (px * item.contractSize));
         if (!(vol >= 1)) return;
-        const round = v => window.TerminalAI.roundToScale(v, item.priceScale);
+        const long = r.entry.side === "LONG";
+        const tpsl = autoTPSL(r.entry, px, long, item.priceScale);
         S.scan.cool[item.symbol] = Date.now();
-        const ok = paperFill(r.entry.side === "LONG" ? 1 : 3, px, vol, lev, true,
-            { symbol: item.symbol, cs: item.contractSize, sl: round(r.entry.stop), tp: round(r.entry.target1) });
+        const ok = paperFill(long ? 1 : 3, px, vol, lev, true,
+            { symbol: item.symbol, cs: item.contractSize, sl: tpsl.sl, tp: tpsl.tp });
         if (ok) log("스캔 진입 " + item.symbol + " " + r.entry.side + " " + vol + "계약 " + lev + "X");
     } catch (e) { S.scan.results[item.symbol] = { dir: "오류", reason: e.message, at: Date.now() }; renderScan(); }
 }
@@ -658,9 +692,9 @@ async function autoTick() {
     const liveLoop = S.autoLive && S.armed && S.tradeEnabled;
     S.lastAuto = Date.now();
     const side = sig.dir === "LONG" ? 1 : 3;
-    const round = v => window.TerminalAI ? window.TerminalAI.roundToScale(v, S.priceScale) : v;
+    const tpsl = autoTPSL(sig.entry, S.last, sig.dir === "LONG", S.priceScale);
     $("oVol").value = "";
-    await submitOrder(side, true, { sl: round(sig.entry.stop), tp: round(sig.entry.target1) });
+    await submitOrder(side, true, { sl: tpsl.sl, tp: tpsl.tp, lev: S.cfg.autoLev });
     log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매]" : " [모의]"));
 }
 
@@ -756,6 +790,38 @@ function bind() {
     $("mCancel").addEventListener("click", closeModal);
     $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
     $("clearLog").addEventListener("click", () => $("log").innerHTML = "");
+    $("cfgFold").addEventListener("click", () => {
+        const b = $("cfgBody").classList.toggle("collapsed");
+        $("cfgFold").textContent = b ? "∨" : "∧";
+    });
+    $("cfgMargin").addEventListener("input", () => {
+        S.cfg.ratioPct = Math.min(10, Math.max(0.1, Number($("cfgMargin").value) || 1));
+        $("cfgRatio").value = S.cfg.ratioPct;
+        saveCfg(); cfgPreview();
+    });
+    $("cfgLev").addEventListener("change", () => {
+        S.cfg.autoLev = [1, 2, 3, 5, 10].includes(Number($("cfgLev").value)) ? Number($("cfgLev").value) : 3;
+        saveCfg();
+        log("자동매매 레버리지 " + S.cfg.autoLev + "x");
+    });
+    document.querySelectorAll("input[name=tpMode]").forEach(r => r.addEventListener("change", () => {
+        S.cfg.tpMode = document.querySelector("input[name=tpMode]:checked").value; saveCfg();
+    }));
+    document.querySelectorAll("input[name=slMode]").forEach(r => r.addEventListener("change", () => {
+        S.cfg.slMode = document.querySelector("input[name=slMode]:checked").value; saveCfg();
+    }));
+    $("cfgTpPct").addEventListener("change", () => {
+        if (Number($("cfgTpPct").value) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number($("cfgTpPct").value)));
+        saveCfg(); loadCfg();
+    });
+    $("cfgSlPct").addEventListener("change", () => {
+        if (Number($("cfgSlPct").value) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number($("cfgSlPct").value)));
+        saveCfg(); loadCfg();
+    });
+    $("cfgOverlap").addEventListener("change", () => {
+        S.cfg.noOverlap = $("cfgOverlap").checked; saveCfg();
+        log("중복 진입 방지 " + (S.cfg.noOverlap ? "ON" : "OFF"));
+    });
     ["cfgNotional", "cfgRatio", "cfgMaxPos", "cfgCool"].forEach(id => {
         $(id).addEventListener("change", () => {
             const v = Number($(id).value);
