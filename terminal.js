@@ -59,6 +59,7 @@ function selectSymbol(sym) {
     $("symQ").value = "";
     $("symResults").hidden = true;
     renderFavBtn();
+    markFocusedPane();
     applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
     loadChart().catch(e => log("차트 " + e.message, "down"));
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
@@ -335,8 +336,8 @@ function drawSR(series, store, candles) {
     (store.lines || []).forEach(l => { try { series.removePriceLine(l); } catch {} });
     store.lines = [];
     const lv = swingLevels(candles);
-    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "R" + (i + 1) })));
-    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "S" + (i + 1) })));
+    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "R" + (i + 1) })));
+    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "S" + (i + 1) })));
 }
 function defaultPaneSymbols() {
     const have = s => S.allSymbols.some(x => x.symbol === s);
@@ -387,6 +388,16 @@ function ensurePane(i) {
     new ResizeObserver(() => P.chart.resize(box.clientWidth, box.clientHeight)).observe(box);
     wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     wrap.querySelector(".ptf").addEventListener("change", e => { S.panes[i].tf = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
+    wrap.addEventListener("click", e => {
+        if (e.target.closest("select")) return;
+        if (S.panes[i] && S.panes[i].symbol !== S.symbol) selectSymbol(S.panes[i].symbol);
+    });
+}
+function markFocusedPane() {
+    document.querySelectorAll("#charts .cpane").forEach((el, idx) => {
+        const sym = idx === 0 ? S.symbol : (S.panes[idx - 1] && S.panes[idx - 1].symbol);
+        el.classList.toggle("focused", sym === S.symbol);
+    });
 }
 function fillPaneHead(i) {
     const P = S.panes[i], wrap = $("cpane" + (i + 1));
@@ -1228,7 +1239,7 @@ async function boot() {
     catch (e) { log("부팅 실패(chart): " + e.message, "down"); }
     try { sanitizePaper(); }
     catch (e) { log("부팅 실패(포지션 보정): " + e.message, "down"); }
-    try { setLayout(S.layout); }
+    try { setLayout(S.layout); markFocusedPane(); }
     catch (e) { log("부팅 실패(서브차트): " + e.message, "down"); }
     await refreshTop().catch(() => {});
     if (!S.last) $("net").textContent = "시세 실패 — 클릭 재시도";
