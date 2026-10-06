@@ -207,10 +207,10 @@ function loadUi() {
 }
 
 const klineCache = new Map(), klineFlight = new Map();
-async function pub(path, params, tries) {
+async function pub(path, params, tries, fresh) {
     tries = tries || 3;
     const key = path + "?" + new URLSearchParams(params).toString();
-    if (path === "kline") {
+    if (path === "kline" && !fresh) {
         const hit = klineCache.get(key);
         if (hit && Date.now() - hit.at < 20000) return hit.data;
         if (klineFlight.has(key)) return klineFlight.get(key);
@@ -314,12 +314,12 @@ function resample12h(c) {
     }
     return out;
 }
-async function loadChart() {
+async function loadChart(fresh) {
     S.chartErr = false;
     try {
     ensureChart();
     const iv = S.tf === "Hour12" ? "Min60" : S.tf;
-    const d = await pub("kline", { symbol: S.symbol, interval: iv });
+    const d = await pub("kline", { symbol: S.symbol, interval: iv }, undefined, fresh);
     let candles = d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
     if (S.tf === "Hour12") candles = resample12h(candles);
     candles = candles.slice(-300);
@@ -1107,7 +1107,7 @@ function bind() {
         if (l) { setLayout(Number(l.dataset.layout)); return; }
         const b = e.target.closest("[data-tf]"); if (!b) return;
         [...$("tfbar").querySelectorAll("[data-tf]")].forEach(x => x.classList.remove("act")); b.classList.add("act");
-        S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
+        S.tf = b.dataset.tf; loadChart(true).catch(e => log("차트 " + e.message, "down"));
         queueSaveUi();
     });
     $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
@@ -1117,7 +1117,7 @@ function bind() {
         // 드래그(팬·줌)는 무시하고 가벼운 클릭만 새로고침한다
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
         log("메인 차트 새로고침: " + S.symbol.replace("_USDT", "/USDT"));
-        loadChart().catch(err => log("차트 " + err.message, "down"));
+        loadChart(true).catch(err => log("차트 " + err.message, "down"));
     });
     $("symQ").addEventListener("input", renderSymbolSelect);
     $("symQ").addEventListener("keydown", e => {
