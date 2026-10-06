@@ -58,6 +58,7 @@ function renderSymbolSelect() {
 }
 function selectSymbol(sym) {
     S.symbol = sym;
+    log("차트 전환: " + sym.replace("_USDT", "/USDT"));
     renderSymbolSelect();
     $("symQ").value = "";
     $("symResults").hidden = true;
@@ -369,8 +370,11 @@ function drawSR(series, store, candles) {
 function defaultPaneSymbols() {
     const have = s => S.allSymbols.some(x => x.symbol === s);
     const out = [];
-    (S.fav || []).forEach(s => { if (have(s) && out.length < 7) out.push(s); });
-    ["ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "TRX_USDT"].forEach(s => { if (have(s) && out.length < 7 && !out.includes(s)) out.push(s); });
+    (S.fav || []).forEach(s => { if (have(s) && out.length < 7 && s !== S.symbol && !out.includes(s)) out.push(s); });
+    ["ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "TRX_USDT"].forEach(s => { if (have(s) && out.length < 7 && !out.includes(s) && s !== S.symbol) out.push(s); });
+    const rest = S.allSymbols.map(x => x.symbol).filter(s => s !== S.symbol && !out.includes(s));
+    let k = 0;
+    while (out.length < 7 && k < rest.length) out.push(rest[k++]);
     while (out.length < 7) out.push(S.symbol);
     return out;
 }
@@ -418,6 +422,7 @@ function ensurePane(i) {
     wrap.addEventListener("click", e => {
         if (e.target.closest("select")) return;
         if (S.panes[i] && S.panes[i].symbol !== S.symbol) selectSymbol(S.panes[i].symbol);
+        else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
     });
 }
 function markFocusedPane() {
