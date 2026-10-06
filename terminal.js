@@ -8,7 +8,7 @@ const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
 const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
-    bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
+    bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
     layout: 1, panes: [], mainPL: { lines: [] },
     cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
         tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
@@ -652,7 +652,7 @@ function paperFill(side, price, vol, lev, auto, opts) {
     const sym = opts.symbol || S.symbol;
     // 같은 코인은 롱·숏 통틀어 1포지션만 (역방향은 기존 청산 후 진입이라 통과)
     if (S.cfg.noOverlap && S.paper.some(p => p.symbol === sym)) { $("oMsg").textContent = "같은 코인은 1포지션만 — 청산·역방향 이용"; return false; }
-    const cs = Number(opts.cs) || S.contractSize;
+    const cs = Number(opts.cs) || S.csMap[sym] || (sym === S.symbol ? S.contractSize : 0.0001);
     const calc = window.TerminalAI ? window.TerminalAI.openCalc(price, vol, lev, cs) : null;
     if (!calc) { $("oMsg").textContent = "수량·가격 오류"; return false; }
     const need = calc.margin + calc.feeIn;
@@ -664,6 +664,19 @@ function paperFill(side, price, vol, lev, auto, opts) {
     savePaper();
     renderPaper();
     return true;
+}
+// 저장된 포지션의 계약단위·증거금·청산가를 해당 코인 기준으로 재계산 (구 저장분 자가치유)
+function sanitizePaper() {
+    let fixed = 0;
+    S.paper.forEach(p => {
+        const cs = S.csMap[p.symbol] || Number(p.cs) || 0.0001;
+        const margin = Math.round(p.price * p.vol * cs / Math.max(1, p.lev) * 100) / 100;
+        const ratio = margin / Math.max(p.price * p.vol * cs, 1e-9);
+        const liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
+        if (p.cs !== cs || Math.abs((p.margin || 0) - margin) > 0.005 || Math.abs((p.liq || 0) - liq) > 1e-9) fixed++;
+        p.cs = cs; p.margin = margin; p.liq = Math.round(liq * 100) / 100;
+    });
+    if (fixed) { savePaper(); log("모의 포지션 " + fixed + "건 증거금·청산가 재계산"); }
 }
 function savePaper() {
     try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50)));
@@ -906,6 +919,8 @@ async function loadSymbols() {
         .sort((a, b) => ((b.symbol === "BTC_USDT") - (a.symbol === "BTC_USDT")) || String(a.symbol).localeCompare(String(b.symbol)));
     S.allSymbols = list;
     S.detailList = S.allSymbols;
+    S.csMap = {};
+    list.forEach(x => { if (x && x.symbol && Number(x.contractSize) > 0) S.csMap[x.symbol] = Number(x.contractSize); });
     renderSymbolSelect();
     $("symbol").value = S.allSymbols.some(x => x.symbol === S.symbol) ? S.symbol : (S.allSymbols[0] ? S.allSymbols[0].symbol : S.symbol);
     S.symbol = $("symbol").value;
@@ -1211,6 +1226,8 @@ async function boot() {
     }
     try { await loadChart(); }
     catch (e) { log("부팅 실패(chart): " + e.message, "down"); }
+    try { sanitizePaper(); }
+    catch (e) { log("부팅 실패(포지션 보정): " + e.message, "down"); }
     try { setLayout(S.layout); }
     catch (e) { log("부팅 실패(서브차트): " + e.message, "down"); }
     await refreshTop().catch(() => {});
