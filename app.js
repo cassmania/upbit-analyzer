@@ -1199,6 +1199,11 @@
         });
         var lv = LevelEngine.analyze(conv, price, { limit: 7 });
         state.levels = lv;
+        // 차트·표에 그릴 레벨은 선택 봉 기준. 실패하면 전체 합산으로 폴백한다.
+        var clv = chartLevelsFor(state.chartTf);
+        if (clv.error) clv = lv;
+        state.chartLevels = clv;
+        state.chartLevelsTf = clv === lv ? null : state.chartTf;
 
         // 타점 산출. 지표·레벨이 다 나온 뒤라야 계산할 수 있다.
         var sig = typeof SignalEngine !== "undefined"
@@ -1221,12 +1226,12 @@
             replaceSection("sec-v41", renderV41Panel(market, results, v41, lv, sig, fut, t, dp));
             replaceSection("sec-dominance", renderDominance(usdtDominance));
             replaceSection("sec-summary", renderSummary(results));
-            replaceSection("sec-levels", renderLevels(lv, dp));
+            replaceSection("sec-levels", renderLevels(state.chartLevels, dp, state.chartLevelsTf));
             replaceSection("sec-signal", renderSignal(sig, dp));
             replaceSection("sec-detail", renderDetail(results, dp));
             replaceSection("sec-scenario", renderScenario(lv, dp));
-            if (!updateChartData(data.tf[state.chartTf], lv, dp)) {
-                buildChart(data.tf[state.chartTf], lv, dp);
+            if (!updateChartData(data.tf[state.chartTf], state.chartLevels, dp)) {
+                buildChart(data.tf[state.chartTf], state.chartLevels, dp);
             }
         } else {
             var html = [];
@@ -1235,12 +1240,12 @@
             html.push('<div id="sec-dominance">' + renderDominance(usdtDominance) + "</div>");
             html.push(renderChartSection(sym));
             html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
-            html.push('<div id="sec-levels">' + renderLevels(lv, dp) + "</div>");
+            html.push('<div id="sec-levels">' + renderLevels(state.chartLevels, dp, state.chartLevelsTf) + "</div>");
             html.push(renderSignal(sig, dp));
             html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
             html.push('<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>");
             $("out").innerHTML = html.join("");
-            buildChart(data.tf[state.chartTf], lv, dp);
+            buildChart(data.tf[state.chartTf], state.chartLevels, dp);
             state.renderedFor = market;
         }
         $("updatedAt") && ($("updatedAt").textContent = new Date().toLocaleTimeString("ko-KR"));
@@ -2051,7 +2056,19 @@
             + "</tr></thead><tbody>" + rows + "</tbody></table></div></div></section>";
     }
 
-    function renderLevels(lv, dp) {
+    /** 차트에 그릴 지지·저항은 선택 봉 기준. 전체 합산 lv는 신호·브리핑용으로 유지한다. */
+    function tfLabel(key) {
+        var t = TFS.filter(function (x) { return x.key === key; })[0];
+        return t ? t.label : key;
+    }
+    function chartLevelsFor(tf) {
+        var c = (state.analysisTfCandles || {})[tf];
+        if (!c || c.length < 20 || !isFinite(state.lastPrice)) return { error: "선택 봉 표본 부족" };
+        var one = {};
+        one[tf] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
+        return LevelEngine.analyze(one, state.lastPrice, { limit: 7 });
+    }
+    function renderLevels(lv, dp, tfKey) {
         if (lv.error) {
             return '<section><div class="sec-head"><h2>지지 · 저항</h2></div><div class="err">' + esc(lv.error) + "</div></section>";
         }
@@ -2072,7 +2089,8 @@
               + ((state.lastPrice - lv.마지노선.price) / state.lastPrice * 100).toFixed(1) + "% 아래)</span>" : "—";
 
         return '<section><div class="sec-head"><h2>지지 · 저항</h2>'
-            + '<span class="tag">같은 가격을 지목한 봉이 많을수록 두꺼운 벽</span></div>'
+            + '<span class="tag">같은 가격을 지목한 봉이 많을수록 두꺼운 벽</span>'
+            + (tfKey ? '<span class="tag">' + esc(tfLabel(tfKey)) + ' 기준 · 전체 합산은 브리핑 참조</span>' : "") + "</div>"
             + '<div class="grid2">'
             + '<div class="card"><div class="scroll"><table><thead><tr><th>저항 (위로)</th><th>거리</th><th>강도 / 근거</th></tr></thead>'
             + "<tbody>" + rows(lv.resistance, "down") + "</tbody></table></div></div>"
@@ -2506,8 +2524,13 @@
                 var lbl = (TFS.filter(function (x) { return x.key === tf; })[0] || {}).label || "";
                 head.textContent = coinOf(state.sel) + " " + lbl + " 차트";
             }
+            var clv2 = chartLevelsFor(tf);
+            if (clv2.error) clv2 = state.levels;
+            state.chartLevels = clv2;
+            state.chartLevelsTf = clv2 === state.levels ? null : tf;
+            replaceSection("sec-levels", renderLevels(state.chartLevels, state.dp, state.chartLevelsTf));
             // 봉이 바뀌면 축 범위가 달라지므로 fitContent가 필요하다. 재생성이 맞다.
-            buildChart(state.tfCandles[tf], state.levels, state.dp);
+            buildChart(state.tfCandles[tf], state.chartLevels, state.dp);
         }
     }
 
