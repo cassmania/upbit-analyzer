@@ -63,6 +63,7 @@ function selectSymbol(sym) {
     $("symResults").hidden = true;
     renderFavBtn();
     markFocusedPane();
+    $("mainsym").textContent = S.symbol.replace("_USDT", "/USDT") + " · 로딩 중";
     applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
     loadChart().catch(e => log("차트 " + e.message, "down"));
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
@@ -366,7 +367,7 @@ function setLayout(n) {
             if (!el) ensurePane(i);
             else el.hidden = false;
             fillPaneHead(i);
-            loadPane(i).catch(e => log("서브차트 " + (i + 2) + " " + e.message, "down"));
+            setTimeout(((j) => () => loadPane(j).catch(e => log("서브차트 " + (j + 2) + " " + e.message, "down")))(i), i * 500);
         } else if (el) el.hidden = true;
     }
     queueSaveUi();
@@ -429,7 +430,9 @@ async function loadPane(i) {
 }
 function refreshAllCharts() {
     loadChart().catch(() => {});
-    for (let i = 0; i < S.layout - 1; i++) if (S.panes[i] && S.panes[i].chart) loadPane(i).catch(() => {});
+    for (let i = 0; i < S.layout - 1; i++) {
+        if (S.panes[i] && S.panes[i].chart) setTimeout(((j) => () => loadPane(j).catch(() => {}))(i), 800 + i * 600);
+    }
 }
 
 // ---- 티커·오더북 ----
