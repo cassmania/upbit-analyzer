@@ -339,8 +339,8 @@ function drawSR(series, store, candles) {
     (store.lines || []).forEach(l => { try { series.removePriceLine(l); } catch {} });
     store.lines = [];
     const lv = swingLevels(candles);
-    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "R" + (i + 1) })));
-    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "S" + (i + 1) })));
+    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "저항" + (i + 1) })));
+    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "지지" + (i + 1) })));
 }
 function defaultPaneSymbols() {
     const have = s => S.allSymbols.some(x => x.symbol === s);
@@ -378,7 +378,7 @@ function ensurePane(i) {
         "<select class='ptf' aria-label='차트" + (i + 2) + " 봉'>" +
         TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select></div>" +
         "<div class='pchart' id='pchart" + (i + 1) + "'></div>" +
-        "<div class='sr-legend'><span class='rr'>— 저항 R1~3</span><span class='ss'>— 지지 S1~3</span></div>";
+        "<div class='sr-legend'><span class='rr'>— 저항1~3</span><span class='ss'>— 지지1~3</span></div>";
     $("charts").appendChild(wrap);
     const P = S.panes[i], p = chartPalette();
     P.chart = LightweightCharts.createChart(wrap.querySelector(".pchart"), { layout: { background: { color: p.bg }, textColor: p.text },
@@ -672,7 +672,7 @@ function paperFill(side, price, vol, lev, auto, opts) {
     const need = calc.margin + calc.feeIn;
     if (need > S.bank) { $("oMsg").textContent = "모의 증거금 부족(필요 $" + fmt.format(Math.round(need)) + ")"; return false; }
     S.bank = Math.round((S.bank - need) * 100) / 100;
-    S.paper.push({ symbol: opts.symbol || S.symbol, side, price, vol, lev, cs, margin: calc.margin, feeIn: calc.feeIn,
+    S.paper.push({ symbol: opts.symbol || S.symbol, side, price, vol, lev, cs, margin: calc.margin, feeIn: calc.feeIn, added: 0,
         liq: side === 1 ? calc.liqLong : calc.liqShort,
         sl: opts.sl || null, tp: opts.tp || null, at: Date.now(), auto: !!auto });
     savePaper();
@@ -684,7 +684,8 @@ function sanitizePaper() {
     let fixed = 0;
     S.paper.forEach(p => {
         const cs = S.csMap[p.symbol] || Number(p.cs) || 0.0001;
-        const margin = Math.round(p.price * p.vol * cs / Math.max(1, p.lev) * 100) / 100;
+        const base = Math.round(p.price * p.vol * cs / Math.max(1, p.lev) * 100) / 100;
+        const margin = Math.round((base + (Number(p.added) || 0)) * 100) / 100;
         const ratio = margin / Math.max(p.price * p.vol * cs, 1e-9);
         const liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
         if (p.cs !== cs || Math.abs((p.margin || 0) - margin) > 0.005 || Math.abs((p.liq || 0) - liq) > 1e-9) fixed++;
@@ -849,6 +850,7 @@ async function scanTick() {
                     if (add <= S.bank && add > 0) {
                         S.bank = Math.round((S.bank - add) * 100) / 100;
                         p.margin = Math.round((p.margin + add) * 100) / 100;
+                        p.added = Math.round(((p.added || 0) + add) * 100) / 100;
                         const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
                         p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
                         p.guardAt = Date.now();
@@ -1017,7 +1019,7 @@ function bind() {
     $("buy").addEventListener("click", () => submitOrder(1, false));
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
-    $("refreshPaper").addEventListener("click", () => { renderPaper(); });
+    $("refreshPaper").addEventListener("click", () => { try { sanitizePaper(); } catch {} renderPaper(); });
     $("mOk").addEventListener("click", () => { const cb = modalCb, v = $("mInput").value; closeModal(); if (cb) cb(v); });
     $("mCancel").addEventListener("click", closeModal);
     $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
@@ -1155,6 +1157,7 @@ function bindCfgMargin() {
                     if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return; }
                     S.bank = Math.round((S.bank - add) * 100) / 100;
                     p.margin = Math.round((p.margin + add) * 100) / 100;
+                    p.added = Math.round(((p.added || 0) + add) * 100) / 100;
                     const ratio = p.margin / (p.price * p.vol * (p.cs || S.contractSize));
                     p.liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
                     savePaper(); renderPaper();
