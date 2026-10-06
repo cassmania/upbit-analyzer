@@ -105,9 +105,28 @@
         return { pnl: pnl, feeOut: feeOut, credit: pos.margin + pnl - feeOut };
     }
 
-    var TerminalAI = { VERSION: "1.2.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
+    // 실시간 체결가로 형성봉 갱신. 윈도우를 넘어서면 새 봉을 연다. candles 제자리 수정 + rolled 반환
+    var TF_SEC = { Min15: 900, Min60: 3600, Hour4: 14400, Hour8: 28800, Hour12: 43200, Day1: 86400, Week1: 604800 };
+    function nextCandle(candles, px, tSec, tf) {
+        var win = TF_SEC[tf] || 3600;
+        if (!Array.isArray(candles) || !candles.length || !(px > 0) || !(tSec > 0)) return { rolled: false };
+        var last = candles[candles.length - 1];
+        var w0 = Math.floor(tSec / win) * win;
+        var lastW0 = Math.floor(last.time / win) * win;
+        if (w0 > lastW0) {
+            candles.push({ time: w0, open: px, high: px, low: px, close: px, vol: 0 });
+            if (candles.length > 400) candles.splice(0, candles.length - 400);
+            return { rolled: true };
+        }
+        if (px > last.high) last.high = px;
+        if (px < last.low) last.low = px;
+        last.close = px;
+        return { rolled: false };
+    }
+
+    var TerminalAI = { VERSION: "1.3.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
         resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, pickTopSymbols: pickTopSymbols,
-        openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE };
+        openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE, nextCandle: nextCandle, TF_SEC: TF_SEC };
     global.TerminalAI = TerminalAI;
     if (typeof module !== "undefined" && module.exports) module.exports = TerminalAI;
 })(typeof window !== "undefined" ? window : globalThis);

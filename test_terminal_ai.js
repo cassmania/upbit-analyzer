@@ -83,4 +83,19 @@ assert.equal(AI.openCalc(86500, 0, 5, 0.0001), null);
 const st = AI.settleCalc({ price: 86500, vol: 10, cs: 0.0001, side: 1, margin: oc.margin, feeIn: oc.feeIn }, 87500);
 assert.ok(Math.abs(st.pnl - 1.0) < 1e-9); // (87500-86500)*10*0.0001
 assert.ok(Math.abs(st.credit - (oc.margin + 1.0 - 87500 * 10 * 0.0001 * 0.0004)) < 1e-6);
+
+// 형성봉 갱신: 같은 윈도우면 h/l/c만, 넘어서면 새 봉
+let cl = [{ time: 3600, open: 100, high: 101, low: 99, close: 100, vol: 0 }];
+let r1 = AI.nextCandle(cl, 102, 3650, "Min60");
+assert.equal(r1.rolled, false);
+assert.equal(cl.length, 1);
+assert.equal(cl[0].high, 102);
+assert.equal(cl[0].close, 102);
+let r2 = AI.nextCandle(cl, 103, 7200, "Min60");
+assert.equal(r2.rolled, true);
+assert.equal(cl.length, 2);
+assert.equal(cl[1].time, 7200);
+assert.deepEqual([cl[1].open, cl[1].high, cl[1].low, cl[1].close], [103, 103, 103, 103]);
+assert.deepEqual(AI.nextCandle([], 1, 2, "Min60"), { rolled: false });
+assert.deepEqual(AI.nextCandle(cl, 0, 7300, "Min60"), { rolled: false });
 console.log("terminal-ai: ALL PASS");

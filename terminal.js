@@ -2,7 +2,7 @@
    키 원문은 브라우저에 보관하지 않고 입력 즉시 서버로 전송 후 필드를 비운다. */
 (function () {
 "use strict";
-const JSVER = "v22"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면 이 버전으로 캐시 확인
+const JSVER = "v23"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면 이 버전으로 캐시 확인
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
@@ -67,6 +67,7 @@ function selectSymbol(sym) {
     markFocusedPane();
     $("mainsym").textContent = S.symbol.replace("_USDT", "/USDT") + " · 로딩 중";
     applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+    wsSubDeal(S.symbol);
     loadChart().catch(e => log("차트 " + e.message, "down"));
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
     queueSaveUi();
@@ -467,6 +468,8 @@ function refreshAllCharts() {
 
 // ---- 티커·오더북 ----
 async function refreshTop() {
+    if (S.ws.ok && Date.now() - (S.ws.lastRest || 0) < 30000) return; // WS 실시간 중이면 30초마다만 전체 보정
+    S.ws.lastRest = Date.now();
     const all = await pub("ticker", {});
     const t = all.find(x => x.symbol === S.symbol);
     if (!t) return;
@@ -495,7 +498,7 @@ async function refreshTop() {
 }
 // 모의 보유종목 가격 실시간화: pxMap만 갱신하고 화면을 안 그리면 숫자가 멈춰 보인다
 async function refreshPaperPrices() {
-    if (!S.paper.length) return;
+    if (!S.paper.length || S.ws.ok) return; // WS가 pxMap·화면을 이미 갱신한다
     try {
         const all = await pub("ticker", {});
         all.forEach(t => { if (t.symbol && Number(t.lastPrice) > 0) S.pxMap[t.symbol] = Number(t.lastPrice); });
@@ -512,6 +515,115 @@ async function refreshBook() {
     $("spread").textContent = "스프레드 " + fmt.format(a1 - b1);
     const bv = d.bids.reduce((s, x) => s + x[1], 0), av = d.asks.reduce((s, x) => s + x[1], 0);
     $("bidPct").style.width = (bv / Math.max(bv + av, 1e-9) * 100) + "%";
+}
+// ---- 실시간 WS (MEXC 선물 공개 스트림, 로그인 불필요·폴링 폴백 유지) ----
+S.ws = { sock: null, ok: false, retry: 0, dealSym: null, lastRest: 0, maAt: 0 };
+function wsSend(o) { try { if (S.ws.sock && S.ws.sock.readyState === 1) S.ws.sock.send(JSON.stringify(o)); } catch {} }
+function wsSubDeal(sym) {
+    if (S.ws.dealSym && S.ws.dealSym !== sym) wsSend({ method: "unsub.deal", param: { symbol: S.ws.dealSym }, gzip: false });
+    S.ws.dealSym = sym;
+    wsSend({ method: "sub.deal", param: { symbol: sym }, gzip: false });
+}
+function wsConnect() {
+    if (typeof WebSocket === "undefined") return;
+    if (S.ws.sock && (S.ws.sock.readyState === 0 || S.ws.sock.readyState === 1)) return;
+    let sock;
+    try { sock = new WebSocket("wss://contract.mexc.com/edge"); }
+    catch { wsSchedule(); return; }
+    S.ws.sock = sock;
+    sock.onopen = () => {
+        S.ws.ok = true; S.ws.retry = 0;
+        $("net").textContent = "WS 실시간";
+        wsSend({ method: "sub.tickers", param: {}, gzip: false });
+        if (S.symbol) wsSubDeal(S.symbol);
+    };
+    sock.onmessage = ev => { wsOnMsg(ev.data).catch(() => {}); };
+    const down = () => {
+        if (S.ws.sock !== sock) return;
+        S.ws.ok = false; S.ws.dealSym = null;
+        if ($("net").textContent === "WS 실시간") $("net").textContent = "실시간";
+        wsSchedule();
+    };
+    sock.onerror = down; sock.onclose = down;
+}
+function wsSchedule() {
+    S.ws.retry = Math.min((S.ws.retry || 0) + 1, 5);
+    setTimeout(wsConnect, [0, 2000, 5000, 10000, 20000, 30000][S.ws.retry]);
+}
+async function wsText(raw) {
+    if (typeof raw === "string") return raw;
+    try {
+        const blob = raw instanceof Blob ? raw : new Blob([raw]);
+        if (typeof DecompressionStream !== "undefined") {
+            try {
+                return await new Response(blob.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+            } catch {}
+        }
+        return await blob.text();
+    } catch { return ""; }
+}
+async function wsOnMsg(raw) {
+    const txt = await wsText(raw);
+    if (!txt) return;
+    let m;
+    try { m = JSON.parse(txt); } catch { return; }
+    if (!m || !m.channel) return;
+    if (m.channel === "push.tickers" && Array.isArray(m.data)) {
+        let mine = null;
+        m.data.forEach(t => {
+            if (!t || !t.symbol || !(Number(t.lastPrice) > 0)) return;
+            S.pxMap[t.symbol] = Number(t.lastPrice);
+            if (t.symbol === S.symbol) mine = t;
+        });
+        if (mine) wsTopTick(mine);
+        if (S.paper.length) { renderPaper(); renderBank(); }
+    } else if (m.channel === "push.deal" && m.symbol === S.symbol && Array.isArray(m.data) && m.data.length) {
+        const last = m.data[m.data.length - 1];
+        if (last && Number(last.p) > 0) wsTradeTick(Number(last.p), Number(last.t));
+    }
+}
+function wsTopTick(t) {
+    S.last = Number(t.lastPrice);
+    S.pxMap[S.symbol] = S.last;
+    $("tLast").textContent = fmt.format(S.last);
+    const chg = Number(t.riseFallRate) * 100;
+    $("tChg").textContent = (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
+    $("tChg").className = "mono " + (chg >= 0 ? "up" : "down");
+    $("tLast").className = "mono " + (chg >= 0 ? "up" : "down");
+    if (t.indexPrice) $("tIndex").textContent = fmt.format(t.indexPrice);
+    if (t.fairPrice) $("tFair").textContent = fmt.format(t.fairPrice);
+    if (t.high24Price) $("tHigh").textContent = fmt.format(t.high24Price);
+    if (t.lower24Price) $("tLow").textContent = fmt.format(t.lower24Price);
+    if (t.volume24) $("tVol").textContent = Math.round(Number(t.volume24)).toLocaleString() + " 계약";
+    if (t.holdVol) $("tOi").textContent = Math.round(Number(t.holdVol)).toLocaleString() + " 계약";
+    const p = $("oPrice");
+    if (!p.value && S.last) p.placeholder = String(S.last);
+    updateNotional();
+}
+function wsTradeTick(px, tMs) {
+    if (!(px > 0)) return;
+    S.last = px;
+    S.pxMap[S.symbol] = px;
+    $("tLast").textContent = fmt.format(px);
+    if (!S.series || !S.candles || !S.candles.length || !window.TerminalAI) return;
+    const tSec = Math.floor((Number(tMs) || Date.now()) / 1000);
+    const r = window.TerminalAI.nextCandle(S.candles, px, tSec, S.tf);
+    if (!r) return;
+    try { S.series.update(S.candles[S.candles.length - 1]); } catch {}
+    if (r.rolled) drawSR(S.series, S.mainPL, S.candles);
+    const now = Date.now();
+    if (now - (S.ws.maAt || 0) > 2000) { S.ws.maAt = now; refreshMALines(); }
+}
+function refreshMALines() {
+    if (!S.series || !S.candles || !S.candles.length || !S.lines) return;
+    try {
+        const closes = S.candles.map(k => k.close);
+        [["ma5", 5], ["ma10", 10], ["ma30", 30], ["ma60", 60]].forEach(([k, n]) => {
+            if (!S.lines[k] || closes.length < n) return;
+            const v = sma(closes, n);
+            S.lines[k].setData(S.candles.map((c, i) => ({ time: c.time, value: v[i] })).filter(pt => pt.value !== null));
+        });
+    } catch {}
 }
 function ticketPx() {
     const type = Number(document.querySelector("#otype .act").dataset.t);
@@ -1323,6 +1435,9 @@ async function boot() {
     $("net").title = "클릭하면 다시 연결합니다";
     $("net").addEventListener("click", boot);
     await boot();
+    wsConnect();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) wsConnect(); });
+    window.__wsState = () => ({ ok: S.ws.ok, retry: S.ws.retry, deal: S.ws.dealSym, last: S.last });
     S.timer.push(setInterval(() => refreshTop().catch(() => {}), 3000));
     S.timer.push(setInterval(() => refreshBook().catch(() => {}), 3000));
     S.timer.push(setInterval(refreshPaperPrices, 5000));
