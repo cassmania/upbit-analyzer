@@ -6,7 +6,7 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
 const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
-    last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
+    last: 0, chart: null, chartErr: false, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
     layout: 1, panes: [], mainPL: { lines: [] },
@@ -203,23 +203,38 @@ function loadUi() {
     }
 }
 
+const klineCache = new Map(), klineFlight = new Map();
 async function pub(path, params, tries) {
     tries = tries || 3;
-    let last;
-    for (let i = 0; i < tries; i++) {
-        try {
-            const q = new URLSearchParams({ path, ...params });
-            const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
-            if (!r.ok) throw new Error("시세 오류 " + r.status);
-            const j = await r.json();
-            if (j.success !== true || Number(j.code) !== 0) throw new Error("시세 오류");
-            return j.data;
-        } catch (e) {
-            last = e;
-            if (i + 1 < tries) await new Promise(r => setTimeout(r, 600 * (i + 1)));
-        }
+    const key = path + "?" + new URLSearchParams(params).toString();
+    if (path === "kline") {
+        const hit = klineCache.get(key);
+        if (hit && Date.now() - hit.at < 20000) return hit.data;
+        if (klineFlight.has(key)) return klineFlight.get(key);
     }
-    throw last;
+    const job = (async () => {
+        let last;
+        for (let i = 0; i < tries; i++) {
+            try {
+                const q = new URLSearchParams({ path, ...params });
+                const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
+                if (!r.ok) throw new Error("시세 오류 " + r.status);
+                const j = await r.json();
+                if (j.success !== true || Number(j.code) !== 0) throw new Error("시세 오류");
+                if (path === "kline") klineCache.set(key, { at: Date.now(), data: j.data });
+                return j.data;
+            } catch (e) {
+                last = e;
+                if (i + 1 < tries) await new Promise(r => setTimeout(r, 600 * (i + 1)));
+            }
+        }
+        throw last;
+    })();
+    if (path === "kline") {
+        klineFlight.set(key, job);
+        try { return await job; } finally { klineFlight.delete(key); }
+    }
+    return job;
 }
 async function priv(api, method, body) {
     const r = await fetch("/api/private/" + api, { method: method || "GET", credentials: "same-origin",
@@ -297,6 +312,8 @@ function resample12h(c) {
     return out;
 }
 async function loadChart() {
+    S.chartErr = false;
+    try {
     ensureChart();
     const iv = S.tf === "Hour12" ? "Min60" : S.tf;
     const d = await pub("kline", { symbol: S.symbol, interval: iv });
@@ -314,6 +331,11 @@ async function loadChart() {
     $("mainsym").textContent = S.symbol.replace("_USDT", "/USDT") + " · " + (typeof TF_LABEL !== "undefined" && TF_LABEL[S.tf] ? TF_LABEL[S.tf] : S.tf);
     drawSR(S.series, S.mainPL, candles);
     await refreshAI();
+    } catch (e) {
+        S.chartErr = true;
+        $("legend").textContent = "차트 로딩 실패 — 메인 차트를 클릭하면 재시도";
+        throw e;
+    }
 }
 
 // ---- 멀티차트 (최대 8개, 각기 다른 코인) + 지지/저항선 ----
@@ -968,6 +990,7 @@ function bind() {
         queueSaveUi();
     });
     $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
+    $("cpane0").addEventListener("click", () => { if (S.chartErr) loadChart().catch(e => log("차트 " + e.message, "down")); });
     $("symQ").addEventListener("input", renderSymbolSelect);
     $("symQ").addEventListener("keydown", e => {
         if (e.key === "Escape") { $("symResults").hidden = true; return; }
