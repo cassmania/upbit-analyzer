@@ -13,7 +13,7 @@
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=11" defer></script>
+<script src="terminal.js?v=12" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -48,8 +48,12 @@
       <button data-tf="Hour8">8H</button><button data-tf="Hour12">12H</button><button data-tf="Day1">1D</button><button data-tf="Week1">1W</button>
       <span class="zoom-sep"></span>
       <button data-zoom="in" title="확대">+</button><button data-zoom="out" title="축소">−</button><button data-zoom="reset" title="리셋">리셋</button>
+      <span class="zoom-sep"></span>
+      <button data-layout="1" class="lact" title="차트 1개">1</button><button data-layout="2" title="차트 2개">2</button><button data-layout="4" title="차트 4개">4</button><button data-layout="8" title="차트 8개">8</button>
     </div>
-    <div id="chart"></div>
+    <div id="charts" class="charts g1">
+      <div class="cpane" id="cpane0"><div id="chart"></div></div>
+    </div>
     <div class="legend" id="legend"></div>
   </section>
 

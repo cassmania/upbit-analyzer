@@ -9,6 +9,7 @@ const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1
     last: 0, chart: null, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
+    layout: 1, panes: [], mainPL: { lines: [] },
     cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
         tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
@@ -116,9 +117,11 @@ function chartPalette() {
 function applyThemeToChart() {
     if (!S.chart) return;
     const p = chartPalette();
-    S.chart.applyOptions({ layout: { background: { color: p.bg }, textColor: p.text },
+    const opts = { layout: { background: { color: p.bg }, textColor: p.text },
         grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
-        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border } });
+        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border } };
+    S.chart.applyOptions(opts);
+    (S.panes || []).forEach(P => { if (P && P.chart) P.chart.applyOptions(opts); });
 }
 function loadTheme() {
     let t = "dark";
@@ -153,7 +156,8 @@ function saveUi() {
             oUsdt: $("oUsdt").value, oPct: $("oPct").value,
             oTpsl: $("oTpsl").checked, oSL: $("oSL").value, oTP: $("oTP").value, oReduce: $("oReduce").checked,
             scanN: $("scanN").value, ptab: S.ptab, autoPaper: S.autoPaper,
-            cfgFold: $("cfgBody").classList.contains("collapsed")
+            cfgFold: $("cfgBody").classList.contains("collapsed"),
+            layout: S.layout, panes: (S.panes || []).slice(0, 7).map(P => P ? { s: P.symbol, t: P.tf } : null)
         }));
     } catch { /* 무시 */ }
 }
@@ -182,6 +186,12 @@ function loadUi() {
     if (typeof u.ptab === "string" && u.ptab) S.ptab = u.ptab;
     if ($("tpslBox")) $("tpslBox").hidden = !$("oTpsl").checked;
     if (u.cfgFold && $("cfgBody")) { $("cfgBody").classList.add("collapsed"); $("cfgFold").textContent = "∨"; }
+    if ([1, 2, 4, 8].includes(Number(u.layout))) S.layout = Number(u.layout);
+    if (Array.isArray(u.panes)) {
+        S.panes = u.panes.slice(0, 7).map(p => (p && typeof p.s === "string" && TF_OPTS.includes(p.t))
+            ? { symbol: p.s, tf: p.t, chart: null, series: null, lines: {}, pl: { lines: [] } } : null);
+        while (S.panes.length < 7) S.panes.push(null);
+    }
     if (u.autoPaper) {
         S.autoPaper = true;
         $("autoPaper").textContent = "자동매매(모의) ON"; $("autoPaper").classList.toggle("on", true);
@@ -296,7 +306,115 @@ async function loadChart() {
     const last = candles[candles.length - 1];
     $("legend").textContent = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
         " C " + fmt.format(last.close) + " · MA5 " + fmt.format(mas.ma5[mas.ma5.length - 1] || 0);
+    drawSR(S.series, S.mainPL, candles);
     await refreshAI();
+}
+
+// ---- 멀티차트 (최대 8개, 각기 다른 코인) + 지지/저항선 ----
+const TF_OPTS = ["Min15", "Min60", "Hour4", "Hour8", "Hour12", "Day1", "Week1"];
+const TF_LABEL = { Min15: "15m", Min60: "1H", Hour4: "4H", Hour8: "8H", Hour12: "12H", Day1: "1D", Week1: "1W" };
+function swingLevels(candles) {
+    const Hs = [], Ls = [], k = 2, n = Math.min(candles.length, 150), start = Math.max(k, candles.length - n);
+    for (let i = start; i < candles.length - k; i++) {
+        let hi = true, lo = true;
+        for (let j = 1; j <= k; j++) {
+            if (candles[i].high < candles[i - j].high || candles[i].high < candles[i + j].high) hi = false;
+            if (candles[i].low > candles[i - j].low || candles[i].low > candles[i + j].low) lo = false;
+        }
+        if (hi) Hs.push(candles[i].high);
+        if (lo) Ls.push(candles[i].low);
+    }
+    const last = candles[candles.length - 1].close;
+    return {
+        res: [...new Set(Hs.filter(h => h > last))].sort((a, b) => a - b).slice(0, 3),
+        sup: [...new Set(Ls.filter(l => l < last))].sort((a, b) => b - a).slice(0, 3)
+    };
+}
+function drawSR(series, store, candles) {
+    if (!series || !candles || !candles.length) return;
+    (store.lines || []).forEach(l => { try { series.removePriceLine(l); } catch {} });
+    store.lines = [];
+    const lv = swingLevels(candles);
+    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "R" + (i + 1) })));
+    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "S" + (i + 1) })));
+}
+function defaultPaneSymbols() {
+    const have = s => S.allSymbols.some(x => x.symbol === s);
+    const out = [];
+    (S.fav || []).forEach(s => { if (have(s) && out.length < 7) out.push(s); });
+    ["ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "TRX_USDT"].forEach(s => { if (have(s) && out.length < 7 && !out.includes(s)) out.push(s); });
+    while (out.length < 7) out.push(S.symbol);
+    return out;
+}
+function setLayout(n) {
+    S.layout = [1, 2, 4, 8].includes(n) ? n : 1;
+    document.querySelectorAll("#tfbar [data-layout]").forEach(x => x.classList.toggle("lact", Number(x.dataset.layout) === S.layout));
+    $("charts").className = "charts g" + S.layout;
+    while (S.panes.length < 7) S.panes.push(null);
+    for (let i = 0; i < 7; i++) {
+        const el = $("cpane" + (i + 1));
+        if (i < S.layout - 1) {
+            if (!S.panes[i]) {
+                const defs = defaultPaneSymbols();
+                S.panes[i] = { symbol: defs[i] || S.symbol, tf: "Hour4", chart: null, series: null, lines: {}, pl: { lines: [] } };
+            }
+            if (!el) ensurePane(i);
+            else el.hidden = false;
+            fillPaneHead(i);
+            loadPane(i).catch(e => log("서브차트 " + (i + 2) + " " + e.message, "down"));
+        } else if (el) el.hidden = true;
+    }
+    queueSaveUi();
+}
+function ensurePane(i) {
+    const wrap = document.createElement("div");
+    wrap.className = "cpane";
+    wrap.id = "cpane" + (i + 1);
+    wrap.innerHTML = "<div class='panehead'><select class='psym' aria-label='차트" + (i + 2) + " 심볼'></select>" +
+        "<select class='ptf' aria-label='차트" + (i + 2) + " 봉'>" +
+        TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select></div>" +
+        "<div class='pchart' id='pchart" + (i + 1) + "'></div>" +
+        "<div class='sr-legend'><span class='rr'>— 저항 R1~3</span><span class='ss'>— 지지 S1~3</span></div>";
+    $("charts").appendChild(wrap);
+    const P = S.panes[i], p = chartPalette();
+    P.chart = LightweightCharts.createChart(wrap.querySelector(".pchart"), { layout: { background: { color: p.bg }, textColor: p.text },
+        grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true } });
+    P.series = P.chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81", wickDownColor: "#f6465d" });
+    const mk = c => P.chart.addLineSeries({ color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    P.lines = { ma5: mk("#e0b44a"), ma10: mk("#29b6f6"), ma30: mk("#9b59b6"), ma60: mk("#7f8c8d") };
+    const box = wrap.querySelector(".pchart");
+    new ResizeObserver(() => P.chart.resize(box.clientWidth, box.clientHeight)).observe(box);
+    wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
+    wrap.querySelector(".ptf").addEventListener("change", e => { S.panes[i].tf = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
+}
+function fillPaneHead(i) {
+    const P = S.panes[i], wrap = $("cpane" + (i + 1));
+    if (!P || !wrap) return;
+    const sel = wrap.querySelector(".psym");
+    sel.innerHTML = S.allSymbols.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
+    if ([...sel.options].some(o => o.value === P.symbol)) sel.value = P.symbol;
+    else { P.symbol = sel.options[0] ? sel.options[0].value : S.symbol; sel.value = P.symbol; }
+    wrap.querySelector(".ptf").value = P.tf;
+}
+async function loadPane(i) {
+    const P = S.panes[i];
+    if (!P || !P.chart) return;
+    const iv = P.tf === "Hour12" ? "Min60" : P.tf;
+    const d = await pub("kline", { symbol: P.symbol, interval: iv });
+    let candles = d.time.map((t, j) => ({ time: t, open: d.open[j], high: d.high[j], low: d.low[j], close: d.close[j], vol: d.vol[j] || 0 }));
+    if (P.tf === "Hour12") candles = resample12h(candles);
+    candles = candles.slice(-300);
+    P.series.setData(candles);
+    const closes = candles.map(k => k.close);
+    const mas = { ma5: sma(closes, 5), ma10: sma(closes, 10), ma30: sma(closes, 30), ma60: sma(closes, 60) };
+    for (const k of Object.keys(mas)) P.lines[k].setData(candles.map((c, j) => ({ time: c.time, value: mas[k][j] })).filter(pt => pt.value !== null));
+    drawSR(P.series, P.pl, candles);
+    P.chart.timeScale().scrollToRealTime();
+}
+function refreshAllCharts() {
+    loadChart().catch(() => {});
+    for (let i = 0; i < S.layout - 1; i++) if (S.panes[i] && S.panes[i].chart) loadPane(i).catch(() => {});
 }
 
 // ---- 티커·오더북 ----
@@ -806,8 +924,10 @@ function bind() {
     $("tfbar").addEventListener("click", e => {
         const z = e.target.closest("[data-zoom]");
         if (z) { chartZoom(z.dataset.zoom); return; }
+        const l = e.target.closest("[data-layout]");
+        if (l) { setLayout(Number(l.dataset.layout)); return; }
         const b = e.target.closest("[data-tf]"); if (!b) return;
-        [...$("tfbar").children].forEach(x => x.classList.remove("act")); b.classList.add("act");
+        [...$("tfbar").querySelectorAll("[data-tf]")].forEach(x => x.classList.remove("act")); b.classList.add("act");
         S.tf = b.dataset.tf; loadChart().catch(e => log("차트 " + e.message, "down"));
         queueSaveUi();
     });
@@ -1091,6 +1211,8 @@ async function boot() {
     }
     try { await loadChart(); }
     catch (e) { log("부팅 실패(chart): " + e.message, "down"); }
+    try { setLayout(S.layout); }
+    catch (e) { log("부팅 실패(서브차트): " + e.message, "down"); }
     await refreshTop().catch(() => {});
     if (!S.last) $("net").textContent = "시세 실패 — 클릭 재시도";
     else $("net").textContent = "실시간";
@@ -1128,7 +1250,7 @@ async function boot() {
     S.timer.push(setInterval(refreshPaperPrices, 5000));
     S.timer.push(setInterval(autoTick, 10000));
     S.timer.push(setInterval(scanTick, 15000));
-    S.timer.push(setInterval(() => loadChart().catch(() => {}), 60000));
+    S.timer.push(setInterval(refreshAllCharts, 60000));
     log("터미널 시작 — 기본 모의. 실매매는 승인 후에만 동작합니다.");
     if (S.autoPaper) log("이전 설정 복원: 모의 자동매매가 켜진 상태로 재개됩니다.");
 })();
