@@ -38,7 +38,10 @@ function renderSymbolSelect() {
     const match = x => !q || sym(x).includes(q) || base(x).toUpperCase().includes(q);
     const favs = S.allSymbols.filter(x => isFav(sym(x)) && match(x));
     const rest = S.allSymbols.filter(x => !isFav(sym(x)) && match(x)).slice(0, 200);
-    $("symbol").innerHTML = favs.map(x => "<option value='" + esc(sym(x)) + "'>★ " + esc(base(x)) + "/USDT</option>").join("") +
+    const cur = S.allSymbols.find(x => sym(x) === S.symbol);
+    const curOpt = (cur && !favs.includes(cur) && !rest.includes(cur))
+        ? "<option value='" + esc(S.symbol) + "'>" + esc(String(cur.baseCoin || S.symbol)) + "/USDT</option>" : "";
+    $("symbol").innerHTML = curOpt + favs.map(x => "<option value='" + esc(sym(x)) + "'>★ " + esc(base(x)) + "/USDT</option>").join("") +
         rest.map(x => "<option value='" + esc(sym(x)) + "'>" + esc(base(x)) + "/USDT</option>").join("");
     if ([...$("symbol").options].some(o => o.value === S.symbol)) $("symbol").value = S.symbol;
     // 검색 결과가 보이게: 상위 8개를 드롭다운으로 (select만 필터하면 입력해도 화면이 안 바뀌어 보인다)
