@@ -97,6 +97,11 @@ function loadCfg() {
     $("cfgOverlap").checked = S.cfg.noOverlap;
     cfgPreview();
 }
+function toggleCfg() {
+    const b = $("cfgBody").classList.toggle("collapsed");
+    $("cfgFold").textContent = b ? "∨" : "∧";
+    queueSaveUi();
+}
 function cfgPreview() {
     $("cfgMarginPctView").textContent = S.cfg.ratioPct + "%";
     const usdt = Math.round(S.bank * S.cfg.ratioPct / 100);
@@ -321,6 +326,15 @@ async function refreshTop() {
     const p = $("oPrice");
     if (!p.value && S.last) p.placeholder = String(S.last);
     updateNotional();
+}
+// 모의 보유종목 가격 실시간화: pxMap만 갱신하고 화면을 안 그리면 숫자가 멈춰 보인다
+async function refreshPaperPrices() {
+    if (!S.paper.length) return;
+    try {
+        const all = await pub("ticker", {});
+        all.forEach(t => { if (t.symbol && Number(t.lastPrice) > 0) S.pxMap[t.symbol] = Number(t.lastPrice); });
+        renderPaper(); renderBank();
+    } catch { /* 다음 틱에 */ }
 }
 async function refreshBook() {
     const d = await pub("depth", { symbol: S.symbol, limit: "20" });
@@ -867,11 +881,8 @@ function bind() {
         queueSaveUi();
     });
     bindCfgMargin();
-    $("cfgFold").addEventListener("click", () => {
-        const b = $("cfgBody").classList.toggle("collapsed");
-        $("cfgFold").textContent = b ? "∨" : "∧";
-        queueSaveUi();
-    });
+    $("cfgFold").addEventListener("click", e => { e.stopPropagation(); toggleCfg(); });
+    $("cfgHead").addEventListener("click", toggleCfg);
 function setMaxPos(v) {
     S.cfg.maxPos = Math.min(100, Math.max(1, Math.round(Number(v) || 5)));
     $("cfgMaxPos2").value = String(S.cfg.maxPos);
@@ -1114,6 +1125,7 @@ async function boot() {
     await boot();
     S.timer.push(setInterval(() => refreshTop().catch(() => {}), 3000));
     S.timer.push(setInterval(() => refreshBook().catch(() => {}), 3000));
+    S.timer.push(setInterval(refreshPaperPrices, 5000));
     S.timer.push(setInterval(autoTick, 10000));
     S.timer.push(setInterval(scanTick, 15000));
     S.timer.push(setInterval(() => loadChart().catch(() => {}), 60000));
