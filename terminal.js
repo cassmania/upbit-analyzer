@@ -6,7 +6,7 @@ const JSVER = "v23"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
-const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
+const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", mainLocked: true, tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, chartErr: false, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
@@ -57,6 +57,25 @@ function renderSymbolSelect() {
             : "<div class='symrow'><span>심볼 목록 로딩 실패 — 상단 연결중 클릭</span></div>");
     box.hidden = false;
 }
+function renderMainLock() {
+    const b = $("mainLock");
+    if (!b) return;
+    b.textContent = S.mainLocked ? "🔒BTC" : "🔓";
+    b.classList.toggle("lact", !!S.mainLocked);
+    b.title = S.mainLocked ? "메인 차트 BTC 고정 중 (클릭 해제)" : "메인 차트 자유 (클릭하면 BTC로 고정)";
+}
+function toggleMainLock() {
+    S.mainLocked = !S.mainLocked;
+    if (S.mainLocked && S.allSymbols.some(x => x.symbol === "BTC_USDT")) {
+        S.mainSym = "BTC_USDT";
+        loadChart(true).catch(e => log("차트 " + e.message, "down"));
+        log("메인 차트 BTC 고정");
+    } else {
+        log("메인 차트 잠금 해제");
+    }
+    renderMainLock();
+    queueSaveUi();
+}
 function focusSymbol(sym) {
     // 서브차트 클릭용: 상단 티커·북·주문·AI만 따라가고 메인 차트는 그대로 둔다
     if (sym === S.symbol) { log("이미 선택 중: " + sym.replace("_USDT", "/USDT")); return; }
@@ -74,6 +93,12 @@ function focusSymbol(sym) {
     queueSaveUi();
 }
 function selectSymbol(sym) {
+    if (S.mainLocked) {
+        // 메인 BTC 고정 중: 전역 선택도 포커스만 옮기고 메인 차트는 유지한다
+        log("메인 차트 잠금 중 (BTC 고정) — 포커스만 이동");
+        focusSymbol(sym);
+        return;
+    }
     S.symbol = sym;
     S.mainSym = sym;
     log("차트 전환: " + sym.replace("_USDT", "/USDT"));
@@ -175,7 +200,7 @@ function saveUi() {
     try {
         const t = document.querySelector("#otype .act");
         localStorage.setItem("krta-ui", JSON.stringify({
-            symbol: S.symbol, tf: S.tf, mainSym: S.mainSym,
+            symbol: S.symbol, tf: S.tf, mainSym: S.mainSym, mainLocked: S.mainLocked,
             lev: $("lev").value, otype: t ? t.dataset.t : "1",
             oPrice: $("oPrice").value, oMargin: $("oMargin").value, oVol: $("oVol").value,
             oUsdt: $("oUsdt").value, oPct: $("oPct").value,
@@ -195,6 +220,7 @@ function loadUi() {
     try { u = JSON.parse(localStorage.getItem("krta-ui") || "{}"); } catch { u = {}; }
     if (typeof u.symbol === "string" && u.symbol) S.symbol = u.symbol;
     if (typeof u.mainSym === "string" && u.mainSym) S.mainSym = u.mainSym;
+    if (typeof u.mainLocked === "boolean") S.mainLocked = u.mainLocked;
     const TFS = ["Min15", "Min60", "Hour4", "Hour8", "Hour12", "Day1", "Week1"];
     if (TFS.includes(u.tf)) {
         S.tf = u.tf;
@@ -1107,6 +1133,11 @@ async function loadSymbols() {
     $("symbol").value = S.allSymbols.some(x => x.symbol === S.symbol) ? S.symbol : (S.allSymbols[0] ? S.allSymbols[0].symbol : S.symbol);
     S.symbol = $("symbol").value;
     if (!S.mainSym || !S.allSymbols.some(x => x.symbol === S.mainSym)) S.mainSym = S.symbol;
+    if (S.mainLocked) {
+        if (S.allSymbols.some(x => x.symbol === "BTC_USDT")) S.mainSym = "BTC_USDT";
+        else S.mainLocked = false;
+    }
+    renderMainLock();
     applyDetail(S.allSymbols.find(x => x.symbol === S.symbol));
     renderFavBtn();
 }
@@ -1209,6 +1240,7 @@ function bind() {
     bindCfgMargin();
     $("cfgFold").addEventListener("click", e => { e.stopPropagation(); toggleCfg(); });
     $("cfgHead").addEventListener("click", toggleCfg);
+    $("mainLock").addEventListener("click", toggleMainLock);
 function setMaxPos(v) {
     S.cfg.maxPos = Math.min(100, Math.max(1, Math.round(Number(v) || 5)));
     $("cfgMaxPos2").value = String(S.cfg.maxPos);

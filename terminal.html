@@ -13,7 +13,7 @@
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=25" defer></script>
+<script src="terminal.js?v=26" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -50,6 +50,8 @@
       <button data-zoom="in" title="확대">+</button><button data-zoom="out" title="축소">−</button><button data-zoom="reset" title="리셋">리셋</button>
       <span class="zoom-sep"></span>
       <button data-layout="1" class="lact" title="차트 1개">1</button><button data-layout="2" title="차트 2개">2</button><button data-layout="4" title="차트 4개">4</button><button data-layout="8" title="차트 8개">8</button>
+      <span class="zoom-sep"></span>
+      <button id="mainLock" class="lact" title="메인 차트 BTC 고정/해제">🔒BTC</button>
     </div>
     <div id="charts" class="charts g1">
       <div class="cpane" id="cpane0"><div class="mainsym" id="mainsym">-</div><div id="chart"></div></div>
