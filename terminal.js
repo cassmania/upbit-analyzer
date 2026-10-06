@@ -419,8 +419,10 @@ function ensurePane(i) {
     new ResizeObserver(() => P.chart.resize(box.clientWidth, box.clientHeight)).observe(box);
     wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     wrap.querySelector(".ptf").addEventListener("change", e => { S.panes[i].tf = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
+    wrap.addEventListener("mousedown", e => { S.downPos = [e.clientX, e.clientY]; });
     wrap.addEventListener("click", e => {
         if (e.target.closest("select")) return;
+        if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
         if (S.panes[i] && S.panes[i].symbol !== S.symbol) selectSymbol(S.panes[i].symbol);
         else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
     });
@@ -995,7 +997,14 @@ function bind() {
         queueSaveUi();
     });
     $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
-    $("cpane0").addEventListener("click", () => { if (S.chartErr) loadChart().catch(e => log("차트 " + e.message, "down")); });
+    $("cpane0").addEventListener("mousedown", e => { S.downPos = [e.clientX, e.clientY]; });
+    $("cpane0").addEventListener("click", e => {
+        if (e.target.closest("select")) return;
+        // 드래그(팬·줌)는 무시하고 가벼운 클릭만 새로고침한다
+        if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
+        log("메인 차트 새로고침: " + S.symbol.replace("_USDT", "/USDT"));
+        loadChart().catch(err => log("차트 " + err.message, "down"));
+    });
     $("symQ").addEventListener("input", renderSymbolSelect);
     $("symQ").addEventListener("keydown", e => {
         if (e.key === "Escape") { $("symResults").hidden = true; return; }
