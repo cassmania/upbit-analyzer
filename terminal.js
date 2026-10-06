@@ -6,7 +6,7 @@ const JSVER = "v23"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
-const S = { symbol: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
+const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, chartErr: false, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
@@ -57,8 +57,25 @@ function renderSymbolSelect() {
             : "<div class='symrow'><span>심볼 목록 로딩 실패 — 상단 연결중 클릭</span></div>");
     box.hidden = false;
 }
+function focusSymbol(sym) {
+    // 서브차트 클릭용: 상단 티커·북·주문·AI만 따라가고 메인 차트는 그대로 둔다
+    if (sym === S.symbol) { log("이미 선택 중: " + sym.replace("_USDT", "/USDT")); return; }
+    S.symbol = sym;
+    log("포커스: " + sym.replace("_USDT", "/USDT") + " (메인 차트 유지)");
+    renderSymbolSelect();
+    $("symQ").value = "";
+    $("symResults").hidden = true;
+    renderFavBtn();
+    markFocusedPane();
+    applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
+    wsSubDeal(S.symbol);
+    refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
+    refreshAI().catch(() => {});
+    queueSaveUi();
+}
 function selectSymbol(sym) {
     S.symbol = sym;
+    S.mainSym = sym;
     log("차트 전환: " + sym.replace("_USDT", "/USDT"));
     renderSymbolSelect();
     $("symQ").value = "";
@@ -158,7 +175,7 @@ function saveUi() {
     try {
         const t = document.querySelector("#otype .act");
         localStorage.setItem("krta-ui", JSON.stringify({
-            symbol: S.symbol, tf: S.tf,
+            symbol: S.symbol, tf: S.tf, mainSym: S.mainSym,
             lev: $("lev").value, otype: t ? t.dataset.t : "1",
             oPrice: $("oPrice").value, oMargin: $("oMargin").value, oVol: $("oVol").value,
             oUsdt: $("oUsdt").value, oPct: $("oPct").value,
@@ -177,6 +194,7 @@ function loadUi() {
     let u = {};
     try { u = JSON.parse(localStorage.getItem("krta-ui") || "{}"); } catch { u = {}; }
     if (typeof u.symbol === "string" && u.symbol) S.symbol = u.symbol;
+    if (typeof u.mainSym === "string" && u.mainSym) S.mainSym = u.mainSym;
     const TFS = ["Min15", "Min60", "Hour4", "Hour8", "Hour12", "Day1", "Week1"];
     if (TFS.includes(u.tf)) {
         S.tf = u.tf;
@@ -319,7 +337,7 @@ async function loadChart(fresh) {
     try {
     ensureChart();
     const iv = S.tf === "Hour12" ? "Min60" : S.tf;
-    const d = await pub("kline", { symbol: S.symbol, interval: iv }, undefined, fresh);
+    const d = await pub("kline", { symbol: S.mainSym, interval: iv }, undefined, fresh);
     let candles = d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
     if (S.tf === "Hour12") candles = resample12h(candles);
     candles = candles.slice(-300);
@@ -331,7 +349,7 @@ async function loadChart(fresh) {
     const last = candles[candles.length - 1];
     $("legend").textContent = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
         " C " + fmt.format(last.close) + " · MA5 " + fmt.format(mas.ma5[mas.ma5.length - 1] || 0);
-    $("mainsym").textContent = S.symbol.replace("_USDT", "/USDT") + " · " + (typeof TF_LABEL !== "undefined" && TF_LABEL[S.tf] ? TF_LABEL[S.tf] : S.tf);
+    $("mainsym").textContent = S.mainSym.replace("_USDT", "/USDT") + " · " + (typeof TF_LABEL !== "undefined" && TF_LABEL[S.tf] ? TF_LABEL[S.tf] : S.tf);
     drawSR(S.series, S.mainPL, candles);
     await refreshAI();
     } catch (e) {
@@ -372,12 +390,12 @@ function drawSR(series, store, candles) {
 function defaultPaneSymbols() {
     const have = s => S.allSymbols.some(x => x.symbol === s);
     const out = [];
-    (S.fav || []).forEach(s => { if (have(s) && out.length < 7 && s !== S.symbol && !out.includes(s)) out.push(s); });
-    ["ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "TRX_USDT"].forEach(s => { if (have(s) && out.length < 7 && !out.includes(s) && s !== S.symbol) out.push(s); });
-    const rest = S.allSymbols.map(x => x.symbol).filter(s => s !== S.symbol && !out.includes(s));
+    (S.fav || []).forEach(s => { if (have(s) && out.length < 7 && s !== S.mainSym && !out.includes(s)) out.push(s); });
+    ["ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "BNB_USDT", "ADA_USDT", "TRX_USDT"].forEach(s => { if (have(s) && out.length < 7 && !out.includes(s) && s !== S.mainSym) out.push(s); });
+    const rest = S.allSymbols.map(x => x.symbol).filter(s => s !== S.mainSym && !out.includes(s));
     let k = 0;
     while (out.length < 7 && k < rest.length) out.push(rest[k++]);
-    while (out.length < 7) out.push(S.symbol);
+    while (out.length < 7) out.push(S.mainSym);
     return out;
 }
 function setLayout(n) {
@@ -390,7 +408,7 @@ function setLayout(n) {
         if (i < S.layout - 1) {
             if (!S.panes[i]) {
                 const defs = defaultPaneSymbols();
-                S.panes[i] = { symbol: defs[i] || S.symbol, tf: "Hour4", chart: null, series: null, lines: {}, pl: { lines: [] } };
+                S.panes[i] = { symbol: defs[i] || S.mainSym, tf: "Hour4", chart: null, series: null, lines: {}, pl: { lines: [] } };
             }
             if (!el) ensurePane(i);
             else el.hidden = false;
@@ -425,7 +443,7 @@ function ensurePane(i) {
     wrap.addEventListener("click", e => {
         if (e.target.closest("select")) return;
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
-        if (S.panes[i] && S.panes[i].symbol !== S.symbol) selectSymbol(S.panes[i].symbol);
+        if (S.panes[i] && S.panes[i].symbol !== S.symbol) focusSymbol(S.panes[i].symbol);
         else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
     });
 }
@@ -441,7 +459,7 @@ function fillPaneHead(i) {
     const sel = wrap.querySelector(".psym");
     sel.innerHTML = S.allSymbols.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
     if ([...sel.options].some(o => o.value === P.symbol)) sel.value = P.symbol;
-    else { P.symbol = sel.options[0] ? sel.options[0].value : S.symbol; sel.value = P.symbol; }
+    else { P.symbol = sel.options[0] ? sel.options[0].value : S.mainSym; sel.value = P.symbol; }
     wrap.querySelector(".ptf").value = P.tf;
 }
 async function loadPane(i) {
@@ -1088,6 +1106,7 @@ async function loadSymbols() {
     renderSymbolSelect();
     $("symbol").value = S.allSymbols.some(x => x.symbol === S.symbol) ? S.symbol : (S.allSymbols[0] ? S.allSymbols[0].symbol : S.symbol);
     S.symbol = $("symbol").value;
+    if (!S.mainSym || !S.allSymbols.some(x => x.symbol === S.mainSym)) S.mainSym = S.symbol;
     applyDetail(S.allSymbols.find(x => x.symbol === S.symbol));
     renderFavBtn();
 }
@@ -1116,7 +1135,7 @@ function bind() {
         if (e.target.closest("select")) return;
         // 드래그(팬·줌)는 무시하고 가벼운 클릭만 새로고침한다
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
-        log("메인 차트 새로고침: " + S.symbol.replace("_USDT", "/USDT"));
+        log("메인 차트 새로고침: " + S.mainSym.replace("_USDT", "/USDT"));
         loadChart(true).catch(err => log("차트 " + err.message, "down"));
     });
     $("symQ").addEventListener("input", renderSymbolSelect);
