@@ -310,6 +310,7 @@ async function loadChart() {
     const last = candles[candles.length - 1];
     $("legend").textContent = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
         " C " + fmt.format(last.close) + " · MA5 " + fmt.format(mas.ma5[mas.ma5.length - 1] || 0);
+    $("mainsym").textContent = S.symbol.replace("_USDT", "/USDT") + " · " + (typeof TF_LABEL !== "undefined" && TF_LABEL[S.tf] ? TF_LABEL[S.tf] : S.tf);
     drawSR(S.series, S.mainPL, candles);
     await refreshAI();
 }
@@ -712,15 +713,16 @@ function renderBank() {
     const unreal = S.paper.reduce((s, p) => s + paperUnreal(p, S.pxMap[p.symbol]), 0);
     const eq = S.bank + unreal + paperLocked();
     const pnl = eq - 1000000;
-    const txt = "모의 지갑 $" + fmt.format(Math.round(S.bank)) + " · 미실현 " +
-        (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + " · 평가 $" + fmt.format(Math.round(eq)) +
-        " (" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + ")";
-    $("paperBank").textContent = txt;
-    if ($("paperBankTop")) $("paperBankTop").textContent = txt;
+    const uCls = unreal >= 0 ? "p-pos" : "p-neg", pCls = pnl >= 0 ? "p-pos" : "p-neg";
+    const html = "모의 지갑 $" + fmt.format(Math.round(S.bank)) + " · 미실현 <span class='" + uCls + "'>" +
+        (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + "</span> · 평가 $" + fmt.format(Math.round(eq)) +
+        " (<span class='" + pCls + "'>" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl)) + "</span>)";
+    $("paperBank").innerHTML = html;
+    if ($("paperBankTop")) $("paperBankTop").innerHTML = html;
     cfgPreview();
     if ($("wState").textContent !== "연결됨") {
         $("wUnreal").textContent = (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + " USDT";
-        $("wUnreal").className = "mono " + (unreal >= 0 ? "up" : "down");
+        $("wUnreal").className = "mono " + (unreal >= 0 ? "p-pos" : "p-neg");
         $("wBal").textContent = fmt.format(Math.round(S.bank)) + " USDT";
         $("wEq").textContent = fmt.format(Math.round(eq)) + " USDT";
         $("wAvail").textContent = fmt.format(Math.round(S.bank)) + " USDT";
@@ -807,7 +809,7 @@ async function refreshPrivate() {
         const unreal = (s.sections.positions.rows || []).reduce((sum, p) => sum + (Number(p.unrealized) || 0), 0);
         const eq = (usdt ? usdt.equity : 0) || 0;
         $("wUnreal").textContent = (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal * 100) / 100) + " USDT";
-        $("wUnreal").className = "mono " + (unreal >= 0 ? "up" : "down");
+        $("wUnreal").className = "mono " + (unreal >= 0 ? "p-pos" : "p-neg");
         $("wBal").textContent = fmt.format(eq) + " USDT";
         $("wEq").textContent = fmt.format(eq) + " USDT";
         $("wAvail").textContent = fmt.format(S.liveAvail) + " USDT";

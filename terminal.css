@@ -120,8 +120,10 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .paper-bank{color:var(--txt)}
 .paper-card .p-long{color:#29b6f6;font-weight:700}
 .paper-card .p-short{color:var(--down);font-weight:700}
-.paper-card .p-pos{color:var(--pos);font-weight:700}
-.paper-card .p-neg{color:var(--down)}
+.p-pos{color:var(--down);font-weight:700}
+.p-neg{color:#2962ff}
+.mainsym{position:absolute;top:10px;left:12px;z-index:5;font-size:13px;font-weight:800;color:var(--txt);background:rgba(128,128,128,.14);border:1px solid var(--line);border-radius:6px;padding:3px 10px;pointer-events:none}
+#cpane0{position:relative}
 .paper-card td button{background:var(--panel2);border:1px solid #29b6f6;color:var(--txt);border-radius:6px;padding:3px 9px;cursor:pointer}
 .paper-card .seg{margin:0}
 .badge{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:5px}
