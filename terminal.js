@@ -2,6 +2,7 @@
    키 원문은 브라우저에 보관하지 않고 입력 즉시 서버로 전송 후 필드를 비운다. */
 (function () {
 "use strict";
+const JSVER = "v22"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면 이 버전으로 캐시 확인
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
@@ -86,7 +87,7 @@ function loadCfg() {
         if (Number(c.maxPos) > 0) S.cfg.maxPos = Math.min(100, Math.max(1, Math.round(Number(c.maxPos))));
         if (Number(c.coolSec) > 0) S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(c.coolSec))));
         else if (Number(c.coolMin) > 0) S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(c.coolMin)) * 60));
-        if ([1, 2, 3, 5, 10].includes(Number(c.autoLev))) S.cfg.autoLev = Number(c.autoLev);
+        if ([1, 2, 3, 5, 10, 20, 50, 100].includes(Number(c.autoLev))) S.cfg.autoLev = Number(c.autoLev);
         if (["ai", "manual"].includes(c.tpMode)) S.cfg.tpMode = c.tpMode;
         if (Number(c.tpPct) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number(c.tpPct)));
         if (["ai", "manual"].includes(c.slMode)) S.cfg.slMode = c.slMode;
@@ -926,7 +927,7 @@ async function scanTick() {
         if (S.paper.some(p => p.symbol === item.symbol)) return; // 종목당 1포지션
         if (S.paper.length >= S.cfg.maxPos) return;
         if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolSec * 1000) return;
-        const lev = Math.min(S.cfg.autoLev, 10); // 스캔 자동은 10X 상한
+        const lev = S.cfg.autoLev; // 스캔은 모의 전용이라 상한 없음 (실매매는 별도 경로 없음)
         const px = S.pxMap[item.symbol] || item.lastPrice;
         const vol = Math.floor((S.bank * (S.cfg.ratioPct / 100)) * lev / (px * item.contractSize));
         if (!(vol >= 1)) return;
@@ -955,10 +956,11 @@ async function autoTick() {
     const liveLoop = S.autoLive && S.armed && S.tradeEnabled;
     S.lastAuto = Date.now();
     const side = sig.dir === "LONG" ? 1 : 3;
+    const lev = liveLoop ? Math.min(S.cfg.autoLev, 10) : S.cfg.autoLev;
     const tpsl = autoTPSL(sig.entry, S.last, sig.dir === "LONG", S.priceScale);
     $("oVol").value = "";
-    await submitOrder(side, true, { sl: tpsl.sl, tp: tpsl.tp, lev: S.cfg.autoLev });
-    log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매]" : " [모의]"));
+    await submitOrder(side, true, { sl: tpsl.sl, tp: tpsl.tp, lev });
+    log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매" + (lev < S.cfg.autoLev ? " 10x상한" : "") + "]" : " [모의]"));
 }
 
 // ---- 심볼 목록 ----
@@ -1101,9 +1103,9 @@ function bindCfgMargin() {
     });
 }
     $("cfgLev").addEventListener("change", () => {
-        S.cfg.autoLev = [1, 2, 3, 5, 10].includes(Number($("cfgLev").value)) ? Number($("cfgLev").value) : 3;
+        S.cfg.autoLev = [1, 2, 3, 5, 10, 20, 50, 100].includes(Number($("cfgLev").value)) ? Number($("cfgLev").value) : 3;
         saveCfg();
-        log("자동매매 레버리지 " + S.cfg.autoLev + "x");
+        log("자동매매 레버리지 " + S.cfg.autoLev + "x" + (S.cfg.autoLev > 10 ? " (모의 전용, 실매매는 10x 상한)" : ""));
     });
     document.querySelectorAll("input[name=tpMode]").forEach(r => r.addEventListener("change", () => {
         S.cfg.tpMode = document.querySelector("input[name=tpMode]:checked").value; saveCfg();
@@ -1327,7 +1329,7 @@ async function boot() {
     S.timer.push(setInterval(autoTick, 10000));
     S.timer.push(setInterval(scanTick, 15000));
     S.timer.push(setInterval(refreshAllCharts, 60000));
-    log("터미널 시작 — 기본 모의. 실매매는 승인 후에만 동작합니다.");
+    log("터미널 시작 (" + JSVER + ") — 기본 모의. 실매매는 승인 후에만 동작합니다.");
     if (S.autoPaper) log("이전 설정 복원: 모의 자동매매가 켜진 상태로 재개됩니다.");
 })();
 })();
