@@ -477,7 +477,9 @@ function ensurePane(i) {
         if (first && first.value) {
             S.panes[i].symbol = first.value;
             pq.value = "";
-            wrap.querySelector(".psym").innerHTML = paneSymOptions(first.value, "");
+            const sel = wrap.querySelector(".psym");
+            sel.innerHTML = paneSymOptions(first.value, "");
+            sel.value = first.value;
             loadPane(i).catch(() => {});
             queueSaveUi();
         }
@@ -501,7 +503,7 @@ function paneSymOptions(selected, q) {
     q = (q || "").trim().toUpperCase();
     const out = [];
     for (const x of S.allSymbols) {
-        if (out.length >= 200) break;
+        if (x.symbol !== selected && out.length >= 200) break; // 선택 중은 순위 밖이라도 유지
         if (q && !(x.symbol.includes(q) || String(x.baseCoin || "").toUpperCase().includes(q))) continue;
         out.push("<option value='" + esc(x.symbol) + "'" + (x.symbol === selected ? " selected" : "") + ">" + esc(x.baseCoin) + "/USDT</option>");
     }
