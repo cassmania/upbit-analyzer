@@ -51,6 +51,7 @@
 .tfbar button.lact{background:var(--panel2);color:var(--txt)}
 .panehead{display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
 .panehead select{flex:1;min-width:0;background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px}
+.panehead .pq{flex:0 0 76px;min-width:0;background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px}
 .panehead .ptf{flex:0 0 76px}
 .sr-legend{display:flex;gap:10px;padding:4px 12px 8px;font-size:11px;color:var(--dim)}
 .sr-legend .rr{color:#f6465d}.sr-legend .ss{color:#2962ff}

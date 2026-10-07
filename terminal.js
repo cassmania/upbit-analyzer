@@ -448,7 +448,8 @@ function ensurePane(i) {
     const wrap = document.createElement("div");
     wrap.className = "cpane";
     wrap.id = "cpane" + (i + 1);
-    wrap.innerHTML = "<div class='panehead'><select class='psym' aria-label='차트" + (i + 2) + " 심볼'></select>" +
+    wrap.innerHTML = "<div class='panehead'><input class='pq' placeholder='검색' aria-label='차트" + (i + 2) + " 코인 검색'>" +
+        "<select class='psym' aria-label='차트" + (i + 2) + " 심볼'></select>" +
         "<select class='ptf' aria-label='차트" + (i + 2) + " 봉'>" +
         TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select></div>" +
         "<div class='pchart' id='pchart" + (i + 1) + "'></div>" +
@@ -464,6 +465,23 @@ function ensurePane(i) {
     const box = wrap.querySelector(".pchart");
     new ResizeObserver(() => P.chart.resize(box.clientWidth, box.clientHeight)).observe(box);
     wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
+    const pq = wrap.querySelector(".pq");
+    pq.addEventListener("input", () => {
+        const sel = wrap.querySelector(".psym");
+        sel.innerHTML = paneSymOptions(S.panes[i].symbol, pq.value);
+    });
+    pq.addEventListener("keydown", e => {
+        if (e.key === "Escape") { pq.value = ""; wrap.querySelector(".psym").innerHTML = paneSymOptions(S.panes[i].symbol, ""); return; }
+        if (e.key !== "Enter") return;
+        const first = wrap.querySelector(".psym option");
+        if (first && first.value) {
+            S.panes[i].symbol = first.value;
+            pq.value = "";
+            wrap.querySelector(".psym").innerHTML = paneSymOptions(first.value, "");
+            loadPane(i).catch(() => {});
+            queueSaveUi();
+        }
+    });
     wrap.querySelector(".ptf").addEventListener("change", e => { S.panes[i].tf = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     wrap.addEventListener("mousedown", e => { S.downPos = [e.clientX, e.clientY]; });
     wrap.addEventListener("click", e => {
@@ -479,13 +497,26 @@ function markFocusedPane() {
         el.classList.toggle("focused", sym === S.symbol);
     });
 }
+function paneSymOptions(selected, q) {
+    q = (q || "").trim().toUpperCase();
+    const out = [];
+    for (const x of S.allSymbols) {
+        if (out.length >= 200) break;
+        if (q && !(x.symbol.includes(q) || String(x.baseCoin || "").toUpperCase().includes(q))) continue;
+        out.push("<option value='" + esc(x.symbol) + "'" + (x.symbol === selected ? " selected" : "") + ">" + esc(x.baseCoin) + "/USDT</option>");
+    }
+    return out.join("");
+}
 function fillPaneHead(i) {
     const P = S.panes[i], wrap = $("cpane" + (i + 1));
     if (!P || !wrap) return;
     const sel = wrap.querySelector(".psym");
-    sel.innerHTML = S.allSymbols.map(x => "<option value='" + esc(x.symbol) + "'>" + esc(x.baseCoin) + "/USDT</option>").join("");
-    if ([...sel.options].some(o => o.value === P.symbol)) sel.value = P.symbol;
-    else { P.symbol = sel.options[0] ? sel.options[0].value : S.mainSym; sel.value = P.symbol; }
+    sel.innerHTML = paneSymOptions(P.symbol, "");
+    if (![...sel.options].some(o => o.value === P.symbol)) {
+        P.symbol = sel.options[0] ? sel.options[0].value : S.mainSym;
+        sel.innerHTML = paneSymOptions(P.symbol, "");
+    }
+    sel.value = P.symbol;
     wrap.querySelector(".ptf").value = P.tf;
 }
 async function loadPane(i) {
