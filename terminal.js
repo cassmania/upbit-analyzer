@@ -503,7 +503,7 @@ function paneSymOptions(selected, q) {
     q = (q || "").trim().toUpperCase();
     const out = [];
     for (const x of S.allSymbols) {
-        if (x.symbol !== selected && out.length >= 200) break; // 선택 중은 순위 밖이라도 유지
+        if (x.symbol !== selected && out.length >= 200) continue; // 선택 중은 순위 밖이라도 유지
         if (q && !(x.symbol.includes(q) || String(x.baseCoin || "").toUpperCase().includes(q))) continue;
         out.push("<option value='" + esc(x.symbol) + "'" + (x.symbol === selected ? " selected" : "") + ">" + esc(x.baseCoin) + "/USDT</option>");
     }
