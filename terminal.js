@@ -908,11 +908,17 @@ function sanitizePaper() {
     S.paper.forEach(p => {
         const cs = S.csMap[p.symbol] || Number(p.cs) || 0.0001;
         const base = Math.round(p.price * p.vol * cs / Math.max(1, p.lev) * 100) / 100;
-        const margin = Math.round((base + (Number(p.added) || 0)) * 100) / 100;
+        // 구 저장분 마이그레이션: added 필드 없던 시절의 수혈분은 margin-기본값으로 복원한다
+        let added = Number(p.added);
+        if (!Number.isFinite(added)) {
+            added = Math.max(0, Math.round(((p.margin || 0) - base) * 100) / 100);
+            if (added > 0) fixed++;
+        }
+        const margin = Math.round((base + added) * 100) / 100;
         const ratio = margin / Math.max(p.price * p.vol * cs, 1e-9);
         const liq = p.side === 1 ? p.price * (1 - ratio + 0.005) : p.price * (1 + ratio - 0.005);
-        if (p.cs !== cs || Math.abs((p.margin || 0) - margin) > 0.005 || Math.abs((p.liq || 0) - liq) > 1e-9) fixed++;
-        p.cs = cs; p.margin = margin; p.liq = Math.round(liq * 100) / 100;
+        if (p.cs !== cs || p.added !== added || Math.abs((p.margin || 0) - margin) > 0.005 || Math.abs((p.liq || 0) - liq) > 1e-9) fixed++;
+        p.cs = cs; p.added = added; p.margin = margin; p.liq = Math.round(liq * 100) / 100;
     });
     if (fixed) { savePaper(); log("모의 포지션 " + fixed + "건 증거금·청산가 재계산"); }
 }
@@ -990,10 +996,11 @@ function renderPaper() {
         const pnl = paperUnreal(p, px);
         const base = p.price * p.vol * (p.cs || S.contractSize);
         const pct = base > 0 ? pnl / p.margin * 100 : 0;
+        const eff = p.margin > 0 ? base / p.margin : 0;
         const long = p.side === 1;
         const idx = S.paper.indexOf(p);
         return "<tr><td>" + esc(p.symbol) + "</td><td><span class='badge " + (long ? "long" : "short") + "'>" +
-            (long ? "LONG" : "SHORT") + "</span></td><td>" + p.lev + "x</td><td>" + p.vol + "</td>" +
+            (long ? "LONG" : "SHORT") + "</span></td><td>" + p.lev + "x<br><span class='dim mono'>실효" + eff.toFixed(1) + "x</span></td><td>" + p.vol + "</td>" +
             "<td class='mono'>" + fmt.format(p.price) + "</td><td class='mono'>" + fmt.format(cur) + "</td>" +
             "<td class='mono down'>" + fmt.format(Math.round(p.liq * 100) / 100) + "</td>" +
             "<td class='mono'>" + fmt.format(Math.round(p.margin * 100) / 100) + "</td>" +
@@ -1066,12 +1073,16 @@ async function scanTick() {
         for (let i = S.paper.length - 1; i >= 0; i--) {
             const p = S.paper[i], px = S.pxMap[p.symbol];
             if (!(px > 0)) continue;
-            // 자동 마진: 청산가 2% 접근 시 투입마진 20% 수혈 (5분 쿨다운, 잔고 한도)
+            // 자동 마진: 청산가 2% 접근 시 투입마진 20% 수혈 (5분 쿨다운, 잔고 한도, 기본금의 2배까지)
             if (p.guard !== false) {
                 const dist = p.side === 1 ? (px - p.liq) / px : (p.liq - px) / px;
                 if (dist < 0.02 && Date.now() - (p.guardAt || 0) > 5 * 60 * 1000) {
+                    const base = p.price * p.vol * (p.cs || S.contractSize) / Math.max(1, p.lev);
                     const add = Math.round(p.margin * 0.2 * 100) / 100;
-                    if (add <= S.bank && add > 0) {
+                    if ((p.added || 0) + add > base * 2) {
+                        p.guardAt = Date.now();
+                        log("자동 마진 한도 도달 " + p.symbol + " (수혈 한도 2배) — 수동 추가 이용", "down");
+                    } else if (add <= S.bank && add > 0) {
                         S.bank = Math.round((S.bank - add) * 100) / 100;
                         p.margin = Math.round((p.margin + add) * 100) / 100;
                         p.added = Math.round(((p.added || 0) + add) * 100) / 100;
