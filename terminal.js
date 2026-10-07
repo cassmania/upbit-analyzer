@@ -93,11 +93,11 @@ function focusSymbol(sym) {
     queueSaveUi();
 }
 function selectSymbol(sym) {
-    if (S.mainLocked) {
-        // 메인 BTC 고정 중: 전역 선택도 포커스만 옮기고 메인 차트는 유지한다
-        log("메인 차트 잠금 중 (BTC 고정) — 포커스만 이동");
-        focusSymbol(sym);
-        return;
+    if (S.mainLocked && sym !== S.mainSym) {
+        // 전역 검색·선택은 명시적 지시이므로 잠금을 풀고 메인 차트까지 바꾼다 (서브차트 클릭과 다름)
+        S.mainLocked = false;
+        renderMainLock();
+        log("메인 잠금 해제됨 — " + sym.replace("_USDT", "/USDT") + " 적용 (🔒BTC로 재고정 가능)");
     }
     S.symbol = sym;
     S.mainSym = sym;
