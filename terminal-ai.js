@@ -98,6 +98,31 @@
         return { notional: notional, margin: notional / l, feeIn: notional * PAPER_FEE,
             liqLong: p * (1 - 1 / l + PAPER_MM), liqShort: p * (1 + 1 / l - PAPER_MM) };
     }
+    // 실효 레버리지 = 명목가치 / 투입마진. 진입 직후엔 설정 레버리지와 일치한다.
+    function effOf(pos) {
+        var cs = Number(pos.cs);
+        if (!(cs > 0)) return 0;
+        var base = Number(pos.price) * Number(pos.vol) * cs;
+        var margin = Number(pos.margin);
+        if (!(base > 0) || !(margin > 0)) return 0;
+        return base / margin;
+    }
+    // 실효 맞춤: 투입마진을 명목가치/설정레버리지로 되돌린다. 늘어난분(added)은 지갑으로 환불.
+    // 반환 { margin, added, liqLong, liqShort, refund }. 잔고 부족(마진 부족분 충당 불가)時は refund 계산만 하고 적용은 호출자가 판단.
+    function syncMargin(pos) {
+        var cs = Number(pos.cs);
+        var lev = Number(pos.lev);
+        if (!(cs > 0) || !(lev >= 1)) return null;
+        var base = Number(pos.price) * Number(pos.vol) * cs;
+        if (!(base > 0)) return null;
+        var target = Math.round((base / lev) * 100) / 100;
+        var cur = Number(pos.margin) || 0;
+        var refund = Math.round((cur - target) * 100) / 100;
+        var p = Number(pos.price);
+        return { margin: target, added: 0, refund: refund,
+            liqLong: p * (1 - target / Math.max(base, 1e-9) + PAPER_MM),
+            liqShort: p * (1 + target / Math.max(base, 1e-9) - PAPER_MM) };
+    }
     function settleCalc(pos, exitPx) {
         var dir = (pos.side === 1 || pos.side === 4) ? 1 : -1;
         var pnl = (Number(exitPx) - pos.price) * pos.vol * pos.cs * dir;
@@ -126,7 +151,8 @@
 
     var TerminalAI = { VERSION: "1.3.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
         resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, pickTopSymbols: pickTopSymbols,
-        openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE, nextCandle: nextCandle, TF_SEC: TF_SEC };
+        openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE, nextCandle: nextCandle, TF_SEC: TF_SEC,
+        effOf: effOf, syncMargin: syncMargin };
     global.TerminalAI = TerminalAI;
     if (typeof module !== "undefined" && module.exports) module.exports = TerminalAI;
 })(typeof window !== "undefined" ? window : globalThis);

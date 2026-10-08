@@ -12,7 +12,7 @@ const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", mainLocked: true, tf: "Min6
     bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
     layout: 1, panes: [], mainPL: { lines: [] },
     cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
-        tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
+        tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true, lockEff: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
     try { S.fav = (JSON.parse(localStorage.getItem("krta-fav") || "[]") || []).filter(s => typeof s === "string").slice(0, 50); }
     catch { S.fav = []; }
@@ -31,6 +31,39 @@ function renderFavBtn() {
     $("favBtn").classList.toggle("on", on);
     $("favBtn").firstChild.textContent = on ? "★ " : "☆ ";
     $("favCount").textContent = S.fav.length;
+}
+// 코인 선택 요약: 해당 코인의 포지션(방향·레버리지·실효·손익) + 스캔 결과 + AI 신호를 한 곳에 표시.
+// selectSymbol/focusSymbol/renderPaper/renderScan/refreshAI에서 호출한다.
+function renderCoinSummary() {
+    const box = $("coinSummary");
+    if (!box) return;
+    const sym = S.symbol;
+    const px = S.pxMap[sym] !== undefined ? S.pxMap[sym] : (S.last > 0 ? S.last : null);
+    const poses = S.paper.filter(p => p.symbol === sym);
+    const posHtml = poses.length ? poses.map(p => {
+        const cur = (S.pxMap[p.symbol] !== undefined) ? S.pxMap[p.symbol] : p.price;
+        const pnl = paperUnreal(p, S.pxMap[p.symbol]);
+        const base = p.price * p.vol * (p.cs || 0);
+        const eff = (window.TerminalAI && window.TerminalAI.effOf) ? window.TerminalAI.effOf(p) : (p.margin > 0 ? base / p.margin : 0);
+        const long = p.side === 1;
+        return "<span class='badge " + (long ? "long" : "short") + "'>" + (long ? "LONG" : "SHORT") + "</span> " +
+            p.lev + "x(실효" + eff.toFixed(1) + "x) " + p.vol + "계약 @" + fmt.format(p.price) +
+            " · <span class='mono " + (pnl >= 0 ? "p-pos" : "p-neg") + "'>" + (pnl >= 0 ? "+" : "") + fmt.format(Math.round(pnl * 100) / 100) + "</span>";
+    }).join("<br>") : "<span class='dim'>보유 포지션 없음</span>";
+    const sc = S.scan.results[sym];
+    const scanHtml = sc ? "<b>" + esc(sc.dir) + "</b> <span class='dim'>" + esc(String(sc.reason || "").slice(0, 40)) + " · " +
+        new Date(sc.at).toLocaleTimeString("ko-KR", { hourCycle: "h23" }) + "</span>"
+        : "<span class='dim'>스캔 기록 없음" + (S.scan.on ? " (순서 대기)" : " (스캔 OFF)") + "</span>";
+    let aiHtml = "<span class='dim'>신호 대기</span>";
+    const ai = S.ai;
+    if (ai) {
+        if (ai.ok && ai.entry) aiHtml = "<b>" + esc(ai.dir) + "</b> <span class='dim'>진입 " + fmt.format(ai.entry.entry) +
+            " SL " + fmt.format(ai.entry.stop) + " TP " + fmt.format(ai.entry.target1) + "</span>";
+        else aiHtml = "<b>관망</b> <span class='dim'>" + esc(ai.blocked || (ai.raw && ai.raw.reason) || ai.reason || "") + "</span>";
+    }
+    box.innerHTML = "<b>" + esc(sym.replace("_USDT", "/USDT")) + "</b>" +
+        (px !== null ? " <span class='mono'>" + fmt.format(px) + "</span>" : "") +
+        "<br>포지션: " + posHtml + "<br>스캔: " + scanHtml + "<br>AI: " + aiHtml;
 }
 function renderSymbolSelect() {
     const q = ($("symQ").value || "").trim().toUpperCase();
@@ -89,7 +122,8 @@ function focusSymbol(sym) {
     applyDetail((S.detailList || []).find(x => x.symbol === S.symbol));
     wsSubDeal(S.symbol);
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
-    refreshAI().catch(() => {});
+    refreshAI().catch(() => {}).finally(() => renderCoinSummary());
+    renderCoinSummary();
     queueSaveUi();
 }
 function selectSymbol(sym) {
@@ -112,6 +146,8 @@ function selectSymbol(sym) {
     wsSubDeal(S.symbol);
     loadChart().catch(e => log("차트 " + e.message, "down"));
     refreshTop().catch(() => {}); refreshBook().catch(() => {}); renderPaper();
+    refreshAI().catch(() => {}).finally(() => renderCoinSummary());
+    renderCoinSummary();
     queueSaveUi();
 }
 function renderFavPanel() {
@@ -136,6 +172,7 @@ function loadCfg() {
         if (["ai", "manual"].includes(c.slMode)) S.cfg.slMode = c.slMode;
         if (Number(c.slPct) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number(c.slPct)));
         if (typeof c.noOverlap === "boolean") S.cfg.noOverlap = c.noOverlap;
+        if (typeof c.lockEff === "boolean") S.cfg.lockEff = c.lockEff;
     } catch { /* 기본값 유지 */ }
     $("cfgMargin").value = S.cfg.ratioPct;
     $("cfgMaxPos2").value = String(S.cfg.maxPos);
@@ -146,6 +183,7 @@ function loadCfg() {
     $("cfgTpPct").value = S.cfg.tpPct;
     $("cfgSlPct").value = S.cfg.slPct;
     $("cfgOverlap").checked = S.cfg.noOverlap;
+    if ($("cfgLockEff")) $("cfgLockEff").checked = S.cfg.lockEff !== false;
     cfgPreview();
 }
 function toggleCfg() {
@@ -205,7 +243,7 @@ function saveUi() {
             oPrice: $("oPrice").value, oMargin: $("oMargin").value, oVol: $("oVol").value,
             oUsdt: $("oUsdt").value, oPct: $("oPct").value,
             oTpsl: $("oTpsl").checked, oSL: $("oSL").value, oTP: $("oTP").value, oReduce: $("oReduce").checked,
-            scanN: $("scanN").value, ptab: S.ptab, autoPaper: S.autoPaper,
+            scanN: $("scanN").value, ptab: S.ptab, autoPaper: S.autoPaper, scanOn: S.scan.on,
             cfgFold: $("cfgBody").classList.contains("collapsed"),
             layout: S.layout, panes: (S.panes || []).slice(0, 7).map(P => P ? { s: P.symbol, t: P.tf } : null)
         }));
@@ -248,6 +286,8 @@ function loadUi() {
         S.autoPaper = true;
         $("autoPaper").textContent = "자동매매(모의) ON"; $("autoPaper").classList.toggle("on", true);
     }
+    // 다종목 스캔은 모의 진입만 하므로 재부팅 후 자동 재개해도 안전하다. 실매매(autoLive)는 절대 자동 복원하지 않는다.
+    S.scan.wantOn = u.scanOn === true;
 }
 
 const klineCache = new Map(), klineFlight = new Map();
@@ -906,7 +946,8 @@ function paperFill(side, price, vol, lev, auto, opts) {
 function sanitizePaper() {
     let fixed = 0;
     S.paper.forEach(p => {
-        const cs = S.csMap[p.symbol] || Number(p.cs) || 0.0001;
+        // 진입 시점 계약단위가 정본. csMap은 나중에 바뀔 수 있어 폴백으로만 쓴다.
+        const cs = Number(p.cs) || S.csMap[p.symbol] || 0.0001;
         const base = Math.round(p.price * p.vol * cs / Math.max(1, p.lev) * 100) / 100;
         // 구 저장분 마이그레이션: added 필드 없던 시절의 수혈분은 margin-기본값으로 복원한다
         let added = Number(p.added);
@@ -930,6 +971,20 @@ function savePaper() {
 function paperUnreal(p, px) {
     if (px === undefined) px = (p.symbol === S.symbol && S.last > 0) ? S.last : p.price;
     return (px - p.price) * p.vol * (p.cs || S.contractSize) * (p.side === 1 || p.side === 4 ? 1 : -1);
+}
+// 실효 맞춤: 투입마진을 명목가치/설정레버리지로 되돌려 실효를 설정값과 일치시킨다.
+// 늘어난분은 지갑으로 환불, 모자란분은 지갑에서 충당(부족하면 거부).
+function syncEffPosition(p) {
+    if (!window.TerminalAI || !window.TerminalAI.syncMargin) return { ok: false, reason: "engine-missing" };
+    const r = window.TerminalAI.syncMargin(p);
+    if (!r) return { ok: false, reason: "계산 불가(계약단위·레버리지 확인)" };
+    if (r.refund < 0 && S.bank + r.refund < 0) return { ok: false, reason: "지갑 잔고 부족(필요 $" + fmt.format(Math.round(-r.refund * 100) / 100) + ")" };
+    S.bank = Math.round((S.bank + r.refund) * 100) / 100;
+    p.margin = r.margin;
+    p.added = r.added;
+    p.liq = Math.round((p.side === 1 ? r.liqLong : r.liqShort) * 100) / 100;
+    savePaper(); renderPaper();
+    return { ok: true, refund: r.refund };
 }
 function paperLocked() {
     return S.paper.reduce((s, p) => s + p.margin, 0);
@@ -955,6 +1010,7 @@ function renderBank() {
         $("wEq").textContent = fmt.format(Math.round(eq)) + " USDT";
         $("wAvail").textContent = fmt.format(Math.round(S.bank)) + " USDT";
     }
+    renderCoinSummary();
 }
 function settlePaper(idx, px, reason) {
     const p = S.paper[idx];
@@ -1003,13 +1059,15 @@ function renderPaper() {
             (long ? "LONG" : "SHORT") + "</span></td><td>" + p.lev + "x<br><span class='dim mono'>실효" + eff.toFixed(1) + "x</span></td><td>" + p.vol + "</td>" +
             "<td class='mono'>" + fmt.format(p.price) + "</td><td class='mono'>" + fmt.format(cur) + "</td>" +
             "<td class='mono down'>" + fmt.format(Math.round(p.liq * 100) / 100) + "</td>" +
-            "<td class='mono'>" + fmt.format(Math.round(p.margin * 100) / 100) + "</td>" +
+            "<td class='mono'>" + fmt.format(Math.round(p.margin * 100) / 100) +
+            ((p.added || 0) > 0 ? "<br><span class='dim mono'>추가+$" + fmt.format(Math.round(p.added * 100) / 100) + "</span>" : "") + "</td>" +
             "<td><label class='switch'><input type='checkbox' data-guard='" + idx + "'" + (p.guard === false ? "" : " checked") + "><i></i></label></td>" +
             "<td class='mono " + (pnl >= 0 ? "p-pos" : "p-neg") + "'>" + (pnl >= 0 ? "+" : "") +
             fmt.format(Math.round(pnl * 100) / 100) + " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)</td>" +
             "<td><button class='abtn' data-close='" + idx + "'>시장가 청산</button> " +
             "<button class='abtn go' data-rev='" + idx + "'>역방향</button> " +
-            "<button class='abtn add' data-add='" + idx + "'>마진 추가</button></td></tr>";
+            "<button class='abtn add' data-add='" + idx + "'>마진 추가</button> " +
+            "<button class='abtn' data-sync='" + idx + "' title='투입마진을 명목가치/설정레버리지로 되돌려 실효를 설정값에 맞춥니다'>실효맞춤</button></td></tr>";
     }).join("") || "<tr><td colspan='11' class='dim'>모의 포지션 없음</td></tr>";
     renderBank();
 }
@@ -1074,7 +1132,8 @@ async function scanTick() {
             const p = S.paper[i], px = S.pxMap[p.symbol];
             if (!(px > 0)) continue;
             // 자동 마진: 청산가 2% 접근 시 투입마진 20% 수혈 (5분 쿨다운, 잔고 한도, 기본금의 2배까지)
-            if (p.guard !== false) {
+            // 실효 고정 ON이면 마진을 늘리지 않는다 — 실효 레버리지를 설정값 그대로 유지 (대신 청산 위험 상승)
+            if (p.guard !== false && !S.cfg.lockEff) {
                 const dist = p.side === 1 ? (px - p.liq) / px : (p.liq - px) / px;
                 if (dist < 0.02 && Date.now() - (p.guardAt || 0) > 5 * 60 * 1000) {
                     const base = p.price * p.vol * (p.cs || S.contractSize) / Math.max(1, p.lev);
@@ -1144,6 +1203,36 @@ function renderScan() {
         "<div>[" + new Date(r.at).toLocaleTimeString("ko-KR", { hourCycle: "h23" }) + "] " + esc(s) + " <b>" +
         esc(r.dir) + "</b> <span class='dim'>" + esc(String(r.reason).slice(0, 40)) + "</span></div>");
     $("scanList").innerHTML = rows.join("") || "<span class='dim'>스캔 대기</span>";
+    renderCoinSummary();
+}
+// 스캔 목록 구성 + 시작. 수동 토글과 재부팅 자동 재개가 함께 쓴다. 성공 true / 실패 false.
+async function startScan() {
+    try {
+        if (!S.fav.length) throw new Error("즐겨찾기가 비어 있습니다. ☆ 패널에서 코인을 추가하세요.");
+        const n = Number($("scanN").value) || 10;
+        const [tickers, details] = await Promise.all([pub("ticker", {}), pub("detail", {})]);
+        const size = {};
+        details.forEach(d => { if (d && d.symbol) size[d.symbol] = d; });
+        const favSet = S.fav.slice(0, Math.min(30, n));
+        S.scan.list = favSet.map(s => {
+            const t = tickers.find(x => x.symbol === s), d = size[s] || {};
+            return { symbol: s, contractSize: Number(d.contractSize) || S.contractSize,
+                priceScale: Number(d.priceScale) || 2, lastPrice: Number(t && t.lastPrice) || 0 };
+        }).filter(x => x.contractSize > 0 && x.lastPrice > 0);
+        if (!S.scan.list.length) throw new Error("즐겨찾기 시세를 가져오지 못했습니다.");
+        S.scan.idx = 0;
+        S.scan.on = true;
+        $("scanToggle").textContent = "다종목 스캔 ON";
+        $("scanToggle").classList.toggle("on", true);
+        log("다종목 스캔 시작 — 즐겨찾기 " + S.scan.list.length + "개 (15초당 1종목)");
+        return true;
+    } catch (e) {
+        S.scan.on = false;
+        $("scanToggle").textContent = "다종목 스캔 OFF";
+        $("scanToggle").classList.toggle("on", false);
+        log("스캔 실패 " + e.message, "down");
+        return false;
+    }
 }
 
 // ---- 자동매매 루프 ----
@@ -1270,6 +1359,16 @@ function bind() {
     $("sell").addEventListener("click", () => submitOrder(3, false));
     $("refresh").addEventListener("click", () => { refreshPrivate(); refreshTop().catch(() => {}); });
     $("refreshPaper").addEventListener("click", () => { try { sanitizePaper(); } catch {} renderPaper(); });
+    if ($("effSyncAll")) $("effSyncAll").addEventListener("click", () => {
+        let n = 0, fail = 0;
+        S.paper.forEach(p => {
+            const r = syncEffPosition(p);
+            if (r.ok) n++;
+            else fail++;
+        });
+        renderCoinSummary();
+        log("전체 실효 맞춤: " + n + "건 완료" + (fail ? ", " + fail + "건 실패(지갑 부족 등)" : ""));
+    });
     $("mOk").addEventListener("click", () => { const cb = modalCb, v = $("mInput").value; closeModal(); if (cb) cb(v); });
     $("mCancel").addEventListener("click", closeModal);
     $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
@@ -1331,6 +1430,10 @@ function bindCfgMargin() {
     $("cfgOverlap").addEventListener("change", () => {
         S.cfg.noOverlap = $("cfgOverlap").checked; saveCfg();
         log("중복 진입 방지 " + (S.cfg.noOverlap ? "ON" : "OFF"));
+    });
+    if ($("cfgLockEff")) $("cfgLockEff").addEventListener("change", () => {
+        S.cfg.lockEff = $("cfgLockEff").checked; saveCfg();
+        log("실효 고정 " + (S.cfg.lockEff ? "ON — 자동마진·마진추가 차단, 청산 위험 상승" : "OFF — 자동마진 허용"), S.cfg.lockEff ? undefined : "down");
     });
     $("cfgMaxPos2").addEventListener("change", () => setMaxPos(Number($("cfgMaxPos2").value)));
     $("cfgCool2").addEventListener("change", () => setCoolSec(Number($("cfgCool2").value)));
@@ -1399,6 +1502,7 @@ function bindCfgMargin() {
         if (ad) {
             const p = S.paper[Number(ad.dataset.add)];
             if (!p) return;
+            if (S.cfg.lockEff) { $("oMsg").textContent = "실효 고정 ON — 마진 추가가 차단됩니다. AI 설정에서 해제 후 이용하세요."; return; }
             const def = Math.round(p.margin * 0.2 * 100) / 100;
             openModal("마진 추가", esc(p.symbol) + " 투입마진 $" + fmt.format(p.margin) + "<br>현재 청산가 " +
                 fmt.format(p.liq) + " · 가용 $" + fmt.format(Math.round(S.bank)),
@@ -1414,6 +1518,18 @@ function bindCfgMargin() {
                     savePaper(); renderPaper();
                     log("마진 추가 " + p.symbol + " $" + add + " 새 청산가 " + fmt.format(Math.round(p.liq * 100) / 100));
                 });
+            return;
+        }
+        const sy = e.target.closest("[data-sync]");
+        if (sy) {
+            const p = S.paper[Number(sy.dataset.sync)];
+            if (!p) return;
+            const r = syncEffPosition(p);
+            if (r.ok) {
+                const eff = window.TerminalAI.effOf(p);
+                log("실효 맞춤 " + p.symbol + " → 실효" + eff.toFixed(1) + "x" +
+                    (r.refund >= 0 ? " (지갑 환불 $" + fmt.format(Math.round(r.refund * 100) / 100) + ")" : " (지갑 충당 $" + fmt.format(Math.round(-r.refund * 100) / 100) + ")"));
+            } else { $("oMsg").textContent = "실효 맞춤 실패: " + r.reason; log("실효 맞춤 실패 " + p.symbol + " — " + r.reason, "down"); }
             return;
         }
     });
@@ -1438,27 +1554,17 @@ function bindCfgMargin() {
         log("실매매 자동 " + (S.autoLive ? "시작" : "중지"), "down");
     });
     $("scanToggle").addEventListener("click", async () => {
-        S.scan.on = !S.scan.on;
-        $("scanToggle").textContent = "다종목 스캔 " + (S.scan.on ? "ON" : "OFF");
-        $("scanToggle").classList.toggle("on", S.scan.on);
         if (S.scan.on) {
-            try {
-                if (!S.fav.length) throw new Error("즐겨찾기가 비어 있습니다. ☆ 패널에서 코인을 추가하세요.");
-                const n = Number($("scanN").value) || 10;
-                const [tickers, details] = await Promise.all([pub("ticker", {}), pub("detail", {})]);
-                const size = {};
-                details.forEach(d => { if (d && d.symbol) size[d.symbol] = d; });
-                const favSet = S.fav.slice(0, Math.min(30, n));
-                S.scan.list = favSet.map(s => {
-                    const t = tickers.find(x => x.symbol === s), d = size[s] || {};
-                    return { symbol: s, contractSize: Number(d.contractSize) || S.contractSize,
-                        priceScale: Number(d.priceScale) || 2, lastPrice: Number(t && t.lastPrice) || 0 };
-                }).filter(x => x.contractSize > 0 && x.lastPrice > 0);
-                if (!S.scan.list.length) throw new Error("즐겨찾기 시세를 가져오지 못했습니다.");
-                S.scan.idx = 0;
-                log("다종목 스캔 시작 — 즐겨찾기 " + S.scan.list.length + "개 (15초당 1종목)");
-            } catch (e) { S.scan.on = false; $("scanToggle").textContent = "다종목 스캔 OFF"; log("스캔 실패 " + e.message, "down"); }
-        } else log("다종목 스캔 중지");
+            S.scan.on = false;
+            $("scanToggle").textContent = "다종목 스캔 OFF";
+            $("scanToggle").classList.toggle("on", false);
+            queueSaveUi();
+            log("다종목 스캔 중지");
+            return;
+        }
+        const ok = await startScan();
+        queueSaveUi();
+        if (!ok) { S.scan.on = false; $("scanToggle").textContent = "다종목 스캔 OFF"; }
     });
     $("arm").addEventListener("click", async () => {
         if (!S.tradeEnabled) { $("aiMsg").textContent = "거래 권한 키 미등록 — account 페이지에서 키 등록 후 승인하세요."; return; }
@@ -1541,5 +1647,10 @@ async function boot() {
     S.timer.push(setInterval(refreshAllCharts, 60000));
     log("터미널 시작 (" + JSVER + ") — 기본 모의. 실매매는 승인 후에만 동작합니다.");
     if (S.autoPaper) log("이전 설정 복원: 모의 자동매매가 켜진 상태로 재개됩니다.");
+    if (S.scan.wantOn) {
+        // 재부팅 전 스캔이 켜져 있었으면 자동으로 재개한다 (스캔은 모의 진입만 하므로 안전)
+        startScan().then(ok => { if (ok) log("재부팅 후 다종목 스캔 자동 재개"); });
+        S.scan.wantOn = false;
+    }
 })();
 })();
