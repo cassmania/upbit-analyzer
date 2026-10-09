@@ -120,7 +120,7 @@
           <input id="cfgMargin" type="range" min="0.01" max="10" step="0.01" value="1" aria-label="진입 증거금 비율">
           <div class="cfg-row"><span>실시간 연동 레버리지 배수 (실매매는 10x 상한)</span><b><select id="cfgLev" aria-label="자동매매 레버리지"><option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option><option value="5">5x</option><option value="10">10x</option><option value="20">20x</option><option value="50">50x</option><option value="100">100x</option></select></b></div>
           <div class="cfg-row"><span>동일 코인 중복 진입 방지 (Anti-Overlapping)</span><label class="switch"><input type="checkbox" id="cfgOverlap" checked><i></i></label></div>
-          <div class="cfg-row"><span>실효 고정 (자동마진·마진추가 차단, 설정 레버리지 유지)</span><label class="switch"><input type="checkbox" id="cfgLockEff" checked><i></i></label></div>
+          <div class="cfg-row"><span>실효 고정 (자동마진 차단, 수동 추가는 허용)</span><label class="switch"><input type="checkbox" id="cfgLockEff" checked><i></i></label></div>
           <div class="cfg-row"><span>최대 포지션 수 (1~100)</span><span class="stepper"><button data-step="maxPos,-1" aria-label="감소">−</button><input id="cfgMaxPos2" inputmode="numeric" value="5" aria-label="최대 포지션 수"><button data-step="maxPos,1" aria-label="증가">＋</button></span></div>
           <div class="cfg-row"><span>종목별 재진입 쿨다운 (초)</span><span class="stepper"><button data-step="coolSec,-5" aria-label="감소">−</button><input id="cfgCool2" inputmode="numeric" value="300" aria-label="쿨다운 초"><button data-step="coolSec,5" aria-label="증가">＋</button></span></div>
         </div>

@@ -1482,7 +1482,7 @@ function bindCfgMargin() {
     });
     if ($("cfgLockEff")) $("cfgLockEff").addEventListener("change", () => {
         S.cfg.lockEff = $("cfgLockEff").checked; saveCfg();
-        log("실효 고정 " + (S.cfg.lockEff ? "ON — 자동마진·마진추가 차단, 청산 위험 상승" : "OFF — 자동마진 허용"), S.cfg.lockEff ? undefined : "down");
+        log("실효 고정 " + (S.cfg.lockEff ? "ON — 자동마진 차단 (수동 추가는 허용)" : "OFF — 자동마진 허용"), S.cfg.lockEff ? undefined : "down");
     });
     $("cfgMaxPos2").addEventListener("change", () => setMaxPos(Number($("cfgMaxPos2").value)));
     $("cfgCool2").addEventListener("change", () => setCoolSec(Number($("cfgCool2").value)));
@@ -1561,10 +1561,14 @@ function bindCfgMargin() {
         if (ad) {
             const p = S.paper[Number(ad.dataset.add)];
             if (!p) return;
-            if (S.cfg.lockEff) { $("oMsg").textContent = "실효 고정 ON — 마진 추가가 차단됩니다. AI 설정에서 해제 후 이용하세요."; return; }
             const def = Math.round(p.margin * 0.2 * 100) / 100;
+            const baseNow = p.price * p.vol * (p.cs || S.contractSize);
+            const effNow = baseNow / Math.max(p.margin, 1e-9);
+            const effAfter = baseNow / Math.max(p.margin + def, 1e-9);
             openModal("마진 추가", esc(p.symbol) + " 투입마진 $" + fmt.format(p.margin) + "<br>현재 청산가 " +
-                fmt.format(p.liq) + " · 가용 $" + fmt.format(Math.round(S.bank)),
+                fmt.format(p.liq) + " · 가용 $" + fmt.format(Math.round(S.bank)) +
+                "<br>현재 실효 " + effNow.toFixed(1) + "x → 추가 시 약 " + effAfter.toFixed(1) + "x" +
+                (S.cfg.lockEff ? " (실효 고정 중: 수동 추가분은 고정이 풀릴 때까지 실효에 반영됩니다)" : ""),
                 "추가 금액 USDT (기본 20%)", def, "추가", v => {
                     const add = Math.round(Number(v) * 100) / 100;
                     if (!(add > 0)) { $("oMsg").textContent = "금액을 입력하세요."; return; }
