@@ -68,10 +68,22 @@
         try { sig = SIG.analyze(results, lv, price, { funding: funding }); }
         catch (e) { return { ok: false, dir: "관망", reason: "신호 산출 실패" }; }
         if (sig.error) return { ok: false, dir: "관망", reason: sig.error };
+        // 상세 표시용: TF별 근거(frames)와 데이터 기준시각(가장 오래된 확정봉)을 함께 넘긴다.
+        var asOf = null;
+        Object.keys(tfCandles).forEach(function (tf) {
+            var arr = tfCandles[tf];
+            if (arr && arr.length) {
+                var t = arr[arr.length - 1].time;
+                if (Number.isFinite(t) && (asOf === null || t < asOf)) asOf = t;
+            }
+        });
+        sig.frames = results;
+        sig.asOf = asOf;
         var dir = sig.entry ? sig.entry.side : "관망";
         return { ok: true, dir: dir, entry: sig.entry, blocked: sig.blocked || null,
             agree: sig.방향 ? sig.방향.agree : null, avg: sig.방향 ? sig.방향.avg : null,
-            exits: sig.exits || { long: [], short: [] }, atr: sig.atr, raw: sig };
+            exits: sig.exits || { long: [], short: [] }, atr: sig.atr,
+            frames: sig.frames || null, asOf: sig.asOf || null, raw: sig };
     }
 
     // 거래대금 상위 USDT 선물을 스캔 대상으로 고른다 (유동성 낮은 잡코인 제외)

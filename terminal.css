@@ -133,6 +133,9 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .abtn{border:1px solid #29b6f6!important;color:var(--txt)!important;background:transparent!important}
 .abtn.go{border-color:var(--down)!important;color:#ff8f9e!important}
 .abtn.add{border-color:var(--txt)!important;color:var(--txt)!important}
+/* 차트 이동 링크 버튼 (포지션·스캔 코인명) */
+.linkbtn{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.linkbtn:hover{color:#29b6f6}
 .switch{position:relative;display:inline-block;width:34px;height:18px;vertical-align:middle}
 .switch input{display:none}
 .switch i{position:absolute;inset:0;background:#29b6f6;border-radius:99px;transition:.15s}

@@ -58,7 +58,8 @@ function renderCoinSummary() {
     const ai = S.ai;
     if (ai) {
         if (ai.ok && ai.entry) aiHtml = "<b>" + esc(ai.dir) + "</b> <span class='dim'>진입 " + fmt.format(ai.entry.entry) +
-            " SL " + fmt.format(ai.entry.stop) + " TP " + fmt.format(ai.entry.target1) + "</span>";
+            " SL " + fmt.format(ai.entry.stop) + " TP " + fmt.format(ai.entry.target1) +
+            (ai.agree != null ? " · 합의 " + ai.agree + "%" : "") + "</span>";
         else aiHtml = "<b>관망</b> <span class='dim'>" + esc(ai.blocked || (ai.raw && ai.raw.reason) || ai.reason || "") + "</span>";
     }
     box.innerHTML = "<b>" + esc(sym.replace("_USDT", "/USDT")) + "</b>" +
@@ -802,20 +803,68 @@ async function refreshAI() {
             { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine },
             { "1h": h1, "4h": h4, "12h": h1b, "1d": d1 }, S.last, funding);
         S.ai = r;
+        S.funding = (r.raw && Number.isFinite(r.raw.funding)) ? r.raw.funding : (Number.isFinite(funding) ? funding : null);
         $("aiSig").textContent = r.dir;
-        if (r.ok && r.entry) {
-            const e = r.entry;
-            $("aiDetail").textContent = r.dir + " 진입 " + fmt.format(e.entry) + " SL " + fmt.format(e.stop) +
-                " TP1 " + fmt.format(e.target1) + " " + e.rr.toFixed(2) + "R · 합의 " + r.agree + "%";
-            markSignal(r.dir);
-        } else {
-            $("aiDetail").textContent = "관망 · " + (r.blocked || r.reason || "");
-            markSignal(null);
-        }
+        renderAiDetail(r);
+        if (r.ok && r.entry) markSignal(r.dir); else markSignal(null);
         return r.dir === "LONG" || r.dir === "SHORT" ? { dir: r.dir, entry: r.entry } : { dir: "관망" };
     } catch (e) {
         return legacyAI();
     }
+}
+// AI 전략 상세: 방향·진입설계·TF수렴·오실레이터·청산감시·데이터기준을 여러 줄로 표시.
+// 점수 산식 자체는 엔진이 정하고, 여기서는 근거를 있는 그대로 보여준다.
+function renderAiDetail(r) {
+    const box = $("aiDetail");
+    if (!box) return;
+    const L = [];
+    const f0 = (v, d) => (v === null || v === undefined || !isFinite(Number(v))) ? "-" : fmt.format(v);
+    if (r.ok && r.entry) {
+        const e = r.entry;
+        L.push("<b>" + esc(r.dir) + "</b> 진입 " + f0(e.entry) + " SL " + f0(e.stop) +
+            " TP1 " + f0(e.target1) + " " + (isFinite(e.rr) ? e.rr.toFixed(2) + "R" : "") +
+            (r.agree != null ? " · 합의 " + r.agree + "%" : ""));
+    } else {
+        L.push("<b>관망</b> · " + esc(r.blocked || r.reason || ""));
+    }
+    const dirInfo = r.raw && r.raw.방향;
+    if (dirInfo && Array.isArray(dirInfo.tfs) && dirInfo.tfs.length) {
+        L.push("TF수렴 " + dirInfo.tfs.map(t =>
+            esc(t.tf) + " " + (t.net >= 0 ? "+" : "") + t.net + "%(" + esc(t.verdict || "") + ")").join(" · ") +
+            " → 평균 " + dirInfo.avg + "% · 일치 " + dirInfo.agree + "%(n=" + dirInfo.n + ")");
+    }
+    const fr1h = r.frames && r.frames["1h"] && !r.frames["1h"].error ? r.frames["1h"] : null;
+    if (fr1h && fr1h.oscillators) {
+        const o = fr1h.oscillators;
+        const bits = [];
+        if (o.rsi14 != null && isFinite(o.rsi14)) bits.push("RSI " + Number(o.rsi14).toFixed(1));
+        if (o.stochastic && isFinite(o.stochastic.k)) bits.push("StochK " + Number(o.stochastic.k).toFixed(1));
+        if (o.cci20 != null && isFinite(o.cci20)) bits.push("CCI " + Number(o.cci20).toFixed(1));
+        if (o.macd && o.macd.hist != null && isFinite(o.macd.hist)) bits.push("MACD히스토 " + (o.macd.hist >= 0 ? "+" : "") + Number(o.macd.hist).toFixed(4));
+        if (o.rsi_divergence) bits.push(esc(o.rsi_divergence));
+        if (fr1h.confluence && fr1h.confluence.verdict) bits.push("수렴:" + esc(fr1h.confluence.verdict));
+        if (fr1h.volume && fr1h.volume.reliability) bits.push("거래량:" + esc(fr1h.volume.reliability));
+        if (bits.length) L.push("1h 오실레이터 · " + bits.join(" · "));
+    }
+    const exits = r.exits || (r.raw && r.raw.exits);
+    if (exits) {
+        const fmtEx = (list) => (!list || !list.length) ? "없음" :
+            "긴급 " + list.filter(x => x.level === "긴급").length + " · 주의 " + list.filter(x => x.level !== "긴급").length +
+            (list[0] ? " — " + esc(list[0].text).slice(0, 46) : "");
+        L.push("청산감시 롱(" + fmtEx(exits.long) + ") / 숏(" + fmtEx(exits.short) + ")");
+    }
+    if (r.raw && r.raw.rejected) {
+        const p = r.raw.rejected;
+        L.push("보류 계획: " + esc(p.side || r.dir || "") + " 진입 " + f0(p.entry) +
+            (isFinite(p.rr) ? " " + p.rr.toFixed(2) + "R" : "") + " — " + esc(r.blocked || ""));
+    }
+    const meta = [];
+    if (r.atr != null && isFinite(r.atr)) meta.push("ATR(4h) " + f0(r.atr));
+    const fu = (r.raw && Number.isFinite(r.raw.funding)) ? r.raw.funding : S.funding;
+    if (Number.isFinite(fu)) meta.push("펀딩 " + (fu >= 0 ? "+" : "") + (fu * 100).toFixed(4) + "%");
+    if (r.asOf) meta.push("데이터 기준 " + new Date(r.asOf * 1000).toLocaleTimeString("ko-KR", { hourCycle: "h23" }));
+    if (meta.length) L.push("<span class='dim'>" + meta.join(" · ") + "</span>");
+    box.innerHTML = L.join("<br>");
 }
 function chartZoom(mode) {
     if (!S.chart) return;
@@ -1055,7 +1104,7 @@ function renderPaper() {
         const eff = p.margin > 0 ? base / p.margin : 0;
         const long = p.side === 1;
         const idx = S.paper.indexOf(p);
-        return "<tr><td>" + esc(p.symbol) + "</td><td><span class='badge " + (long ? "long" : "short") + "'>" +
+        return "<tr><td><button class='linkbtn' data-goto='" + esc(p.symbol) + "' title='차트로 이동'>" + esc(p.symbol) + "</button></td><td><span class='badge " + (long ? "long" : "short") + "'>" +
             (long ? "LONG" : "SHORT") + "</span></td><td>" + p.lev + "x<br><span class='dim mono'>실효" + eff.toFixed(1) + "x</span></td><td>" + p.vol + "</td>" +
             "<td class='mono'>" + fmt.format(p.price) + "</td><td class='mono'>" + fmt.format(cur) + "</td>" +
             "<td class='mono down'>" + fmt.format(Math.round(p.liq * 100) / 100) + "</td>" +
@@ -1103,7 +1152,7 @@ async function refreshPrivate() {
         updateTicket();
         const tb = document.querySelector("#posT tbody");
         tb.innerHTML = (s.sections.positions.rows || []).map(p =>
-            "<tr><td>" + esc(p.symbol) + "</td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
+            "<tr><td><button class='linkbtn' data-goto='" + esc(p.symbol) + "' title='차트로 이동'>" + esc(p.symbol) + "</button></td><td>" + esc(p.direction) + "</td><td>" + esc(p.contracts) +
             "</td><td class='mono'>" + fmt.format(p.entryPrice) + "</td><td>" + esc(p.leverage) + "X</td><td class='mono " +
             ((p.unrealized || 0) >= 0 ? "up" : "down") + "'>" + fmt.format(p.unrealized) + "</td><td></td></tr>").join("") ||
             "<tr><td colspan='7' class='dim'>실포지션 없음</td></tr>";
@@ -1200,7 +1249,7 @@ async function scanTick() {
 }
 function renderScan() {
     const rows = Object.entries(S.scan.results).slice(-10).reverse().map(([s, r]) =>
-        "<div>[" + new Date(r.at).toLocaleTimeString("ko-KR", { hourCycle: "h23" }) + "] " + esc(s) + " <b>" +
+        "<div>[" + new Date(r.at).toLocaleTimeString("ko-KR", { hourCycle: "h23" }) + "] <button class='linkbtn' data-sgoto='" + esc(s) + "' title='차트로 이동'>" + esc(s) + "</button> <b>" +
         esc(r.dir) + "</b> <span class='dim'>" + esc(String(r.reason).slice(0, 40)) + "</span></div>");
     $("scanList").innerHTML = rows.join("") || "<span class='dim'>스캔 대기</span>";
     renderCoinSummary();
@@ -1447,7 +1496,17 @@ function bindCfgMargin() {
         S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
         log("모의자금 리셋 — $1,000,000");
     });
+    document.querySelector("#posT").addEventListener("click", e => {
+        const go = e.target.closest("[data-goto]");
+        if (go) selectSymbol(go.dataset.goto);
+    });
+    $("scanList").addEventListener("click", e => {
+        const go = e.target.closest("[data-sgoto]");
+        if (go) selectSymbol(go.dataset.sgoto);
+    });
     document.querySelector("#paperT").addEventListener("click", e => {
+        const go = e.target.closest("[data-goto]");
+        if (go) { selectSymbol(go.dataset.goto); return; }
         const g = e.target.closest("[data-guard]");
         if (g) {
             const p = S.paper[Number(g.dataset.guard)];
