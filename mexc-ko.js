@@ -119,14 +119,13 @@ function render(q) {
         wrap.style.overflowX = "auto";
         const tb = document.createElement("table");
         const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>영어</th><th>한국어 뜻</th><th>설명</th></tr>";
+        thead.innerHTML = "<tr><th>영어</th><th>한국어 뜻</th></tr>";
         const tb2 = document.createElement("tbody");
-        rows.forEach(([en, ko, note]) => {
+        rows.forEach(([en, ko]) => {
             const tr = document.createElement("tr");
             const a = document.createElement("td"); a.className = "en"; a.textContent = en;
             const b = document.createElement("td"); b.textContent = ko;
-            const c = document.createElement("td"); c.textContent = note;
-            tr.append(a, b, c); tb2.append(tr);
+            tr.append(a, b); tb2.append(tr);
         });
         tb.append(thead, tb2); wrap.append(tb);
         sec.append(h, w, wrap); box.append(sec);
