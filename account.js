@@ -38,6 +38,7 @@
         generation++;
         clearTimeout(timer);
         $("accountData").replaceChildren();
+        const sp = $("secProfile"); if (sp) { sp.replaceChildren(); const p = document.createElement("p"); p.className = "empty"; p.textContent = "조회 후 표시됩니다."; sp.append(p); }
         $("lastUpdated").textContent = "아직 조회하지 않았습니다";
         // 키를 복사하러 탭을 옮길 때는 입력 중인 값만 유지한다. 로그아웃·페이지 종료 때는 지운다.
         if (!keepInputs) { $("apiKey").value = ""; $("secret").value = ""; $("password").value = ""; }
@@ -78,9 +79,40 @@
         const body = node("tbody"); rows.forEach(values => { const tr = node("tr"); values.forEach(value => tr.append(node("td", value))); body.append(tr); });
         tableEl.append(body); wrap.append(tableEl); card.append(wrap);
     }
+    function loadAddr() {
+        try {
+            const v = JSON.parse(localStorage.getItem("krta-addrbook") || "[]");
+            return Array.isArray(v) ? v.filter(r => r && typeof r.addr === "string").slice(-100) : [];
+        } catch { return []; }
+    }
+    function renderAddr() {
+        const body = $("addrRows"); body.replaceChildren();
+        loadAddr().forEach((r, i) => {
+            const tr = node("tr");
+            [r.coin, r.net, r.label, r.addr, r.memo || "—"].forEach(v => tr.append(node("td", v)));
+            const del = node("td"), btn = node("button", "삭제");
+            btn.type = "button"; btn.className = "secondary"; btn.dataset.del = String(i);
+            del.append(btn); tr.append(del); body.append(tr);
+        });
+        if (!body.children.length) { const tr = node("tr"), td = node("td", "저장된 메모가 없습니다."); td.colSpan = 6; tr.append(td); body.append(tr); }
+    }
+    function renderProfile(data) {
+        const box = $("secProfile"); box.replaceChildren();
+        if (!data.connected) { box.append(node("p", "MEXC 연결 후 표시됩니다.", "empty")); return; }
+        const s = data.sections;
+        const usdt = (s.assets.status === "ok" ? s.assets.rows : []).filter(r => r.currency === "USDT");
+        const eq = usdt.reduce((sum, r) => sum + (Number(r.equity) || 0), 0);
+        const grid = node("div", undefined, "grid");
+        [["선물 총자산 (USDT)", number(eq)], ["현물 자산 종류", s.spot.status === "ok" ? String(s.spot.rows.length) : "조회 실패"],
+            ["활성 포지션", s.positions.status === "ok" ? String(s.positions.rows.length) : "조회 실패"],
+            ["미체결 주문", ["spotOrders", "futuresOrders"].every(k => s[k].status === "ok") ? String(s.spotOrders.rows.length + s.futuresOrders.rows.length) : "조회 실패"]
+        ].forEach(([name, value]) => { const cell = node("div"); cell.append(node("small", name), node("strong", value)); grid.append(cell); });
+        box.append(grid);
+    }
     function render(data) {
         connected = data.connected === true;
         $("accountData").replaceChildren(); $("disconnect").hidden = !data.connected;
+        renderProfile(data);
         $("connection").open = !data.connected;
         if (!data.connected) { $("lastUpdated").textContent = "MEXC 연결 전"; status("로그인했습니다. 읽기 전용 MEXC API 키를 연결해 주세요."); return; }
         $("lastUpdated").textContent = "조회 " + new Date(data.fetchedAt).toLocaleString("ko-KR");
@@ -201,6 +233,29 @@
         render(await api("mexc", "DELETE")); status("저장된 MEXC 연결을 해제했습니다.");
     }));
     $("refresh").addEventListener("click", refresh); $("autoRefresh").addEventListener("change", schedule);
+    [["tabBtnAssets", "tabAssets"], ["tabBtnSec", "tabSec"], ["tabBtnAddr", "tabAddr"]].forEach(([b, p]) => {
+        $(b).addEventListener("click", () => {
+            ["tabBtnAssets", "tabBtnSec", "tabBtnAddr"].forEach(x => { const on = x === b; $(x).classList.toggle("act", on); $(x).setAttribute("aria-selected", String(on)); });
+            ["tabAssets", "tabSec", "tabAddr"].forEach(x => { $(x).hidden = x !== p; });
+            if (p === "tabAddr") renderAddr();
+        });
+    });
+    $("addrForm").addEventListener("submit", event => {
+        event.preventDefault();
+        const row = { coin: $("addrCoin").value.trim().toUpperCase().slice(0, 20), net: $("addrNet").value.trim().toUpperCase().slice(0, 30),
+            label: $("addrLabel").value.trim().slice(0, 60), addr: $("addrValue").value.trim().slice(0, 200), memo: $("addrMemo").value.trim().slice(0, 100) };
+        if (!row.coin || !row.net || !row.label || !row.addr) return;
+        const rows = loadAddr(); rows.push(row);
+        try { localStorage.setItem("krta-addrbook", JSON.stringify(rows.slice(-100))); } catch { status("메모 저장 공간이 부족합니다.", true); return; }
+        event.target.reset(); renderAddr(); status("메모를 추가했습니다. 거래소 등록은 MEXC 사이트에서 하세요.");
+    });
+    $("addrRows").addEventListener("click", event => {
+        const btn = event.target.closest("[data-del]");
+        if (!btn) return;
+        const rows = loadAddr(); rows.splice(Number(btn.dataset.del), 1);
+        try { localStorage.setItem("krta-addrbook", JSON.stringify(rows)); } catch {}
+        renderAddr();
+    });
     $("connection").addEventListener("toggle", schedule);
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) clearPrivate(true); else if (authenticated && connected && !$("connection").open) refresh();
