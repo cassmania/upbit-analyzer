@@ -1,0 +1,12 @@
+{
+  "name": "upbit-analyzer",
+  "version": "6.2.3",
+  "private": true,
+  "description": "업비트/MEXC 코인 분석기 — 정적 페이지 + Netlify Functions API 중계",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/build-public.js",
+    "test:netlify": "node scripts/test-netlify-functions.js",
+    "serve:netlify": "node scripts/netlify-local-server.js"
+  }
+}

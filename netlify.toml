@@ -1,0 +1,84 @@
+[build]
+  command = "node scripts/build-public.js"
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Vercel 스타일 /api/* 경로를 Netlify Functions 로 200 리다이렉트한다.
+# force = true 를 두어 정적 파일이 없어도 라우팅이 우선하도록 한다.
+[[redirects]]
+  from = "/api/upbit"
+  to = "/.netlify/functions/upbit"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/mexc"
+  to = "/.netlify/functions/mexc"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/mexc-futures"
+  to = "/.netlify/functions/mexc-futures"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/coingecko"
+  to = "/.netlify/functions/coingecko"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/evidence"
+  to = "/.netlify/functions/evidence"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/private/session"
+  to = "/.netlify/functions/private-session"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/private/mexc"
+  to = "/.netlify/functions/private-mexc"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/private/trade"
+  to = "/.netlify/functions/private-trade"
+  status = 200
+  force = true
+
+# 개인/계정 페이지 보안 헤더 (정적 파일)
+[[headers]]
+  for = "/account.html"
+  [headers.values]
+    Cache-Control = "private, no-store, max-age=0"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
+
+[[headers]]
+  for = "/terminal.html"
+  [headers.values]
+    Cache-Control = "private, no-store, max-age=0"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' wss://contract.mexc.com https://contract.mexc.com; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
+
+[[headers]]
+  for = "/api/private/*"
+  [headers.values]
+    Cache-Control = "private, no-store, max-age=0"
+    CDN-Cache-Control = "no-store"
+    X-Content-Type-Options = "nosniff"
