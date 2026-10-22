@@ -1,0 +1,273 @@
+/* 개인 화면은 공개 분석과 분리하고 계정 데이터를 메모리에만 잠시 보관한다. */
+(function () {
+    "use strict";
+    // file:// 로컬 파일로 열면 서버 API가 없어 전부 실패한다. 배포 주소로 안내하고 중단한다.
+    if (location.protocol === "file:") {
+        document.addEventListener("DOMContentLoaded", () => {
+            document.body.insertAdjacentHTML("afterbegin",
+                "<div style='background:#7f1d1d;color:#fff;padding:12px 16px;font-size:14px'>로컬 파일로는 동작하지 않습니다. " +
+                "https://upbit-analyzer.vercel.app/account.html 로 접속하세요. 폴더 안 파일을 더블클릭하면 안 됩니다.</div>");
+        });
+        return;
+    }
+    // 인증 링크의 토큰은 주소와 브라우저 저장소에 남기지 않는다.
+    const fragment = new URLSearchParams(location.hash.slice(1));
+    let invitationToken = ["invite", "recovery"].includes(fragment.get("type")) ? fragment.get("access_token") : null;
+    const linkFailed = fragment.has("error");
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    [...fragment.keys()].forEach(key => fragment.delete(key));
+    const $ = id => document.getElementById(id);
+    const errors = {
+        SETUP_REQUIRED: "본인 인증을 위한 서버 설정이 아직 완료되지 않았습니다.",
+        LOGIN_REQUIRED: "본인 계정으로 로그인해 주세요.", SESSION_EXPIRED: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
+        LOGIN_FAILED: "이메일 또는 비밀번호를 확인해 주세요.", OWNER_ONLY: "이 계정은 개인 화면에 접근할 수 없습니다.",
+        ORIGIN_DENIED: "요청이 차단되었습니다. 이 사이트에서 다시 시도해 주세요.",
+        AUTH_UNAVAILABLE: "로그인 서비스 연결 또는 설정을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        RATE_LIMITED: "요청이 많습니다. 1분 뒤 다시 시도해 주세요.",
+        INVALID_KEY: "Access Key와 Secret Key 형식을 확인해 주세요.", READ_ONLY_REQUIRED: "읽기 전용 키인지 확인해 주세요.",
+        MEXC_KEY_CHECK_FAILED: "계정 조회에 실패했습니다. MEXC 키·조회 권한·IP 제한을 확인해 주세요. 기존 연결은 유지됩니다.",
+        KEY_DECRYPT_FAILED: "저장된 키를 읽을 수 없습니다. 연결 설정에서 키를 다시 등록해 주세요.",
+        MEXC_PERMISSION_OR_REQUEST_FAILED: "MEXC 조회 권한·키 유효기간·IP 제한을 확인해 주세요.",
+        MEXC_RATE_LIMITED: "MEXC 요청 제한에 도달했습니다. 잠시 후 새로고침해 주세요.",
+        MEXC_ACCESS_DENIED: "거래소가 접근을 거부했습니다. 키 권한·IP 제한·서버 접속 제한을 확인해야 합니다.",
+        MEXC_UNAVAILABLE: "MEXC 연결에 실패했습니다.", MEXC_RESPONSE_INVALID: "MEXC 응답 형식을 확인할 수 없습니다."
+    };
+    let busy = false, timer = null, generation = 0, authenticated = false, connected = false;
+    function status(text, error = false) { $("status").textContent = text; $("status").className = error ? "error" : ""; }
+    function clearPrivate(keepInputs = false) {
+        generation++;
+        clearTimeout(timer);
+        $("accountData").replaceChildren();
+        const sp = $("secProfile"); if (sp) { sp.replaceChildren(); const p = document.createElement("p"); p.className = "empty"; p.textContent = "조회 후 표시됩니다."; sp.append(p); }
+        $("lastUpdated").textContent = "아직 조회하지 않았습니다";
+        // 키를 복사하러 탭을 옮길 때는 입력 중인 값만 유지한다. 로그아웃·페이지 종료 때는 지운다.
+        if (!keepInputs) { $("apiKey").value = ""; $("secret").value = ""; $("password").value = ""; }
+    }
+    function showLogin() { authenticated = false; clearPrivate(); $("privateArea").hidden = true; $("login").hidden = false; }
+    async function api(path, method = "GET", payload) {
+        const response = await fetch("/api/private/" + path, { method, credentials: "same-origin", cache: "no-store",
+            headers: { "X-Private-Request": "1", ...(payload ? { "Content-Type": "application/json" } : {}) },
+            ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(25000) });
+        const data = await response.json();
+        if (!response.ok) {
+            if (["LOGIN_REQUIRED", "SESSION_EXPIRED", "OWNER_ONLY"].includes(data.error)) showLogin();
+            if (data.error === "SETUP_REQUIRED") { showLogin(); $("login").hidden = true; $("setup").hidden = false; }
+            let message = errors[data.error] || "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+            if (data.error === "MEXC_KEY_CHECK_FAILED" && data.checks) {
+                message += " 현물: " + (errors[data.checks.spot] || "조회 실패") + " 선물: " + (errors[data.checks.futures] || "조회 실패");
+            }
+            throw new Error(message);
+        }
+        return data;
+    }
+    function node(tag, text, className) {
+        const el = document.createElement(tag);
+        if (text !== undefined) el.textContent = text;
+        if (className) el.className = className;
+        return el;
+    }
+    const number = value => value === null || value === undefined ? "미제공" : Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 8 });
+    function section(title, data) {
+        const card = node("section", undefined, "card"); card.append(node("h2", title));
+        if (data.status !== "ok") card.append(node("p", errors[data.error] || "이 항목을 조회할 수 없습니다.", "section-error"));
+        else if (!data.rows.length) card.append(node("p", "현재 해당 내역이 없습니다.", "empty"));
+        return card;
+    }
+    function table(card, headers, rows) {
+        const wrap = node("div", undefined, "tablewrap"), tableEl = node("table"), head = node("thead"), row = node("tr");
+        headers.forEach(text => row.append(node("th", text))); head.append(row); tableEl.append(head);
+        const body = node("tbody"); rows.forEach(values => { const tr = node("tr"); values.forEach(value => tr.append(node("td", value))); body.append(tr); });
+        tableEl.append(body); wrap.append(tableEl); card.append(wrap);
+    }
+    function loadAddr() {
+        try {
+            const v = JSON.parse(localStorage.getItem("krta-addrbook") || "[]");
+            return Array.isArray(v) ? v.filter(r => r && typeof r.addr === "string").slice(-100) : [];
+        } catch { return []; }
+    }
+    function renderAddr() {
+        const body = $("addrRows"); body.replaceChildren();
+        loadAddr().forEach((r, i) => {
+            const tr = node("tr");
+            [r.coin, r.net, r.label, r.addr, r.memo || "—"].forEach(v => tr.append(node("td", v)));
+            const del = node("td"), btn = node("button", "삭제");
+            btn.type = "button"; btn.className = "secondary"; btn.dataset.del = String(i);
+            del.append(btn); tr.append(del); body.append(tr);
+        });
+        if (!body.children.length) { const tr = node("tr"), td = node("td", "저장된 메모가 없습니다."); td.colSpan = 6; tr.append(td); body.append(tr); }
+    }
+    function renderProfile(data) {
+        const box = $("secProfile"); box.replaceChildren();
+        if (!data.connected) { box.append(node("p", "MEXC 연결 후 표시됩니다.", "empty")); return; }
+        const s = data.sections;
+        const usdt = (s.assets.status === "ok" ? s.assets.rows : []).filter(r => r.currency === "USDT");
+        const eq = usdt.reduce((sum, r) => sum + (Number(r.equity) || 0), 0);
+        const grid = node("div", undefined, "grid");
+        [["선물 총자산 (USDT)", number(eq)], ["현물 자산 종류", s.spot.status === "ok" ? String(s.spot.rows.length) : "조회 실패"],
+            ["활성 포지션", s.positions.status === "ok" ? String(s.positions.rows.length) : "조회 실패"],
+            ["미체결 주문", ["spotOrders", "futuresOrders"].every(k => s[k].status === "ok") ? String(s.spotOrders.rows.length + s.futuresOrders.rows.length) : "조회 실패"]
+        ].forEach(([name, value]) => { const cell = node("div"); cell.append(node("small", name), node("strong", value)); grid.append(cell); });
+        box.append(grid);
+    }
+    function render(data) {
+        connected = data.connected === true;
+        $("accountData").replaceChildren(); $("disconnect").hidden = !data.connected;
+        renderProfile(data);
+        $("connection").open = !data.connected;
+        if (!data.connected) { $("lastUpdated").textContent = "MEXC 연결 전"; status("로그인했습니다. 읽기 전용 MEXC API 키를 연결해 주세요."); return; }
+        $("lastUpdated").textContent = "조회 " + new Date(data.fetchedAt).toLocaleString("ko-KR");
+        const s = data.sections;
+        const pos = section("활성 포지션", s.positions);
+        if (s.positions.status === "ok" && s.positions.rows.length) {
+            const grid = node("div", undefined, "grid");
+            s.positions.rows.forEach(p => {
+                const card = node("article", undefined, "position");
+                card.append(node("h3", `${p.symbol} · ${p.direction}`), node("p", `${p.mode} · ${number(p.leverage)}배`));
+                const metrics = node("div", undefined, "metrics");
+                [["미실현 손익 (결제통화)", number(p.unrealized), p.unrealized > 0 ? "positive" : p.unrealized < 0 ? "negative" : ""],
+                    ["보유 계약 수", number(p.contracts)], ["평균 진입가", number(p.entryPrice)],
+                    ["격리 청산가", p.mode === "교차" ? "교차 모드 · 미제공" : number(p.liquidationPrice)]].forEach(([name, value, css]) => {
+                    const cell = node("div"); cell.append(node("small", name), node("strong", value, css)); metrics.append(cell);
+                });
+                card.append(metrics); grid.append(card);
+            });
+            pos.append(grid, node("p", "수량은 코인 수량이 아닌 계약 수입니다. 교차 모드의 청산가는 거래소에서 확인하세요.", "footnote"));
+        }
+        $("accountData").append(pos);
+        const assets = section("선물 자산", s.assets);
+        if (s.assets.status === "ok" && s.assets.rows.length) table(assets, ["통화", "총 자산", "사용 가능", "증거금", "미실현 손익"],
+            s.assets.rows.map(r => [r.currency, number(r.equity), number(r.available), number(r.margin), number(r.unrealized)]));
+        $("accountData").append(assets);
+        const spot = section("현물 잔고", s.spot);
+        if (s.spot.status === "ok" && s.spot.rows.length) table(spot, ["자산", "사용 가능", "주문 등에 묶인 수량"], s.spot.rows.map(r => [r.asset, number(r.free), number(r.locked)]));
+        $("accountData").append(spot);
+        [["spotOrders", "현물 미체결 주문"], ["futuresOrders", "선물 미체결 주문"]].forEach(([key, title]) => {
+            const card = section(title, s[key]);
+            if (s[key].status === "ok" && s[key].rows.length) table(card, ["종목", "방향", "가격", "수량", "체결 수량", "상태"],
+                s[key].rows.map(r => [r.symbol, r.side, number(r.price), `${number(r.quantity)} ${r.unit}`, number(r.filled), r.status]));
+            if (key === "futuresOrders") card.append(node("p", data.futuresOrdersMayHaveMore ? "첫 100건입니다. 나머지 주문은 MEXC에서 확인하세요." : "일반 주문 기준 · 예약/TP/SL 주문은 MEXC에서 확인하세요.", "footnote"));
+            $("accountData").append(card);
+        });
+        const partial = Object.values(s).some(x => x.status !== "ok");
+        status(partial ? "일부 항목의 조회에 실패했습니다. 각 항목의 안내를 확인해 주세요." : "MEXC 계정 정보를 갱신했습니다.", partial);
+    }
+    function schedule() {
+        clearTimeout(timer);
+        if (authenticated && connected && $("autoRefresh").checked && !document.hidden && !$("connection").open) timer = setTimeout(refresh, 30000);
+    }
+    async function run(action) {
+        if (busy) return;
+        busy = true; document.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        try { await action(); } catch (error) { status(error.message || "연결에 실패했습니다.", true); }
+        finally { busy = false; document.querySelectorAll("button").forEach(b => { b.disabled = false; }); schedule(); }
+    }
+    async function refresh() {
+        return run(async () => {
+            const current = generation;
+            try { const data = await api("mexc"); if (current === generation && !document.hidden) render(data); }
+            catch (error) { $("accountData").replaceChildren(); $("lastUpdated").textContent = "조회 실패 · 이전 값 숨김"; throw error; }
+        });
+    }
+    $("loginForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
+        const input = { action: "login", email: $("email").value.trim(), password: $("password").value };
+        $("password").value = "";
+        // 요청 중임을 버튼과 입력창 아래에 함께 표시해 중복 클릭을 줄인다.
+        $("loginButton").textContent = "로그인 확인 중…";
+        $("loginForm").setAttribute("aria-busy", "true");
+        $("loginFeedback").hidden = false; $("loginFeedback").className = "";
+        $("loginFeedback").textContent = "계정을 확인하고 있습니다. 잠시 기다려 주세요.";
+        status("계정을 확인하고 있습니다.");
+        try {
+            await api("session", "POST", input); authenticated = true; $("login").hidden = true; $("privateArea").hidden = false;
+            render(await api("mexc"));
+        } catch (error) {
+            // 작은 화면에서도 실패 안내가 보이도록 입력창 가까이에 표시한다.
+            const message = error.name === "TimeoutError" ? "로그인 응답이 지연되었습니다. 잠시 후 다시 시도해 주세요."
+                : error.message === errors.LOGIN_FAILED ? "로그인이 거부되었습니다. 기존 사이트 인증 계정의 이메일·비밀번호를 확인해 주세요. Google·Vercel·MEXC 비밀번호와는 별개입니다."
+                : error.message;
+            $("loginFeedback").textContent = message; $("loginFeedback").className = "error";
+            if (!$("login").hidden) $("loginFeedback").focus();
+            throw new Error(message);
+        } finally {
+            $("loginButton").textContent = "로그인"; $("loginForm").removeAttribute("aria-busy");
+        }
+    }); });
+    $("activationForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
+        if (!invitationToken) throw new Error("초대 또는 비밀번호 설정 메일의 링크를 다시 열어 주세요.");
+        if ($("newPassword").value !== $("confirmPassword").value) {
+            $("activationFeedback").textContent = "두 비밀번호가 일치하지 않습니다."; return;
+        }
+        const password = $("newPassword").value;
+        $("newPassword").value = ""; $("confirmPassword").value = "";
+        $("activationButton").textContent = "저장 중…";
+        $("activationFeedback").textContent = "본인 확인 후 저장하고 있습니다.";
+        try {
+            await api("session", "POST", { action: "set-password", token: invitationToken, password });
+            invitationToken = null; $("activation").hidden = true; showLogin();
+            status("비밀번호를 저장했습니다. 이메일과 새 비밀번호로 로그인해 주세요.");
+        } catch (error) {
+            $("activationFeedback").textContent = error.message; throw error;
+        } finally { $("activationButton").textContent = "비밀번호 저장"; }
+    }); });
+    $("keyForm").addEventListener("submit", event => { event.preventDefault(); run(async () => {
+        const input = { apiKey: $("apiKey").value.trim(), secret: $("secret").value.trim(), readOnly: $("readOnly").checked };
+        $("apiKey").value = ""; $("secret").value = "";
+        $("keySaveButton").textContent = "MEXC 연결 확인 중…";
+        $("keyFeedback").hidden = false; $("keyFeedback").className = "";
+        $("keyFeedback").textContent = "현물·선물 조회 권한을 확인하고 있습니다. 잠시 기다려 주세요.";
+        try {
+            const data = await api("mexc", "POST", input); $("readOnly").checked = false;
+            $("keyFeedback").textContent = "연결 확인 후 암호화하여 저장했습니다."; render(data);
+        } catch (error) {
+            $("keyFeedback").className = "error";
+            $("keyFeedback").textContent = "저장하지 못했습니다. " + error.message;
+            $("keyFeedback").focus(); throw error;
+        } finally { $("keySaveButton").textContent = "연결 확인 후 저장"; }
+    }); });
+    $("logout").addEventListener("click", () => run(async () => {
+        clearPrivate();
+        await api("session", "POST", { action: "logout" }); showLogin(); status("로그아웃했습니다.");
+    }));
+    $("disconnect").addEventListener("click", () => run(async () => {
+        if (!window.confirm("저장된 MEXC 연결을 해제할까요? 다시 연결하려면 API 키를 입력해야 합니다.")) return;
+        render(await api("mexc", "DELETE")); status("저장된 MEXC 연결을 해제했습니다.");
+    }));
+    $("refresh").addEventListener("click", refresh); $("autoRefresh").addEventListener("change", schedule);
+    [["tabBtnAssets", "tabAssets"], ["tabBtnSec", "tabSec"], ["tabBtnAddr", "tabAddr"]].forEach(([b, p]) => {
+        $(b).addEventListener("click", () => {
+            ["tabBtnAssets", "tabBtnSec", "tabBtnAddr"].forEach(x => { const on = x === b; $(x).classList.toggle("act", on); $(x).setAttribute("aria-selected", String(on)); });
+            ["tabAssets", "tabSec", "tabAddr"].forEach(x => { $(x).hidden = x !== p; });
+            if (p === "tabAddr") renderAddr();
+        });
+    });
+    $("addrForm").addEventListener("submit", event => {
+        event.preventDefault();
+        const row = { coin: $("addrCoin").value.trim().toUpperCase().slice(0, 20), net: $("addrNet").value.trim().toUpperCase().slice(0, 30),
+            label: $("addrLabel").value.trim().slice(0, 60), addr: $("addrValue").value.trim().slice(0, 200), memo: $("addrMemo").value.trim().slice(0, 100) };
+        if (!row.coin || !row.net || !row.label || !row.addr) return;
+        const rows = loadAddr(); rows.push(row);
+        try { localStorage.setItem("krta-addrbook", JSON.stringify(rows.slice(-100))); } catch { status("메모 저장 공간이 부족합니다.", true); return; }
+        event.target.reset(); renderAddr(); status("메모를 추가했습니다. 거래소 등록은 MEXC 사이트에서 하세요.");
+    });
+    $("addrRows").addEventListener("click", event => {
+        const btn = event.target.closest("[data-del]");
+        if (!btn) return;
+        const rows = loadAddr(); rows.splice(Number(btn.dataset.del), 1);
+        try { localStorage.setItem("krta-addrbook", JSON.stringify(rows)); } catch {}
+        renderAddr();
+    });
+    $("connection").addEventListener("toggle", schedule);
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) clearPrivate(true); else if (authenticated && connected && !$("connection").open) refresh();
+    });
+    // 뒤로 가기 캐시로 개인 값이 복원되는 것을 막는다.
+    window.addEventListener("pagehide", () => { clearPrivate(); invitationToken = null; $("newPassword").value = ""; $("confirmPassword").value = ""; });
+    window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
+    if (invitationToken) {
+        $("activation").hidden = false; status("이메일 확인 링크를 열었습니다. 사이트 비밀번호를 설정해 주세요.");
+    } else if (linkFailed) {
+        showLogin(); status("인증 링크가 만료되었거나 사용할 수 없습니다. 새 링크가 필요합니다.", true);
+    } else run(async () => {
+        await api("session"); authenticated = true; $("privateArea").hidden = false; render(await api("mexc"));
+    });
+})();

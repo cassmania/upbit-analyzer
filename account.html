@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>내 MEXC · 코인 분석</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232946d4'/%3E%3Ctext x='8' y='29' fill='white' font-size='26'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="account.css?v=1">
+  <script src="account.js?v=6" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <nav><a href="index.html">← 공개 분석으로</a><span class="badge">본인 전용</span></nav>
+    <header><p class="eyebrow">PRIVATE ACCOUNT</p><h1>내 MEXC</h1><p>잔고와 활성 포지션을 한곳에서 확인하세요.</p></header>
+    <p id="status" role="status" aria-live="polite">로그인 상태를 확인하고 있습니다.</p>
+    <section id="setup" class="card" hidden>
+      <h2>계정 보호 설정이 필요합니다</h2>
+      <p>본인 인증 설정이 완료되면 로그인할 수 있습니다. 현재 개인 계정 API는 잠겨 있습니다.</p>
+      <p>공개 분석 기능은 계속 이용할 수 있습니다.</p>
+    </section>
+    <section id="activation" class="card narrow" hidden>
+      <h2>사이트 로그인 비밀번호 설정</h2>
+      <p>이메일 확인 후 사용할 사이트 전용 비밀번호를 정하세요. 다른 서비스의 비밀번호를 재사용하지 마세요.</p>
+      <form id="activationForm">
+        <label for="newPassword">새 비밀번호 (12~128자)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <label for="confirmPassword">새 비밀번호 확인</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <button id="activationButton" type="submit">비밀번호 저장</button>
+        <p id="activationFeedback" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+    <section id="login" class="card narrow" hidden>
+      <h2>본인 계정으로 로그인</h2>
+      <p>기존 사이트 인증 계정의 이메일과 비밀번호를 입력하세요. Google·Vercel·MEXC 로그인과는 별개입니다.</p>
+      <form id="loginForm">
+        <label for="email">로그인 이메일</label><input id="email" type="email" autocomplete="username" required maxlength="254">
+        <label for="password">로그인 비밀번호</label><input id="password" type="password" autocomplete="current-password" required maxlength="1024">
+        <button id="loginButton" type="submit">로그인</button>
+        <p id="loginFeedback" role="status" aria-live="polite" tabindex="-1" hidden></p>
+      </form>
+    </section>
+    <section id="privateArea" hidden>
+      <div class="toolbar"><span class="badge">조회 전용</span><span id="lastUpdated">아직 조회하지 않았습니다</span>
+        <button id="refresh" type="button" class="secondary">새로고침</button>
+        <label class="inline"><input id="autoRefresh" type="checkbox"> 30초 자동갱신</label>
+        <button id="logout" type="button" class="secondary">로그아웃</button>
+      </div>
+      <details id="connection" class="card">
+        <summary>MEXC API 연결 설정</summary>
+        <p>본인 MEXC에서 발급한 <strong>읽기 전용</strong> API 키를 입력하세요. 키는 암호화하여 저장하고 다시 표시하지 않습니다.</p>
+        <p>필요 권한: 현물 계정 조회, 선물 계정 정보 조회, 주문 정보 조회. 거래·출금 권한은 켜지 마세요.</p>
+        <form id="keyForm">
+          <label for="apiKey">Access Key</label><input id="apiKey" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
+          <label for="secret">Secret Key</label><input id="secret" type="password" autocomplete="off" required minlength="10" maxlength="200" spellcheck="false">
+          <label class="inline"><input id="readOnly" type="checkbox" required> 거래·출금 권한이 없는 읽기 전용 키입니다.</label>
+          <button id="keySaveButton" type="submit">연결 확인 후 저장</button>
+          <p id="keyFeedback" role="status" aria-live="polite" tabindex="-1" hidden></p>
+        </form>
+        <button id="disconnect" type="button" class="secondary danger" hidden>저장된 연결 해제</button>
+      </details>
+      <div class="tabs" role="tablist" aria-label="계정 메뉴">
+        <button id="tabBtnAssets" type="button" class="secondary act" role="tab" aria-selected="true">잔고·포지션</button>
+        <button id="tabBtnSec" type="button" class="secondary" role="tab" aria-selected="false">프로필·보안 안내</button>
+        <button id="tabBtnAddr" type="button" class="secondary" role="tab" aria-selected="false">출금주소 메모</button>
+      </div>
+      <div id="tabAssets" role="tabpanel">
+      <div id="accountData"></div>
+      <p class="footnote">계정 정보는 공개 분석 브리핑에 포함되지 않습니다. 조회 실패 시 이전 계정 값을 지우며, 잔고와 포지션을 브라우저 저장소에 보관하지 않습니다.</p>
+      </div>
+      <div id="tabSec" role="tabpanel" hidden>
+        <section class="card"><h2>프로필 요약</h2><div id="secProfile"><p class="empty">조회 후 표시됩니다.</p></div></section>
+        <section class="card"><h2>보안 체크리스트</h2>
+          <p class="footnote">이 사이트에서 바꿀 수 있는 항목이 아닙니다. 아래 항목은 MEXC 사이트·앱에서 직접 설정하세요. 이 사이트는 읽기 전용 키만 등록합니다.</p>
+          <div class="tablewrap"><table><thead><tr><th>항목</th><th>설명</th><th>설정 위치</th></tr></thead><tbody>
+            <tr><td>2단계 인증(2FA)</td><td>OTP·패스키 중 1개 이상 필수. 출금·보안 변경 때 확인에 사용합니다.</td><td><a href="https://www.mexc.com/ko-KR/account/security" target="_blank" rel="noopener">MEXC 보안 설정</a></td></tr>
+            <tr><td>로그인 비밀번호</td><td>주기적으로 변경하고 다른 사이트와 다르게 씁니다.</td><td><a href="https://www.mexc.com/ko-KR/account/security" target="_blank" rel="noopener">MEXC 보안 설정</a></td></tr>
+            <tr><td>API IP 화이트리스트</td><td>중계 서버 IP만 허용하면 키 탈취 피해를 줄입니다. 이 사이트에는 읽기 전용 키만 등록하세요.</td><td><a href="https://www.mexc.com/ko-KR/user/openapi" target="_blank" rel="noopener">MEXC API 관리</a></td></tr>
+            <tr><td>출금 화이트리스트</td><td>켜면 등록된 주소로만 출금됩니다. 아래 메모장은 별개이며 거래소에 등록되지 않습니다.</td><td><a href="https://www.mexc.com/ko-KR/account/security" target="_blank" rel="noopener">MEXC 보안 설정</a></td></tr>
+            <tr><td>안티피싱 코드</td><td>설정하면 MEXC 발신 메일에 코드가 표시돼 가짜 메일을 가려냅니다.</td><td><a href="https://www.mexc.com/ko-KR/account/security" target="_blank" rel="noopener">MEXC 보안 설정</a></td></tr>
+            <tr><td>본인인증(KYC)</td><td>출금 한도 상향·선물 주문 권한에 필요할 수 있습니다. 앱에서 신분증으로 진행합니다.</td><td><a href="https://www.mexc.com/ko-KR/account/identification" target="_blank" rel="noopener">MEXC 본인인증</a></td></tr>
+          </tbody></table></div>
+        </section>
+      </div>
+      <div id="tabAddr" role="tabpanel" hidden>
+        <section class="card"><h2>출금주소 메모장</h2>
+          <p class="footnote">⚠ 개인 메모용입니다. 여기에 적어도 거래소 화이트리스트에 등록되지 않으며, 이 사이트에서 출금을 실행하지 않습니다. 실제 등록·출금은 MEXC 사이트에서 하세요.</p>
+          <form id="addrForm">
+            <label for="addrCoin">코인 (예: USDT)</label><input id="addrCoin" required maxlength="20" spellcheck="false" autocomplete="off">
+            <label for="addrNet">네트워크 (예: TRX, ETH, APTOS)</label><input id="addrNet" required maxlength="30" spellcheck="false" autocomplete="off">
+            <label for="addrLabel">라벨 (예: 바이낸스 입금주소)</label><input id="addrLabel" required maxlength="60" autocomplete="off">
+            <label for="addrValue">주소</label><input id="addrValue" required maxlength="200" spellcheck="false" autocomplete="off">
+            <label for="addrMemo">메모/태그 (없으면 비워 두세요)</label><input id="addrMemo" maxlength="100" autocomplete="off">
+            <button id="addrAddButton" type="submit">메모 추가</button>
+          </form>
+          <div class="tablewrap"><table><thead><tr><th>코인</th><th>네트워크</th><th>라벨</th><th>주소</th><th>메모</th><th>삭제</th></tr></thead><tbody id="addrRows"></tbody></table></div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
