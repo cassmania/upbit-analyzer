@@ -80,6 +80,15 @@
     // (그 경우 업비트는 브라우저 CORS에 막히지만, 로컬 확인용이라 그대로 둔다.)
     var LOCAL = /^(localhost|127\.0\.0\.1|\[::1\]|cassmania\.github\.io)$/.test(location.hostname);
 
+    // GitHub Pages 정적 미러에는 서버리스 프록시가 없다.
+    // 업비트는 Origin 헤더가 있는 브라우저 직접 호출이 10초당 1회로 제한되고,
+    // MEXC는 CORS가 막혀 있어 둘 다 정적 호스팅에서 쓸 수 없다.
+    var PAGES = /\.github\.io$/i.test(location.hostname);
+    var STATIC_BLOCKED = {
+        upbit: "업비트 API는 브라우저 직접 호출 시 10초당 1회로 제한되어 정적 미러에서 사용할 수 없습니다. 빗썸을 이용하세요.",
+        mexc: "MEXC는 서버 프록시가 필요해 정적 미러에서 사용할 수 없습니다. 바이낸스를 이용하세요."
+    };
+
     function ex() { return EXCHANGES[state.exchange] || EXCHANGES.upbit; }
 
     function apiUrl(path, params) {
@@ -458,6 +467,45 @@
             if (saved && typeof saved.sel === "string" && saved.sel) state.sel = saved.sel;
         } catch (e) { /* 손상되었거나 저장소를 쓸 수 없으면 기본값을 사용한다 */ }
     }
+    /**
+     * GitHub Pages 임시 미러에서 쓸 수 없는 거래소를 정리한다.
+     *
+     * 정적 호스팅에는 /api/upbit·/api/mexc-futures 프록시가 없어 업비트와 MEXC가
+     * 실패한다. 실패한 탭을 눌러 빈 차트를 보게 두는 대신, 저장된 설정을 사용
+     * 가능한 거래소로 옮기고 버튼을 비활성화하며 상단에 이유를 밝힌다.
+     */
+    function applyStaticMirror() {
+        if (!PAGES) return;
+
+        if (STATIC_BLOCKED[state.exchange]) {
+            state.exchange = state.exchange === "mexc" ? "binance" : "bithumb";
+        }
+
+        var notice = document.createElement("div");
+        notice.id = "staticNotice";
+        notice.setAttribute("role", "note");
+        notice.style.cssText = "box-sizing:border-box;width:calc(100% - 32px);max-width:1240px;"
+            + "margin:12px auto 0;padding:10px 14px;border:1px solid #6b4b1f;border-radius:10px;"
+            + "background:#2a2113;color:#f3d9a4;font-size:13px;line-height:1.55;";
+        notice.innerHTML = "<b style=\"color:#ffcf70;margin-right:6px\">GitHub Pages 임시 미러</b>"
+            + "업비트·MEXC는 서버 프록시가 필요해 이 주소에서는 사용할 수 없습니다. "
+            + "빗썸·바이낸스는 정상 동작합니다. 원래 주소(upbit-analyzer.vercel.app)는 "
+            + "Vercel 계정 복구 후 이용할 수 있습니다.";
+        var nav = document.querySelector("nav.nav");
+        if (nav && nav.parentNode) nav.parentNode.insertBefore(notice, nav.nextSibling);
+
+        [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
+            var key = b.getAttribute("data-ex");
+            if (!STATIC_BLOCKED[key]) return;
+            b.disabled = true;
+            b.setAttribute("aria-disabled", "true");
+            b.title = STATIC_BLOCKED[key];
+            b.style.opacity = "0.42";
+            b.style.cursor = "not-allowed";
+            b.style.textDecoration = "line-through";
+        });
+    }
+
     function savePreferences() {
         try {
             localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify({
@@ -2589,6 +2637,11 @@
      */
     function switchExchange(key) {
         if (!EXCHANGES[key]) return;
+        if (STATIC_BLOCKED[key]) {
+            var notice = $("staticNotice");
+            if (notice) notice.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            return;
+        }
         state.exchange = key;
         state.renderedFor = null;      // 전체 렌더로 되돌린다
         closeWS();
@@ -2693,6 +2746,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         // 새로 접속해도 마지막 거래소와 코인으로 돌아가 즐겨찾기가 사라진 것처럼 보이지 않게 한다.
         loadPreferences();
+        applyStaticMirror();
         [].forEach.call(document.querySelectorAll("#exbar button"), function (b) {
             b.classList.toggle("act", b.getAttribute("data-ex") === state.exchange);
         });
