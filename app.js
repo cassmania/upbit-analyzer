@@ -825,10 +825,14 @@
      * 과거 시계열 API가 확인되지 않으면 현재값만 표시하고 값을 만들어내지 않는다.
      */
     function fetchUsdtDominance() {
-        var base = "/api/coingecko";
-        var globalUrl = base + "?path=global";
-        var tetherUrl = base + "?path=simple%2Fprice&ids=tether"
-            + "&vs_currencies=usd&include_market_cap=true&include_24hr_change=true";
+        // GitHub Pages에는 /api/coingecko 프록시가 없다. CoinGecko 공개 API는
+        // Access-Control-Allow-Origin: * 를 주므로 정적 미러에서는 직접 호출한다.
+        var base = PAGES ? "https://api.coingecko.com/api/v3" : "/api/coingecko";
+        var globalUrl = PAGES ? base + "/global" : base + "?path=global";
+        var tetherUrl = PAGES
+            ? base + "/simple/price?ids=tether&vs_currencies=usd&include_market_cap=true&include_24hr_change=true"
+            : base + "?path=simple%2Fprice&ids=tether"
+                + "&vs_currencies=usd&include_market_cap=true&include_24hr_change=true";
         return Promise.all([
             getJSON(globalUrl),
             getJSON(tetherUrl)
@@ -844,7 +848,7 @@
                 usdtMarketCap: usdt,
                 totalChange24h: g.market_cap_change_percentage_24h_usd,
                 usdtChange24h: tether.usd_market_cap_change_24h,
-                source: "CoinGecko /global + /simple/price",
+                source: PAGES ? "CoinGecko 공개 API 직접 호출" : "CoinGecko /global + /simple/price",
                 observedAt: new Date().toISOString()
             };
         }).catch(function () {
