@@ -4,6 +4,8 @@
 .mono{font-variant-numeric:tabular-nums}.dim{color:var(--dim)}
 .ticker{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
 .ticker .home{color:var(--txt);text-decoration:none;font-weight:800}
+.ticker .analysis-link{color:var(--txt);text-decoration:none;font-weight:700;white-space:nowrap;padding:5px 10px;border:1px solid #5962e8;border-radius:6px;background:rgba(89,98,232,.16)}
+.ticker .analysis-link:hover{background:rgba(89,98,232,.3);border-color:#7b82ff}
 .ticker select,.right select,.right input{background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 .ticker input[type=search]{background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:150px}
 .searchWrap{position:relative}
