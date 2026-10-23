@@ -291,6 +291,75 @@ function loadUi() {
     S.scan.wantOn = u.scanOn === true;
 }
 
+// GitHub Pages에서는 Vercel 서버리스 함수가 없으므로 공개 시세만 직접 조회한다.
+// 계정·주문 API는 이 모드에서 절대 호출하지 않고, 모의거래만 허용한다.
+const IS_GITHUB_PAGES = /\.github\.io$/i.test(location.hostname);
+const BINANCE_FAPI = "https://fapi.binance.com/fapi/v1";
+const BINANCE_INTERVAL = {
+    Min15: "15m", Min60: "1h", Hour4: "4h", Hour8: "8h",
+    Hour12: "12h", Day1: "1d", Week1: "1w"
+};
+let pageTickerCache = { at: 0, data: null };
+function pageBinanceSymbol(symbol) {
+    return String(symbol || "").replace(/_/g, "").toUpperCase();
+}
+function pageAppSymbol(symbol) {
+    const raw = String(symbol || "").toUpperCase();
+    return raw.endsWith("USDT") ? raw.slice(0, -4) + "_USDT" : raw;
+}
+async function pageJson(path, params) {
+    const q = new URLSearchParams(params || {});
+    const r = await fetch(BINANCE_FAPI + path + (q.toString() ? "?" + q : ""), { cache: "no-store" });
+    if (!r.ok) throw new Error("공개 시세 오류 " + r.status);
+    return r.json();
+}
+async function pagePublicData(path, params) {
+    if (path === "detail") {
+        const info = await pageJson("/exchangeInfo");
+        return (info.symbols || []).filter(x => x.contractType === "PERPETUAL" && x.quoteAsset === "USDT" && x.status === "TRADING")
+            .map(x => ({
+                symbol: pageAppSymbol(x.symbol), baseCoin: x.baseAsset, quoteCoin: x.quoteAsset, state: 0,
+                contractSize: 1, maxLeverage: 10, priceScale: Number(x.pricePrecision) || 2
+            }));
+    }
+    if (path === "ticker") {
+        if (pageTickerCache.data && Date.now() - pageTickerCache.at < 2500) return pageTickerCache.data;
+        const rows = await pageJson("/ticker/24hr");
+        pageTickerCache = { at: Date.now(), data: (rows || []).map(x => {
+            const last = Number(x.lastPrice) || 0;
+            return {
+                symbol: pageAppSymbol(x.symbol), lastPrice: last,
+                riseFallRate: (Number(x.priceChangePercent) || 0) / 100,
+                indexPrice: last, fairPrice: last, fundingRate: 0,
+                high24Price: Number(x.highPrice) || last, lower24Price: Number(x.lowPrice) || last,
+                volume24: Number(x.volume) || 0, holdVol: 0
+            };
+        }) };
+        return pageTickerCache.data;
+    }
+    if (path === "funding_rate") {
+        const x = await pageJson("/premiumIndex", { symbol: pageBinanceSymbol(params.symbol) });
+        return { nextSettleTime: Number(x.nextFundingTime) || 0, fundingRate: Number(x.lastFundingRate) || 0 };
+    }
+    if (path === "depth") {
+        const d = await pageJson("/depth", { symbol: pageBinanceSymbol(params.symbol), limit: params.limit || "20" });
+        return {
+            bids: (d.bids || []).map(x => [Number(x[0]), Number(x[1])]),
+            asks: (d.asks || []).map(x => [Number(x[0]), Number(x[1])])
+        };
+    }
+    if (path === "kline") {
+        const rows = await pageJson("/klines", {
+            symbol: pageBinanceSymbol(params.symbol), interval: BINANCE_INTERVAL[params.interval] || "1h", limit: "500"
+        });
+        return {
+            time: rows.map(x => Math.floor(Number(x[0]) / 1000)),
+            open: rows.map(x => Number(x[1])), high: rows.map(x => Number(x[2])),
+            low: rows.map(x => Number(x[3])), close: rows.map(x => Number(x[4])), vol: rows.map(x => Number(x[5]))
+        };
+    }
+    throw new Error("GitHub Pages에서 지원하지 않는 공개 API: " + path);
+}
 const klineCache = new Map(), klineFlight = new Map();
 async function pub(path, params, tries, fresh) {
     tries = tries || 3;
@@ -304,6 +373,7 @@ async function pub(path, params, tries, fresh) {
         let last;
         for (let i = 0; i < tries; i++) {
             try {
+                if (IS_GITHUB_PAGES) return await pagePublicData(path, params);
                 const q = new URLSearchParams({ path, ...params });
                 const r = await fetch("/api/mexc-futures?" + q, { cache: "no-store" });
                 if (!r.ok) throw new Error("시세 오류 " + r.status);
@@ -325,6 +395,7 @@ async function pub(path, params, tries, fresh) {
     return job;
 }
 async function priv(api, method, body) {
+    if (IS_GITHUB_PAGES) throw new Error("GitHub Pages 공개 모드에서는 계정·실매매 기능을 사용할 수 없습니다.");
     const r = await fetch("/api/private/" + api, { method: method || "GET", credentials: "same-origin",
         cache: "no-store", headers: { "X-Private-Request": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(25000) });
@@ -643,6 +714,13 @@ function wsSubDeal(sym) {
     wsSend({ method: "sub.deal", param: { symbol: sym }, gzip: false });
 }
 function wsConnect() {
+    // GitHub Pages 공개 모드는 WebSocket 대신 3초 폴링을 사용한다.
+    // MEXC의 비공개 스트림 주소를 정적 페이지에서 호출하지 않는다.
+    if (IS_GITHUB_PAGES) {
+        S.ws.ok = false;
+        $("net").textContent = "공개 폴링";
+        return;
+    }
     if (typeof WebSocket === "undefined") return;
     if (S.ws.sock && (S.ws.sock.readyState === 0 || S.ws.sock.readyState === 1)) return;
     let sock;
@@ -924,7 +1002,8 @@ async function submitOrder(side, auto, opts) {
         ...(opts && opts.tp ? { takeProfitPrice: opts.tp } : {}),
         ...(!auto && $("oTpsl").checked && $("oSL").value ? { stopLossPrice: Number($("oSL").value) } : {}),
         ...(!auto && $("oTpsl").checked && $("oTP").value ? { takeProfitPrice: Number($("oTP").value) } : {}) };
-    const live = S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
+    // 정적 GitHub Pages에는 비밀키를 둘 서버가 없으므로 실주문 경로를 강제로 차단한다.
+    const live = !IS_GITHUB_PAGES && S.armed && S.tradeEnabled && (auto ? S.autoLive : true);
     if (live && reduceOnly) { $("oMsg").textContent = "리듀스 온리는 모의 전용입니다."; return; }
     // 모의는 로그인 없이 로컬 체결한다 (서버 검증은 실주문 경로 전용)
     if (!live) {
@@ -1137,6 +1216,11 @@ function closeModal() { $("modalOv").hidden = true; modalCb = null; }
 
 // ---- 비공개 (잔고·포지션·미체결) ----
 async function refreshPrivate() {
+    if (IS_GITHUB_PAGES) {
+        $("wState").textContent = "공개 모드 — 계정 기능 비활성화";
+        S.tradeEnabled = false;
+        return;
+    }
     try {
         const s = await priv("mexc", "GET");
         $("wState").textContent = "연결됨";
@@ -1609,6 +1693,7 @@ function bindCfgMargin() {
         queueSaveUi();
     });
     $("autoLive").addEventListener("click", () => {
+        if (IS_GITHUB_PAGES) { $("aiMsg").textContent = "GitHub Pages 공개 모드에서는 실매매를 사용할 수 없습니다."; return; }
         if (!isFav(S.symbol)) { $("aiMsg").textContent = "즐겨찾기 코인만 자동매매됩니다. ☆ 패널에서 추가하세요."; return; }
         if (!S.armed || !S.tradeEnabled) { $("aiMsg").textContent = "실매매 승인부터 하세요."; return; }
         S.autoLive = !S.autoLive;
@@ -1630,6 +1715,7 @@ function bindCfgMargin() {
         if (!ok) { S.scan.on = false; $("scanToggle").textContent = "다종목 스캔 OFF"; }
     });
     $("arm").addEventListener("click", async () => {
+        if (IS_GITHUB_PAGES) { $("aiMsg").textContent = "GitHub Pages 공개 모드에서는 실매매 승인을 사용할 수 없습니다."; return; }
         if (!S.tradeEnabled) { $("aiMsg").textContent = "거래 권한 키 미등록 — account 페이지에서 키 등록 후 승인하세요."; return; }
         S.armed = !S.armed;
         $("arm").textContent = S.armed ? "실매매 ARMED" : "실매매 승인";
@@ -1649,6 +1735,23 @@ function bindCfgMargin() {
 }
 
 let booting = false;
+function applyGithubPagesMode() {
+    if (!IS_GITHUB_PAGES) return;
+    const notice = document.createElement("div");
+    notice.setAttribute("role", "note");
+    notice.style.cssText = "box-sizing:border-box;margin:10px 16px;padding:10px 14px;border:1px solid #2b6cb0;border-radius:10px;background:#10243b;color:#cfe7ff;font-size:13px;line-height:1.55";
+    notice.innerHTML = "<b>GitHub Pages 공개 모드</b> · Binance 공개 선물 시세와 로컬 모의거래만 제공합니다. " +
+        "계정 조회·API 키 연결·실매매는 서버가 필요한 기능이라 비활성화되어 있습니다.";
+    const main = document.querySelector("main");
+    if (main && main.parentNode) main.parentNode.insertBefore(notice, main);
+    $("autoLive").disabled = true;
+    $("arm").disabled = true;
+    $("autoLive").title = "GitHub Pages 공개 모드에서는 사용할 수 없습니다.";
+    $("arm").title = "GitHub Pages 공개 모드에서는 사용할 수 없습니다.";
+    $("mode").textContent = "공개·모의";
+    $("mode").className = "pill paper";
+    $("wState").textContent = "공개 모드 — 계정 기능 비활성화";
+}
 async function boot() {
     if (booting) return;
     booting = true;
@@ -1669,7 +1772,7 @@ async function boot() {
     catch (e) { log("부팅 실패(서브차트): " + e.message, "down"); }
     await refreshTop().catch(() => {});
     if (!S.last) $("net").textContent = "시세 실패 — 클릭 재시도";
-    else $("net").textContent = "실시간";
+    else $("net").textContent = IS_GITHUB_PAGES ? "공개 폴링" : "실시간";
     await refreshBook().catch(() => {});
     renderPaper();
     await refreshPrivate();
@@ -1691,6 +1794,7 @@ async function boot() {
     loadFav();
     loadUi();
     loadTheme();
+    applyGithubPagesMode();
     bind();
     document.addEventListener("input", queueSaveUi);
     document.addEventListener("change", queueSaveUi);

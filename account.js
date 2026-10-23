@@ -10,6 +10,26 @@
         });
         return;
     }
+    // GitHub Pages는 서버리스 함수와 비밀키 저장소가 없으므로
+    // 계정·API 키 입력 화면을 노출하지 않고 공개 모드 안내만 표시한다.
+    if (/\.github\.io$/i.test(location.hostname)) {
+        // 초대·복구 링크가 실수로 Pages 주소에 열려도 토큰을 주소창에 남기지 않는다.
+        if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+        document.addEventListener("DOMContentLoaded", () => {
+            document.body.insertAdjacentHTML("afterbegin",
+                "<div style='box-sizing:border-box;margin:16px;padding:14px 16px;border:1px solid #2b6cb0;border-radius:10px;background:#10243b;color:#cfe7ff;font-size:14px;line-height:1.6'>" +
+                "<b>GitHub Pages 공개 모드</b><br>계정 조회·API 키 연결·실매매는 서버가 필요한 기능이라 이 주소에서는 사용할 수 없습니다. " +
+                "공개 시세와 모의거래는 터미널에서 이용하세요." +
+                "</div>");
+            ["loginForm", "activationForm", "keyForm"].forEach(id => {
+                const form = document.getElementById(id);
+                if (form) { form.hidden = true; form.setAttribute("aria-disabled", "true"); }
+            });
+            const privateArea = document.getElementById("privateArea");
+            if (privateArea) privateArea.hidden = true;
+        });
+        return;
+    }
     // 인증 링크의 토큰은 주소와 브라우저 저장소에 남기지 않는다.
     const fragment = new URLSearchParams(location.hash.slice(1));
     let invitationToken = ["invite", "recovery"].includes(fragment.get("type")) ? fragment.get("access_token") : null;
