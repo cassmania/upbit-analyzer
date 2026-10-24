@@ -169,9 +169,9 @@ function loadCfg() {
         else if (Number(c.coolMin) > 0) S.cfg.coolSec = Math.min(3600, Math.max(5, Math.round(Number(c.coolMin)) * 60));
         if ([1, 2, 3, 5, 10, 20, 50, 100].includes(Number(c.autoLev))) S.cfg.autoLev = Number(c.autoLev);
         if (["ai", "manual"].includes(c.tpMode)) S.cfg.tpMode = c.tpMode;
-        if (Number(c.tpPct) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number(c.tpPct)));
+        if (Number.isFinite(Number(c.tpPct)) && Number(c.tpPct) > 0) S.cfg.tpPct = Number(c.tpPct);
         if (["ai", "manual"].includes(c.slMode)) S.cfg.slMode = c.slMode;
-        if (Number(c.slPct) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number(c.slPct)));
+        if (Number.isFinite(Number(c.slPct)) && Number(c.slPct) > 0) S.cfg.slPct = Number(c.slPct);
         if (typeof c.noOverlap === "boolean") S.cfg.noOverlap = c.noOverlap;
         if (typeof c.lockEff === "boolean") S.cfg.lockEff = c.lockEff;
     } catch { /* 기본값 유지 */ }
@@ -1469,11 +1469,13 @@ function bindCfgMargin() {
         S.cfg.slMode = document.querySelector("input[name=slMode]:checked").value; saveCfg();
     }));
     $("cfgTpPct").addEventListener("change", () => {
-        if (Number($("cfgTpPct").value) > 0) S.cfg.tpPct = Math.min(500, Math.max(0.1, Number($("cfgTpPct").value)));
+        const v = Number($("cfgTpPct").value);
+        if (Number.isFinite(v) && v > 0) S.cfg.tpPct = v;
         saveCfg(); loadCfg();
     });
     $("cfgSlPct").addEventListener("change", () => {
-        if (Number($("cfgSlPct").value) > 0) S.cfg.slPct = Math.min(100, Math.max(0.1, Number($("cfgSlPct").value)));
+        const v = Number($("cfgSlPct").value);
+        if (Number.isFinite(v) && v > 0) S.cfg.slPct = v;
         saveCfg(); loadCfg();
     });
     $("cfgOverlap").addEventListener("change", () => {

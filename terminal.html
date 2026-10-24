@@ -7,13 +7,13 @@
 <meta name="referrer" content="no-referrer">
 <title>AI 선물 터미널 — MEXC 모의·실매매</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%230ecb81'/%3E%3Ctext x='8' y='29' fill='white' font-size='22'%3EA%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="terminal.css?v=2">
+<link rel="stylesheet" href="terminal.css?v=3">
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 <script src="ta_engine.js"></script>
 <script src="level_analyzer.js"></script>
 <script src="signal_engine.js"></script>
 <script src="terminal-ai.js?v=1"></script>
-<script src="terminal.js?v=31" defer></script>
+<script src="terminal.js?v=32" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -127,10 +127,10 @@
         <div>
           <div class="cfg-sub">익절 타점 설정 (Take Profit)</div>
           <label class="check"><input type="radio" name="tpMode" value="ai" checked> AI 정밀 자동 연산 (신호 목표가)</label>
-          <label class="check"><input type="radio" name="tpMode" value="manual"> 수동 지정: 진입가 대비 + <input id="cfgTpPct" inputmode="decimal" value="5" class="mini"> %</label>
+          <label class="check"><input type="radio" name="tpMode" value="manual"> 수동 지정: 진입가 대비 + <input id="cfgTpPct" inputmode="decimal" value="5" class="mini" title="양수 입력, 상한 없음"> %</label>
           <div class="cfg-sub">손절 타점 설정 (Stop Loss)</div>
           <label class="check"><input type="radio" name="slMode" value="ai" checked> AI 정밀 자동 연산 (신호 손절가)</label>
-          <label class="check"><input type="radio" name="slMode" value="manual"> 수동 지정: 진입가 대비 − <input id="cfgSlPct" inputmode="decimal" value="3" class="mini"> %</label>
+          <label class="check"><input type="radio" name="slMode" value="manual"> 수동 지정: 진입가 대비 − <input id="cfgSlPct" inputmode="decimal" value="3" class="mini" title="양수 입력, 상한 없음"> %</label>
         </div>
       </div>
     </div>
