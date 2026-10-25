@@ -67,6 +67,9 @@
             rest: "https://api.mexc.com/api/v3/",
             ws: null,                 // Protobuf만 제공. 아래 주석 참고
             proxy: "/api/mexc",       // CORS 차단 -> 프록시 필요
+            // 프록시가 없는 곳(Pages·localhost)에서는 r.jina.ai로 원본 JSON을 받는다.
+            // X-Return-Format:text면 감싸지 않고 그대로 준다(2026-10-26 실측). 키 없이 분당 ~20회.
+            relay: "https://r.jina.ai/",
             hasYear: false,
             quote: "USDT",
             // MEXC 봉 표기는 바이낸스와 다르다(실측): 1h가 아니라 60m, 1w가 아니라 1W.
@@ -86,7 +89,6 @@
     var PAGES = /\.github\.io$/i.test(location.hostname);
     var STATIC_BLOCKED = {
         upbit: "업비트 API는 브라우저 직접 호출 시 10초당 1회로 제한되어 정적 미러에서 사용할 수 없습니다. 빗썸을 이용하세요.",
-        mexc: "MEXC는 서버 프록시가 필요해 정적 미러에서 사용할 수 없습니다. 바이낸스를 이용하세요."
     };
 
     function ex() { return EXCHANGES[state.exchange] || EXCHANGES.upbit; }
@@ -97,6 +99,10 @@
         // MEXC는 CORS도 막혀 있어 로컬에서는 조회가 실패한다(배포본에서만 동작).
         var 프록시 = e.proxy && !LOCAL;
         var sp = new URLSearchParams();
+        if (e.relay && (LOCAL || PAGES)) {
+            Object.keys(params || {}).forEach(function (k) { sp.set(k, params[k]); });
+            return e.relay + e.rest + path + "?" + sp.toString();
+        }
         if (프록시) sp.set("path", path);
         Object.keys(params || {}).forEach(function (k) {
             if (params[k] !== undefined && params[k] !== null) sp.set(k, params[k]);
@@ -343,7 +349,8 @@
         if (a >= 1000) return 2;
         if (a >= 1) return 3;
         if (a >= 0.01) return 5;
-        return 8;
+        // MEXC 밈코인은 0.000000001대라 8자리면 0으로 찍힌다. 유효숫자 4자리를 남긴다.
+        return a > 0 ? Math.min(20, Math.max(8, Math.ceil(-Math.log10(a)) + 3)) : 8;
     }
     function fmtUsd(v) {
         if (v === null || v === undefined || !isFinite(v)) return "—";
@@ -383,11 +390,30 @@
             return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
         });
     }
+    // 중계(r.jina.ai)는 분당 ~20회 제한이라 응답을 짧게 캐시한다.
+    // 목록 10분, 장기봉 5분, 1h·4h 30초, 시세 20초. 자동갱신 10초여도 실제 호출은 분당 10회 안팎.
+    var relayCache = {};
+    function relayTtl(url) {
+        if (/exchangeInfo/.test(url)) return 600000;
+        if (/klines/.test(url)) return /interval=(60m|4h)/.test(url) ? 30000 : 300000;
+        return 20000;
+    }
     function getJSON(url) {
-        return fetch(url).then(function (r) {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            return r.json();
-        });
+        var relay = url.indexOf("https://r.jina.ai/") === 0;
+        if (relay) {
+            var hit = relayCache[url];
+            if (hit && Date.now() - hit.at < relayTtl(url)) return hit.p;
+        }
+        var p = fetch(url, relay ? { headers: { "X-Return-Format": "text", "X-No-Cache": "true" } } : undefined)
+            .then(function (r) {
+                if (!r.ok) throw new Error(r.status === 429 ? "MEXC 중계 호출 한도 초과(잠시 후 재시도)" : "HTTP " + r.status);
+                return r.json();
+            });
+        if (relay) {
+            relayCache[url] = { at: Date.now(), p: p };
+            p.catch(function () { delete relayCache[url]; });
+        }
+        return p;
     }
 
     // ---------------------------------------------------------------- 데이터
@@ -492,9 +518,8 @@
             + "margin:12px auto 0;padding:10px 14px;border:1px solid #6b4b1f;border-radius:10px;"
             + "background:#2a2113;color:#f3d9a4;font-size:13px;line-height:1.55;";
         notice.innerHTML = "<b style=\"color:#ffcf70;margin-right:6px\">GitHub Pages 임시 미러</b>"
-            + "업비트·MEXC는 서버 프록시가 필요해 이 주소에서는 사용할 수 없습니다. "
-            + "빗썸·바이낸스는 정상 동작합니다. 원래 주소(upbit-analyzer.vercel.app)는 "
-            + "Vercel 계정 복구 후 이용할 수 있습니다.";
+            + "업비트는 서버 프록시가 필요해 이 주소에서는 사용할 수 없습니다. "
+            + "빗썸·바이낸스·MEXC는 정상 동작합니다(MEXC는 중계 경유라 실시간 대신 폴링).";
         var nav = document.querySelector("nav.nav");
         if (nav && nav.parentNode) nav.parentNode.insertBefore(notice, nav.nextSibling);
 
@@ -1452,21 +1477,26 @@
             replaceSection("sec-signal", renderSignal(sig, dp));
             replaceSection("sec-detail", renderDetail(results, dp));
             replaceSection("sec-scenario", renderScenario(lv, dp));
+            replaceSection("sec-brief", renderBrief(sym, t, price, dp, results, lv, sig, fut));
+            syncFoldSubs(results, lv, sig, dp);
             if (!updateChartData(data.tf[state.chartTf], state.chartLevels, dp)) {
                 buildChart(data.tf[state.chartTf], state.chartLevels, dp);
             }
         } else {
+            // 핵심 브리핑만 펼쳐 두고 나머지는 접는다. 펼침 상태는 브라우저에 기억한다.
             var html = [];
-            html.push('<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>");
-            html.push(renderV41Panel(market, results, v41, lv, sig, fut, t, dp));
-            html.push('<div id="sec-dominance">' + renderDominance(usdtDominance) + "</div>");
-            html.push(renderChartSection(sym));
-            html.push('<div id="sec-summary">' + renderSummary(results) + "</div>");
-            html.push('<div id="sec-levels">' + renderLevels(state.chartLevels, dp, state.chartLevelsTf) + "</div>");
-            html.push(renderSignal(sig, dp));
-            html.push('<div id="sec-detail">' + renderDetail(results, dp) + "</div>");
-            html.push('<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>");
+            html.push('<div id="sec-brief">' + renderBrief(sym, t, price, dp, results, lv, sig, fut) + "</div>");
+            html.push(fold("chart", "차트", renderChartSection(sym)));
+            html.push(fold("signal", "롱·숏 타점", renderSignal(sig, dp)));
+            html.push(fold("levels", "지지 · 저항", '<div id="sec-levels">' + renderLevels(state.chartLevels, dp, state.chartLevelsTf) + "</div>"));
+            html.push(fold("summary", "시간봉별 방향", '<div id="sec-summary">' + renderSummary(results) + "</div>"));
+            html.push(fold("scenario", "조건부 시나리오", '<div id="sec-scenario">' + renderScenario(lv, dp) + "</div>"));
+            html.push(fold("quotes", "시세 · 펀딩 · 김프", '<div id="sec-quotes">' + renderQuotes(t, price, dp, name, sym, fut, usdtKrw, bankFx) + "</div>"));
+            html.push(fold("v41", "V4.1 PART 0~5 통합 분석", renderV41Panel(market, results, v41, lv, sig, fut, t, dp)));
+            html.push(fold("dominance", "테더 도미넌스", '<div id="sec-dominance">' + renderDominance(usdtDominance) + "</div>"));
+            html.push(fold("detail", "지표 상세", '<div id="sec-detail">' + renderDetail(results, dp) + "</div>"));
             $("out").innerHTML = html.join("");
+            syncFoldSubs(results, lv, sig, dp);
             buildChart(data.tf[state.chartTf], state.chartLevels, dp);
             state.renderedFor = market;
         }
@@ -2593,6 +2623,79 @@
         });
     }
 
+    // ---------------------------------------------------------------- 핵심 브리핑 · 접기
+
+    var FOLD_KEY = "upbitAnalyzer.folds";
+    var FOLD_DEFAULT = { chart: true };
+    function foldState() {
+        try { return JSON.parse(localStorage.getItem(FOLD_KEY)) || FOLD_DEFAULT; } catch (e) { return FOLD_DEFAULT; }
+    }
+    function fold(key, title, body) {
+        return '<details class="fold" data-fold="' + key + '"' + (foldState()[key] ? " open" : "") + ">"
+            + '<summary><span class="fold-t">' + title + '</span><span class="fold-s" id="fs-' + key + '"></span></summary>'
+            + '<div class="fold-b">' + body + "</div></details>";
+    }
+    function saveFold(el) {
+        var st = foldState();
+        st[el.getAttribute("data-fold")] = el.open;
+        try { localStorage.setItem(FOLD_KEY, JSON.stringify(st)); } catch (e) { /* 저장 불가면 이번 화면만 */ }
+    }
+
+    /** 봉별 추세를 강세·약세·중립 개수로 센다. */
+    function biasCount(results) {
+        var n = { 강세: 0, 약세: 0, 중립: 0 };
+        activeTfs().forEach(function (tf) {
+            var r = results[tf.key];
+            if (r && !r.error) n[r.trend.bias in n ? r.trend.bias : "중립"]++;
+        });
+        return n;
+    }
+    function distPct(level, price) {
+        return ((level - price) / price * 100).toFixed(2) + "%";
+    }
+    function entryText(sig, dp) {
+        if (!sig || sig.error) return "계산 불가";
+        if (!sig.entry) return "진입 신호 없음";
+        var e = sig.entry;
+        return (e.side === "LONG" ? "롱" : "숏") + " " + fmt(e.entry, dp) + " · 손절 " + fmt(e.stop, dp)
+            + " · 목표 " + fmt(e.target1, dp) + " · " + e.rr.toFixed(2) + "R";
+    }
+    function syncFoldSubs(results, lv, sig, dp) {
+        var n = biasCount(results);
+        var sub = {
+            signal: entryText(sig, dp),
+            levels: lv && !lv.error
+                ? "저항 " + (lv.직상 ? fmt(lv.직상.price, dp) : "—") + " · 지지 " + (lv.직하 ? fmt(lv.직하.price, dp) : "—")
+                : "",
+            summary: "강세 " + n.강세 + " · 약세 " + n.약세 + " · 중립 " + n.중립
+        };
+        Object.keys(sub).forEach(function (k) { var el = $("fs-" + k); if (el) el.textContent = sub[k]; });
+    }
+
+    /** 맨 위 4줄 요약. 세부는 아래 접힌 섹션에 있다. */
+    function renderBrief(sym, t, price, dp, results, lv, sig, fut) {
+        var chg = t.signed_change_rate;
+        var n = biasCount(results);
+        var verdict = n.강세 > n.약세 + 1 ? ["강세 우위", "up"] : n.약세 > n.강세 + 1 ? ["약세 우위", "down"] : ["방향 혼조", "neu"];
+        function wall(x, c) {
+            return x ? '<b class="' + c + '">' + fmt(x.price, dp) + "</b> (" + distPct(x.price, price) + ")" : "—";
+        }
+        var funding = fut && typeof fut.funding === "number"
+            ? ' · 펀딩 <span class="' + cls(fut.funding) + '">' + fut.funding.toFixed(4) + "%</span>" : "";
+        var rows = [
+            ["현재가", '<b class="nums">' + fmt(price, dp) + '</b> <span class="' + cls(chg) + '">' + pct(chg * 100) + "</span> (24h)" + funding],
+            ["방향", '<b class="' + verdict[1] + '">' + verdict[0] + "</b> · 강세 " + n.강세 + " / 약세 " + n.약세 + " / 중립 " + n.중립],
+            ["가까운 벽", lv && !lv.error ? "저항 " + wall(lv.직상, "down") + " · 지지 " + wall(lv.직하, "up") : "계산 불가"],
+            ["타점", '<b class="' + (sig && sig.entry ? (sig.entry.side === "LONG" ? "up" : "down") : "dim") + '">' + esc(entryText(sig, dp)) + "</b>"
+                + (sig && !sig.entry && sig.blocked ? ' <span class="dim">— ' + esc(sig.blocked) + "</span>" : "")]
+        ];
+        return '<section class="brief-core"><div class="sec-head"><h2>' + esc(sym) + " 핵심 브리핑</h2>"
+            + '<span class="tag">' + esc(ex().name) + " · 아래 항목을 눌러 상세 보기</span></div>"
+            + '<div class="card card-pad">' + rows.map(function (r) {
+                return '<div class="brow"><span class="bk">' + r[0] + '</span><span class="bv">' + r[1] + "</span></div>";
+            }).join("") + "</div></section>";
+    }
+
     function renderScenario(lv, dp) {
         if (!lv || lv.error) return "";
         var out = [];
@@ -2716,7 +2819,7 @@
                 $("out").innerHTML = '<div class="err"><b>데이터를 불러오지 못했습니다.</b><br>'
                     + esc(e && e.message ? e.message : String(e))
                     + '<div class="dim" style="margin-top:8px;font-size:12.5px">'
-                    + (ex().proxy && LOCAL
+                    + (ex().proxy && !ex().relay && LOCAL
                         ? ex().name + '은(는) CORS 차단 때문에 서버리스 프록시가 필요합니다. 로컬(localhost)에서는 조회되지 않고 배포본에서만 동작합니다.'
                         : ex().name + ' API 호출 제한에 걸렸을 수 있습니다. 잠시 후 다시 시도하세요.')
                     + '</div></div>';
@@ -2951,6 +3054,10 @@
         });
 
         // 보조지표 선택도 렌더마다 새로 생긴다
+        // toggle은 버블링되지 않아 캡처로 받는다.
+        $("out").addEventListener("toggle", function (e) {
+            if (e.target.classList && e.target.classList.contains("fold")) saveFold(e.target);
+        }, true);
         $("out").addEventListener("change", function (e) {
             if (e.target.id !== "indSel") return;
             indView = e.target.value;

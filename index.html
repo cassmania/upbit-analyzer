@@ -463,6 +463,22 @@ footer b{color:var(--on-surface)}
 #sec-v41 a, #sec-v41 a:visited { color:var(--accent); text-underline-offset:3px; }
 #sec-v41 a:hover, #sec-v41 a:focus-visible { color:#9c4a2f; }
 #sec-v41 a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+
+/* ---------- 핵심 브리핑 + 접이식 섹션 ---------- */
+.brief-core .brow{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--outline);font-size:14.5px;line-height:1.5}
+.brief-core .brow:last-child{border-bottom:0}
+.brief-core .bk{flex:0 0 76px;color:var(--on-variant);font-size:13px}
+.brief-core .bv{flex:1;min-width:0}
+.fold{background:var(--surface-low);border:1px solid var(--outline);border-radius:var(--r-lg);margin-bottom:10px;box-shadow:var(--shadow)}
+.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:14px 18px;user-select:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"B8";color:var(--accent);transition:transform .15s}
+.fold[open]>summary::before{transform:rotate(90deg)}
+.fold>summary:hover{background:var(--surface)}
+.fold-t{font-family:var(--font-h);font-size:17px;font-weight:600}
+.fold-s{color:var(--on-variant);font-size:13px}
+.fold-b{padding:4px 14px 14px}
+.fold-b section{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -601,6 +617,6 @@ footer b{color:var(--on-surface)}
 <script src="indicator_engine.js?v=1" charset="utf-8"></script>
 <script src="evidence-lib.js?v=1" charset="utf-8"></script>
 <script src="public-evidence.js?v=2" charset="utf-8"></script>
-<script src="app.js?v=6.3.0-pages" charset="utf-8"></script>
+<script src="app.js?v=6.4.0-pages" charset="utf-8"></script>
 </body>
 </html>
