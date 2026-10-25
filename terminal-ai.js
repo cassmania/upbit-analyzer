@@ -3,7 +3,8 @@
    브라우저 전역 TerminalAI + node module.exports. */
 (function (global) {
     "use strict";
-    var TF_SEC = { "1h": 3600, "4h": 14400, "12h": 43200, "1d": 86400 };
+    // 아래 nextCandle용 TF_SEC와 이름이 겹치면 var 호이스팅으로 덮여 dropForming이 undefined를 받는다.
+    var PIPE_SEC = { "1h": 3600, "4h": 14400, "12h": 43200, "1d": 86400 };
 
     // MEXC 선물 kline 배열형 → 엔진 스키마 {time,o,h,l,c,v}
     function normalizeFutures(d) {
@@ -26,12 +27,13 @@
         return candles;
     }
 
+    // 1h봉 n개 묶음. 인덱스 0부터 묶으면 봉 개수에 따라 경계가 밀리므로 절대 시각(UTC) 기준으로 묶는다.
     function resample(candles, n) {
-        var out = [];
-        for (var i = 0; i < candles.length; i += n) {
-            var g = candles.slice(i, i + n);
-            if (!g.length) break;
-            out.push({ time: g[0].time, o: g[0].o, h: Math.max.apply(null, g.map(function (k) { return k.h; })),
+        var out = [], win = n * 3600, i = 0;
+        while (i < candles.length) {
+            var w0 = Math.floor(candles[i].time / win) * win, g = [];
+            while (i < candles.length && Math.floor(candles[i].time / win) * win === w0) g.push(candles[i++]);
+            out.push({ time: w0, o: g[0].o, h: Math.max.apply(null, g.map(function (k) { return k.h; })),
                 l: Math.min.apply(null, g.map(function (k) { return k.l; })), c: g[g.length - 1].c,
                 v: g.reduce(function (s, k) { return s + k.v; }, 0) });
         }
@@ -54,7 +56,7 @@
         ["1h", "4h", "12h", "1d"].forEach(function (tf) {
             var raw = normalizeFutures(tfData[tf]);
             if (tf === "12h") raw = resample(raw, 12);
-            tfCandles[tf] = dropForming(raw, TF_SEC[tf], nowSec);
+            tfCandles[tf] = dropForming(raw, PIPE_SEC[tf], nowSec);
         });
         var results = {};
         Object.keys(tfCandles).forEach(function (tf) {

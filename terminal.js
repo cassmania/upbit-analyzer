@@ -200,8 +200,8 @@ function cfgPreview() {
 // 테마: 라이트/다크. 차트 색상까지 함께 바꾼다
 function chartPalette() {
     return document.documentElement.dataset.theme === "light"
-        ? { bg: "#ffffff", text: "#5b6472", grid: "#e6e9f0", border: "#d4dae4" }
-        : { bg: "#12161f", text: "#8b93a7", grid: "#1a2130", border: "#222839" };
+        ? { bg: "#fbfaf6", text: "#74706a", grid: "#ece9df", border: "#e3dfd3" }
+        : { bg: "#282725", text: "#a39e94", grid: "#31302d", border: "#3b3a36" };
 }
 function applyThemeToChart() {
     if (!S.chart) return;
@@ -461,11 +461,12 @@ function ensureChart() {
 }
 const sma = (a, n) => a.map((_, i) => i < n - 1 ? null : a.slice(i - n + 1, i + 1).reduce((s, v) => s + v, 0) / n);
 function resample12h(c) {
-    const out = [];
-    for (let i = 0; i < c.length; i += 12) {
-        const g = c.slice(i, i + 12);
-        if (!g.length) break;
-        out.push({ time: g[0].time, open: g[0].open, high: Math.max(...g.map(k => k.high)),
+    // 절대 시각 기준 12h 경계. 인덱스로 묶으면 봉 수에 따라 경계가 밀린다.
+    const out = [], win = 43200;
+    for (let i = 0; i < c.length;) {
+        const w0 = Math.floor(c[i].time / win) * win, g = [];
+        while (i < c.length && Math.floor(c[i].time / win) * win === w0) g.push(c[i++]);
+        out.push({ time: w0, open: g[0].open, high: Math.max(...g.map(k => k.high)),
             low: Math.min(...g.map(k => k.low)), close: g[g.length - 1].close, vol: g.reduce((s, k) => s + k.vol, 0) });
     }
     return out;
@@ -877,9 +878,11 @@ async function refreshAI() {
         ]);
         let funding = null;
         try { funding = Number((await pub("funding_rate", { symbol: S.symbol })).fundingRate); } catch { /* 펀딩 실패는 null */ }
+        // 부팅 시 loadChart→refreshAI가 refreshTop보다 먼저 돌아 S.last가 0이다. 종목별 시세, 없으면 1h 종가로 대신한다.
+        const px = S.pxMap[S.symbol] > 0 ? S.pxMap[S.symbol] : Number(h1 && h1.close && h1.close[h1.close.length - 1]);
         const r = window.TerminalAI.runPipeline(
             { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine },
-            { "1h": h1, "4h": h4, "12h": h1b, "1d": d1 }, S.last, funding);
+            { "1h": h1, "4h": h4, "12h": h1b, "1d": d1 }, px, funding);
         S.ai = r;
         S.funding = (r.raw && Number.isFinite(r.raw.funding)) ? r.raw.funding : (Number.isFinite(funding) ? funding : null);
         $("aiSig").textContent = r.dir;

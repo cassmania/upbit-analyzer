@@ -273,6 +273,10 @@
 
     var chart = null, candleSeries = null, volumeSeries = null, priceLines = [];
     var maSeries = {};   // 이동평균선. 봉을 바꿔도 재사용한다
+    // trading-chart 보조지표(indicator_engine.js). 오실레이터는 아래 별도 차트에 그리고 시간축을 맞춘다.
+    var oscChart = null, indSeries = [], oscSeries = [], indLines = [];
+    var indView = "auto";
+    try { indView = localStorage.getItem("ua-ind-view") || "auto"; } catch (e) {}
 
     /**
      * 차트 팔레트 — 밝은 배경.
@@ -282,10 +286,10 @@
      * 흰 바탕이면 같은 색이라도 구분이 확실히 된다(사용자 요청 레퍼런스 기준).
      */
     var CHART = {
-        bg: "#ffffff",
-        text: "#3f4a5a",
-        grid: "rgba(120,134,158,.14)",
-        border: "#d4dae4",
+        bg: "#fbfaf6",
+        text: "#74706a",
+        grid: "rgba(31,30,27,.06)",
+        border: "#e3dfd3",
         up: "#26a69a",          // 상승 캔들 — 청록
         down: "#ef5350",        // 하락 캔들 — 빨강
         // V3 표준 이동평균. 지표선은 아래에서 완료봉만 사용한다.
@@ -1013,6 +1017,7 @@
             if (maSeries[m.n]) maSeries[m.n].setData(sma(completedForMa, m.n));
         });
         drawLevelLines(levels, dp);
+        drawIndicators(candles, dp);
         updateLegend(candles[candles.length - 1]);
         return true;   // 보고 있던 확대/스크롤 위치는 건드리지 않는다
     }
@@ -1107,6 +1112,8 @@
         }));
 
         drawLevelLines(levels, dp);
+        buildOsc();
+        drawIndicators(candles, dp);
         chart.timeScale().fitContent();
         updateLegend(candles[candles.length - 1]);
         bindZoom(host);
@@ -1166,6 +1173,169 @@
         });
         if (lv.마지노선) add(lv.마지노선.price, 0, 4, "마지노선 " + lv.마지노선.tf, "floor");
         updateLevelLegend(lv, dp);
+    }
+
+    // ---------------------------------------------------------------- 보조지표 (trading-chart 엔진)
+
+    var IND = { buy: "#12a150", sell: "#e8590c", accent: "#c96442", blue: "#5b8ff9", violet: "#8b6fd6",
+        teal: "#2aa198", gray: "#74706a", bad: "#d64545", line: "#e3dfd3" };
+
+    /** 오실레이터 차트. 메인 차트와 같은 시간축을 쓰도록 보이는 범위를 서로 맞춘다. */
+    function buildOsc() {
+        var host = $("oscChart");
+        if (oscChart) { try { oscChart.remove(); } catch (e) {} oscChart = null; }
+        oscSeries = [];
+        if (!host || !chart) return;
+        oscChart = LightweightCharts.createChart(host, {
+            autoSize: true,
+            layout: { background: { type: "solid", color: CHART.bg }, textColor: CHART.text, fontFamily: "Inter, sans-serif", fontSize: 11 },
+            grid: { vertLines: { color: CHART.grid }, horzLines: { color: CHART.grid } },
+            rightPriceScale: { borderColor: CHART.border, minimumWidth: 80 },
+            timeScale: { borderColor: CHART.border, timeVisible: true, secondsVisible: false, visible: false },
+            // 오실레이터는 메인 차트를 따라가기만 한다. 양방향으로 묶으면 데이터 없는 첫 순간의 범위가 메인을 덮어쓴다.
+            handleScroll: false,
+            handleScale: false,
+            localization: { locale: "ko-KR", priceFormatter: function (v) { return Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2); } }
+        });
+        chart.priceScale("right").applyOptions({ minimumWidth: 80 });   // 두 차트 가격축 폭이 같아야 봉이 세로로 맞는다
+        var osc = oscChart;
+        chart.timeScale().subscribeVisibleLogicalRangeChange(function (r) {
+            if (r && osc === oscChart) osc.timeScale().setVisibleLogicalRange(r);
+        });
+    }
+
+    function indStatsText(st) {
+        if (!st || !st.trades) return "검증 거래 없음";
+        return "승률 " + (st.winRate * 100).toFixed(0) + "% · PF " + st.pf.toFixed(2) + " · 수익 "
+            + (st.ret >= 0 ? "+" : "") + (st.ret * 100).toFixed(1) + "% · " + st.trades + "회";
+    }
+    function indConfidence(st) {
+        if (!st || st.trades < 5) return { label: "표본 부족", cls: "p2" };
+        if (st.pf >= 1.5 && st.lb >= 0.4 && st.ret > 0) return { label: "신뢰도 높음", cls: "p4" };
+        if (st.pf >= 1.1 && st.ret > 0) return { label: "신뢰도 보통", cls: "p3" };
+        return { label: "신뢰도 낮음", cls: "p1" };
+    }
+
+    /**
+     * 11개 지표 전략을 차트 봉으로 백테스트해 국면별 최적 지표를 고르고(워크포워드 검증),
+     * 그 지표의 선·오실레이터·매매 타점·진입/손절/목표선을 그린다. 현물이라 롱 전용.
+     */
+    function drawIndicators(candles, dp) {
+        if (!chart || !candleSeries) return;
+        indSeries.forEach(function (s) { try { chart.removeSeries(s); } catch (e) {} });
+        oscSeries.forEach(function (s) { try { oscChart.removeSeries(s); } catch (e) {} });
+        indLines.forEach(function (l) { try { candleSeries.removePriceLine(l); } catch (e) {} });
+        indSeries = []; oscSeries = []; indLines = [];
+        candleSeries.setMarkers([]);
+        var card = $("indCard"), head = $("oscHead"), sel = $("indSel");
+        var bars = (candles || []).map(function (c) { return { time: c.time, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v }; });
+        if (!window.Engine || bars.length < 120) {
+            if (card) card.innerHTML = '<span class="dim">보조지표 백테스트는 120봉 이상 필요 — 이 봉은 ' + bars.length + "봉</span>";
+            if (head) head.textContent = "";
+            return;
+        }
+        var a;
+        try { a = Engine.analyze(bars, { mode: "long" }); }
+        catch (e) { if (card) card.innerHTML = '<span class="dim">보조지표 계산 실패</span>'; return; }
+
+        if (sel && sel.options.length < 2) {
+            sel.innerHTML = '<option value="auto">보조지표: 자동 (국면별 최적)</option>'
+                + Engine.STRATEGIES.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + "</option>"; }).join("");
+        }
+        var row = indView !== "auto" ? a.rows.filter(function (r) { return r.id === indView; })[0] : null;
+        if (sel) sel.value = row ? indView : "auto";
+        var v = row
+            ? { auto: false, id: row.id, trades: row.trades, open: row.open, pending: row.pending, stats: row.oos }
+            : { auto: true, id: a.chosen || a.rows[0].id, trades: a.adaptive.trades, open: a.adaptive.open, pending: a.adaptive.pending, stats: a.adaptive.stats };
+        var strat = Engine.STRAT_BY_ID[v.id], built = a.prep.built[v.id];
+        function data(arr) {
+            return bars.map(function (b, i) { var x = arr[i]; return x == null || !isFinite(x) ? { time: b.time } : { time: b.time, value: x }; });
+        }
+        function line(onOsc, arr, color, opts) {
+            var c = onOsc ? oscChart : chart;
+            if (!c) return;
+            var s = c.addLineSeries(Object.assign({ color: color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, opts || {}));
+            s.setData(data(arr));
+            (onOsc ? oscSeries : indSeries).push(s);
+        }
+
+        // 메인 차트 오버레이
+        built.overlay.forEach(function (o) {
+            if (o.type === "line") line(false, o.data, IND[o.color] || o.color);
+            else if (o.type === "st") {
+                line(false, o.data.line.map(function (x, i) { return o.data.dir[i] === 1 ? x : null; }), IND.buy);
+                line(false, o.data.line.map(function (x, i) { return o.data.dir[i] === -1 ? x : null; }), IND.sell);
+            } else if (o.type === "bb") {
+                line(false, o.data.upper, IND.violet, { lineWidth: 1 });
+                line(false, o.data.mid, IND.accent, { lineWidth: 1, lineStyle: 2 });
+                line(false, o.data.lower, IND.violet, { lineWidth: 1 });
+            } else if (o.type === "band") {
+                line(false, o.upper, IND.teal, { lineWidth: 1 }); line(false, o.lower, IND.teal, { lineWidth: 1 });
+            } else if (o.type === "dots") {
+                line(false, o.data, IND.accent, { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.6 });
+            }
+        });
+
+        // 오실레이터
+        var osc = built.osc, title = "";
+        function guide(val, color) { line(true, bars.map(function () { return val; }), color || IND.line, { lineWidth: 1, lineStyle: 2 }); }
+        if (oscChart && osc.type === "rsi") { guide(70, IND.sell); guide(30, IND.buy); guide(50); line(true, osc.data, IND.accent, { lastValueVisible: true }); title = "RSI 14"; }
+        else if (oscChart && osc.type === "macd") {
+            var h = oscChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+            h.setData(bars.map(function (b, i) { var x = osc.data.hist[i]; return x == null ? { time: b.time } : { time: b.time, value: x, color: x >= 0 ? "rgba(38,166,154,.55)" : "rgba(239,83,80,.55)" }; }));
+            oscSeries.push(h);
+            line(true, osc.data.line, IND.accent, { lastValueVisible: true }); line(true, osc.data.signal, IND.blue, { lineWidth: 1 });
+            title = "MACD 12/26/9";
+        } else if (oscChart && osc.type === "stoch") { guide(80, IND.sell); guide(20, IND.buy); line(true, osc.data.K, IND.accent, { lastValueVisible: true }); line(true, osc.data.D, IND.blue, { lineWidth: 1 }); title = "스토캐스틱 14/3/3"; }
+        else if (oscChart && osc.type === "cci") { guide(100, IND.sell); guide(-100, IND.buy); guide(0); line(true, osc.data, IND.accent, { lastValueVisible: true }); title = "CCI 20"; }
+        if (head) head.textContent = title;
+        var vr = chart.timeScale().getVisibleLogicalRange();
+        if (oscChart && vr) oscChart.timeScale().setVisibleLogicalRange(vr);
+
+        // 매매 타점
+        var ms = [];
+        v.trades.forEach(function (t) {
+            var eb = bars[t.entryIdx], xb = bars[t.exitIdx];
+            if (!eb || !xb) return;
+            ms.push({ time: eb.time, position: "belowBar", shape: "arrowUp", color: IND.buy, text: "매수" });
+            ms.push({ time: xb.time, position: "aboveBar", shape: "arrowDown", color: t.reason === "stop" ? IND.gray : IND.sell,
+                text: (t.reason === "stop" ? "손절 " : "매도 ") + (t.pnl >= 0 ? "+" : "") + (t.pnl * 100).toFixed(1) + "%" });
+        });
+        if (v.open && bars[v.open.idx]) ms.push({ time: bars[v.open.idx].time, position: "belowBar", shape: "arrowUp", color: IND.buy, text: "매수 보유" });
+        if (v.pending) ms.push({ time: bars[bars.length - 1].time, position: "belowBar", shape: "circle", color: IND.accent, text: v.pending.type === "exit" ? "청산 대기" : "매수 대기" });
+        ms.sort(function (x, y) { return x.time - y.time; });
+        candleSeries.setMarkers(ms);
+
+        // 진입·손절·목표선 (보유 중이거나 다음 봉 진입 대기일 때만)
+        var lv = null, atrNow = a.context.atr || 0;
+        if (v.open) {
+            var risk = Math.abs(v.open.entry - v.open.stop);
+            lv = { entry: v.open.entry, stop: v.open.stop, tp1: v.open.entry + risk * 1.5, tp2: v.open.entry + risk * 3 };
+        } else if (v.pending && v.pending.type === "enter") {
+            var e = bars[bars.length - 1].close;
+            lv = { entry: e, stop: e - 2.5 * atrNow, tp1: e + 2.5 * atrNow * 1.5, tp2: e + 2.5 * atrNow * 3 };
+        }
+        function pl(price, color, title, style, width) {
+            if (isFinite(price)) indLines.push(candleSeries.createPriceLine({ price: price, color: color, lineWidth: width || 1, lineStyle: style, axisLabelVisible: true, title: title }));
+        }
+        if (lv) { pl(lv.entry, IND.buy, "진입", 0, 2); pl(lv.stop, IND.bad, "손절", 1); pl(lv.tp1, IND.buy, "1차 목표", 1); pl(lv.tp2, IND.buy, "2차 목표", 1); }
+
+        // 요약 카드
+        if (card) {
+            var conf = indConfidence(v.stats), c = a.context;
+            var posTxt = v.open ? '<b class="up">매수 보유</b> · 진입 ' + fmt(v.open.entry, dp) + " · 평가 " + (v.open.unreal >= 0 ? "+" : "") + (v.open.unreal * 100).toFixed(2) + "%"
+                : v.pending ? '<b style="color:var(--accent)">' + (v.pending.type === "exit" ? "청산 신호" : "매수 신호") + "</b> · 다음 봉 시가 체결 가정"
+                : '<b class="dim">관망</b>';
+            card.innerHTML =
+                '<div class="ind-cell"><span class="ind-k">현재 국면</span><b>' + esc(Engine.REGIME_NAME[a.regime] || "—") + "</b>"
+                + '<span class="dim">ADX ' + (c.adx == null ? "—" : c.adx.toFixed(1)) + " · +DI " + (c.pdi == null ? "—" : c.pdi.toFixed(1)) + " / −DI " + (c.mdi == null ? "—" : c.mdi.toFixed(1)) + "</span></div>"
+                + '<div class="ind-cell"><span class="ind-k">' + (v.auto ? "자동 적용 지표" : "선택 지표") + "</span><b>" + esc(strat.name) + "</b>"
+                + '<span class="dim">' + esc(strat.kind + " · " + strat.desc) + "</span></div>"
+                + '<div class="ind-cell"><span class="ind-k">워크포워드 검증</span><b>' + indStatsText(v.stats) + "</b>"
+                + '<span><span class="pill ' + conf.cls + '">' + conf.label + "</span></span></div>"
+                + '<div class="ind-cell"><span class="ind-k">지표 상태</span><span>' + posTxt + "</span>"
+                + '<span class="dim">봉 마감 신호 · 다음 봉 시가 체결 · 수수료 0.1% · 2.5×ATR 손절</span></div>';
+        }
     }
 
     /** 차트 안에서 지지·저항선의 색과 가격을 함께 보여준다. */
@@ -2063,11 +2233,14 @@
             +   '<button type="button" data-recent="120">120봉</button>'
             +   '<button type="button" data-recent="0" title="전체 (차트 더블클릭)">전체</button>'
             +   '<span class="zoom-sep"></span>'
+            +   '<select id="indSel" aria-label="보조지표 선택"></select>'
             +   '<button type="button" id="fsBtn" class="fs-btn" title="전체화면 (F 또는 Esc로 해제)">⛶ 전체화면</button>'
             + "</div>"
             + '<div class="chart-shell">'
             + '<div id="chart"></div><div class="chart-legend" id="legend"></div><div class="level-legend" id="levelLegend"></div>'
             + "</div>"
+            + '<div class="osc-shell"><div class="osc-head" id="oscHead"></div><div id="oscChart"></div></div>'
+            + '<div class="ind-card" id="indCard"></div>'
             + '<div class="chart-note">'
             + '<span class="swatch"><i class="sw" style="background:' + CHART.res[0] + '"></i> 저항</span>'
             + '<span class="swatch"><i class="sw" style="background:' + CHART.sup[0] + '"></i> 지지</span>'
@@ -2118,7 +2291,10 @@
         if (!c || c.length < 20 || !isFinite(state.lastPrice)) return { error: "선택 봉 표본 부족" };
         var one = {};
         one[tf] = c.map(function (x) { return { high: x.h, low: x.l, close: x.c, volume: x.v }; });
-        return LevelEngine.analyze(one, state.lastPrice, { limit: 7 });
+        var lv = LevelEngine.analyze(one, state.lastPrice, { limit: 7 });
+        // 선택 봉 하나만 넣는 게 의도라 "타임프레임 1개만" 경고는 여기선 오경보다. 겹침 판정은 전체 합산 lv가 맡는다.
+        if (lv.경고) lv.경고 = lv.경고.filter(function (w) { return w.indexOf("타임프레임 1개만") < 0; });
+        return lv;
     }
     function renderLevels(lv, dp, tfKey) {
         if (lv.error) {
@@ -2772,6 +2948,14 @@
             } else {
                 showRecent(parseInt(b.getAttribute("data-recent"), 10));
             }
+        });
+
+        // 보조지표 선택도 렌더마다 새로 생긴다
+        $("out").addEventListener("change", function (e) {
+            if (e.target.id !== "indSel") return;
+            indView = e.target.value;
+            try { localStorage.setItem("ua-ind-view", indView); } catch (err) {}
+            if (state.tfCandles && state.tfCandles[state.chartTf]) drawIndicators(state.tfCandles[state.chartTf], state.dp);
         });
 
         // 전체화면 버튼도 렌더마다 새로 생긴다
