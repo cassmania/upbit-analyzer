@@ -10,7 +10,7 @@ const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", mainLocked: true, tf: "Min6
     last: 0, chart: null, chartErr: false, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
     bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
-    layout: 1, panes: [], mainPL: { lines: [] },
+    layout: 1, panes: [], mainPL: { lines: [] }, chg24: {},
     cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
         tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true, lockEff: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
 function loadFav() {
@@ -450,14 +450,39 @@ function aiSignal(fast, slow) {
 // ---- 차트 ----
 function ensureChart() {
     if (S.chart) return;
+    Object.assign(S, makeChartSet($("chart")));
+}
+// coinchart 분할 차트와 같은 구성: MA20/60/120/200 + BB(20,2σ) + 앵커 VWAP
+function makeChartSet(el) {
     const p = chartPalette();
-    S.chart = LightweightCharts.createChart($("chart"), { layout: { background: { color: p.bg }, textColor: p.text },
+    const chart = LightweightCharts.createChart(el, { layout: { background: { color: p.bg }, textColor: p.text },
         grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
-        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true } });
-    S.series = S.chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81", wickDownColor: "#f6465d" });
-    const mk = c => S.chart.addLineSeries({ color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    S.lines = { ma5: mk("#e0b44a"), ma10: mk("#29b6f6"), ma30: mk("#9b59b6"), ma60: mk("#7f8c8d") };
-    new ResizeObserver(() => S.chart.resize($("chart").clientWidth, $("chart").clientHeight)).observe($("chart"));
+        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false } });
+    const series = chart.addCandlestickSeries({ upColor: "#12a150", downColor: "#d64545", borderUpColor: "#12a150", borderDownColor: "#d64545", wickUpColor: "#12a150", wickDownColor: "#d64545" });
+    const mk = (c, w, st) => chart.addLineSeries({ color: c, lineWidth: w || 1, lineStyle: st || 0, priceLineVisible: false, lastValueVisible: false });
+    const bb = "rgba(0,212,255,.35)";
+    const lines = { ma20: mk("#f0a500"), ma60: mk("#5b8ff9"), ma120: mk("#12a150"), ma200: mk("#a259ff", 2), bbUp: mk(bb), bbLo: mk(bb), vwap: mk("#ff8c42", 2, 2) };
+    new ResizeObserver(() => chart.resize(el.clientWidth, el.clientHeight)).observe(el);
+    return { chart, series, lines };
+}
+const VWAP_ANCHOR = { Min15: 86400, Min60: 86400, Hour4: 604800, Hour8: 604800, Hour12: 604800, Day1: 2592000, Week1: 31536000 };
+function setIndicators(lines, candles, tf) {
+    const closes = candles.map(k => k.close), ser = v => candles.map((c, i) => ({ time: c.time, value: v[i] })).filter(pt => pt.value != null);
+    [20, 60, 120, 200].forEach(n => lines["ma" + n].setData(ser(sma(closes, n))));
+    const up = [], lo = [], vw = [], A = VWAP_ANCHOR[tf] || 86400;
+    let pv = 0, vv = 0, seg = null;
+    candles.forEach((c, i) => {
+        if (i >= 19) {
+            const sl = closes.slice(i - 19, i + 1), m = sl.reduce((a, b) => a + b, 0) / 20;
+            const sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / 20);
+            up[i] = m + 2 * sd; lo[i] = m - 2 * sd;
+        }
+        const g = Math.floor(c.time / A);
+        if (g !== seg) { seg = g; pv = 0; vv = 0; }
+        pv += (c.high + c.low + c.close) / 3 * c.vol; vv += c.vol;
+        vw[i] = vv > 0 ? pv / vv : null;
+    });
+    lines.bbUp.setData(ser(up)); lines.bbLo.setData(ser(lo)); lines.vwap.setData(ser(vw));
 }
 const sma = (a, n) => a.map((_, i) => i < n - 1 ? null : a.slice(i - n + 1, i + 1).reduce((s, v) => s + v, 0) / n);
 function resample12h(c) {
@@ -482,13 +507,12 @@ async function loadChart(fresh) {
     candles = candles.slice(-300);
     S.candles = candles;
     S.series.setData(candles);
-    const closes = candles.map(k => k.close);
-    const mas = { ma5: sma(closes, 5), ma10: sma(closes, 10), ma30: sma(closes, 30), ma60: sma(closes, 60) };
-    for (const k of Object.keys(mas)) S.lines[k].setData(candles.map((c, i) => ({ time: c.time, value: mas[k][i] })).filter(p => p.value !== null));
-    const last = candles[candles.length - 1];
-    $("legend").textContent = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
-        " C " + fmt.format(last.close) + " · MA5 " + fmt.format(mas.ma5[mas.ma5.length - 1] || 0);
-    $("mainsym").textContent = S.mainSym.replace("_USDT", "/USDT") + " · " + (typeof TF_LABEL !== "undefined" && TF_LABEL[S.tf] ? TF_LABEL[S.tf] : S.tf);
+    setIndicators(S.lines, candles, S.tf);
+    const last = candles[candles.length - 1], m20 = sma(candles.map(k => k.close), 20).pop();
+    $("legend").innerHTML = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
+        " C " + fmt.format(last.close) + " · <span style='color:#f0a500'>MA20</span> <span style='color:#5b8ff9'>MA60</span> <span style='color:#12a150'>MA120</span> <span style='color:#a259ff'>MA200</span> <span style='color:#00d4ff'>BB</span> <span style='color:#ff8c42'>VWAP</span>" +
+        (m20 != null ? " · MA20 " + fmt.format(m20) : "");
+    setChip($("mainsym"), S.mainSym, last.close, TF_LABEL[S.tf] || S.tf);
     drawSR(S.series, S.mainPL, candles);
     await refreshAI();
     } catch (e) {
@@ -518,13 +542,83 @@ function swingLevels(candles) {
         sup: [...new Set(Ls.filter(l => l < last))].sort((a, b) => b - a).slice(0, 3)
     };
 }
+// 매물대(48칸) POC와 70% 가치영역
+function volumeZones(rows) {
+    const lo = Math.min(...rows.map(c => c.low)), hi = Math.max(...rows.map(c => c.high)), n = 48, step = (hi - lo) / n;
+    if (!(step > 0)) return null;
+    const bins = new Array(n).fill(0);
+    rows.forEach(c => { bins[Math.min(n - 1, Math.floor(((c.high + c.low + c.close) / 3 - lo) / step))] += c.vol; });
+    const total = bins.reduce((a, b) => a + b, 0);
+    if (!(total > 0)) return null;
+    let p = bins.indexOf(Math.max(...bins)), a = p, b = p, acc = bins[p];
+    while (acc < total * 0.7 && (a > 0 || b < n - 1)) {
+        if (b < n - 1 && (a === 0 || bins[b + 1] >= bins[a - 1])) acc += bins[++b]; else acc += bins[--a];
+    }
+    const mid = i => lo + (i + 0.5) * step;
+    return { poc: mid(p), val: mid(a), vah: mid(b) };
+}
+function srLevels(candles) {
+    const last = candles[candles.length - 1].close, recent = candles.slice(-180), closes = candles.map(k => k.close);
+    const tr = candles.slice(-15).map((c, i, a) => i ? Math.max(c.high - c.low, Math.abs(c.high - a[i - 1].close), Math.abs(c.low - a[i - 1].close)) : 0).slice(1);
+    const atr = tr.reduce((a, b) => a + b, 0) / (tr.length || 1);
+    const tol = Math.min(0.008, Math.max(0.0025, atr / last * 0.35));
+    const res = [], sup = [];
+    const add = (price, source, w) => {
+        if (!(price > 0)) return;
+        const list = price > last ? res : sup, hit = list.find(x => Math.abs(x.price - price) / price < tol);
+        if (!hit) return list.push({ price, sources: [source], weight: w });
+        hit.price = (hit.price * hit.weight + price * w) / (hit.weight + w); hit.weight += w;
+        if (!hit.sources.includes(source)) hit.sources.push(source);
+    };
+    const hiOf = k => Math.max(...recent.slice(-k).map(c => c.high)), loOf = k => Math.min(...recent.slice(-k).map(c => c.low));
+    add(hiOf(30), "최근 30봉 고점", 4); add(hiOf(100), "최근 100봉 고점", 5);
+    add(loOf(30), "최근 30봉 저점", 4); add(loOf(100), "최근 100봉 저점", 5);
+    const sw = swingLevels(candles);
+    sw.res.forEach(p => add(p, "스윙 고점", 3)); sw.sup.forEach(p => add(p, "스윙 저점", 3));
+    const z = volumeZones(recent);
+    if (z) { add(z.vah, "VPVR VAH", 5); add(z.val, "VPVR VAL", 5); }
+    if (closes.length >= 20) {
+        const sl = closes.slice(-20), m = sl.reduce((a, b) => a + b, 0) / 20, sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / 20);
+        add(m + 2 * sd, "BB 상단", 2); add(m - 2 * sd, "BB 하단", 2);
+    }
+    [20, 60, 120, 200].forEach(n => { const v = sma(closes, n).pop(); if (v != null) add(v, "MA" + n, n >= 120 ? 4 : 3); });
+    const notPoc = x => !z || Math.abs(x.price - z.poc) / z.poc >= tol;
+    const RC = ["#d64545", "#ff8a3d", "#ffc857"], SC = ["#12a150", "#23a6ff", "#7c5cff"];
+    const tier = (arr, name, col) => arr.map((x, i) => ({ ...x, title: (i + 1) + "차 " + name + (x.sources.length > 1 ? " · 근거 " + x.sources.length : ""), color: col[i] }));
+    return [
+        ...tier(res.filter(notPoc).sort((a, b) => a.price - b.price).slice(0, 3), "저항", RC),
+        ...(z ? [{ price: z.poc, title: "매물대 POC", color: "#c96442", style: 2 }] : []),
+        ...tier(sup.filter(notPoc).sort((a, b) => b.price - a.price).slice(0, 3), "지지", SC)
+    ];
+}
 function drawSR(series, store, candles) {
     if (!series || !candles || !candles.length) return;
     (store.lines || []).forEach(l => { try { series.removePriceLine(l); } catch {} });
-    store.lines = [];
-    const lv = swingLevels(candles);
-    lv.res.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#f6465d", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "저항" + (i + 1) })));
-    lv.sup.forEach((p, i) => store.lines.push(series.createPriceLine({ price: p, color: "#2962ff", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "지지" + (i + 1) })));
+    // coinchart dpFor: 저가 코인이 축·라벨에서 0.08로 뭉개지지 않게 유효숫자 기준 자릿수
+    const px = Math.abs(candles[candles.length - 1].close);
+    const dp = px >= 10000 ? 1 : px >= 100 ? 2 : px >= 1 ? 4 : px > 0 ? Math.min(12, Math.max(6, Math.ceil(-Math.log10(px)) + 3)) : 6;
+    series.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) } });
+    store.lines = srLevels(candles).map(l => series.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: l.style || 0, axisLabelVisible: true, title: l.title }));
+}
+// coinchart식 심볼 칩: 심볼 · 현재가 · 24h 변동률(거래소 티커값, 첫 봉 대비 아님)
+function setChip(el, sym, px, tfl) {
+    if (!el) return;
+    const c = S.chg24[sym];
+    el.innerHTML = "<b>" + esc(sym.replace("_USDT", "")) + "</b> <span class='mono'>" + fmt.format(px) + "</span>" +
+        (Number.isFinite(c) ? " <span class='mono " + (c >= 0 ? "up" : "down") + "'>" + (c >= 0 ? "+" : "") + c.toFixed(2) + "%</span>" : "") +
+        (tfl ? " <span class='dim'>" + esc(tfl) + "</span>" : "");
+}
+function mainChip() {
+    if (S.candles && S.candles.length) setChip($("mainsym"), S.mainSym, S.pxMap[S.mainSym] || S.candles[S.candles.length - 1].close, TF_LABEL[S.tf] || S.tf);
+}
+const PANE_ACCENTS = ["#c96442", "#12a150", "#b7791f", "#8b6fd6", "#2aa198", "#d97757", "#d64545"];
+function paneZoom(chart, mode) {
+    const ts = chart.timeScale();
+    if (mode === "fit") return ts.fitContent();
+    const r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    const center = (r.from + r.to) / 2, half = Math.max(6, (r.to - r.from) / 2 * (mode === "in" ? 0.72 : 1.35));
+    ts.setVisibleLogicalRange({ from: center - half, to: center + half });
 }
 function defaultPaneSymbols() {
     const have = s => S.allSymbols.some(x => x.symbol === s);
@@ -561,22 +655,17 @@ function ensurePane(i) {
     const wrap = document.createElement("div");
     wrap.className = "cpane";
     wrap.id = "cpane" + (i + 1);
-    wrap.innerHTML = "<div class='panehead'><input class='pq' placeholder='검색' aria-label='차트" + (i + 2) + " 코인 검색'>" +
+    wrap.style.setProperty("--pane", PANE_ACCENTS[i % PANE_ACCENTS.length]);
+    wrap.innerHTML = "<div class='panehead'><span class='chip'>-</span><input class='pq' placeholder='검색' aria-label='차트" + (i + 2) + " 코인 검색'>" +
         "<select class='psym' aria-label='차트" + (i + 2) + " 심볼'></select>" +
         "<select class='ptf' aria-label='차트" + (i + 2) + " 봉'>" +
-        TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select></div>" +
-        "<div class='pchart' id='pchart" + (i + 1) + "'></div>" +
-        "<div class='sr-legend'><span class='rr'>— 저항1~3</span><span class='ss'>— 지지1~3</span></div>";
+        TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select>" +
+        "<button class='pmini' data-pz='in' title='캔들 확대'>+</button><button class='pmini' data-pz='out' title='캔들 축소'>−</button><button class='pmini' data-pz='fit' title='이 차트 전체보기'>전체</button></div>" +
+        "<div class='pchart' id='pchart" + (i + 1) + "'></div>";
     $("charts").appendChild(wrap);
-    const P = S.panes[i], p = chartPalette();
-    P.chart = LightweightCharts.createChart(wrap.querySelector(".pchart"), { layout: { background: { color: p.bg }, textColor: p.text },
-        grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
-        rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true } });
-    P.series = P.chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81", wickDownColor: "#f6465d" });
-    const mk = c => P.chart.addLineSeries({ color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    P.lines = { ma5: mk("#e0b44a"), ma10: mk("#29b6f6"), ma30: mk("#9b59b6"), ma60: mk("#7f8c8d") };
-    const box = wrap.querySelector(".pchart");
-    new ResizeObserver(() => P.chart.resize(box.clientWidth, box.clientHeight)).observe(box);
+    const P = S.panes[i];
+    Object.assign(P, makeChartSet(wrap.querySelector(".pchart")));
+    wrap.querySelectorAll("[data-pz]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); paneZoom(P.chart, b.dataset.pz); }));
     wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     const pq = wrap.querySelector(".pq");
     pq.addEventListener("input", () => {
@@ -600,7 +689,7 @@ function ensurePane(i) {
     wrap.querySelector(".ptf").addEventListener("change", e => { S.panes[i].tf = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     wrap.addEventListener("mousedown", e => { S.downPos = [e.clientX, e.clientY]; });
     wrap.addEventListener("click", e => {
-        if (e.target.closest("select")) return;
+        if (e.target.closest("select,input,button")) return;
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
         if (S.panes[i] && S.panes[i].symbol !== S.symbol) focusSymbol(S.panes[i].symbol);
         else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
@@ -643,10 +732,9 @@ async function loadPane(i) {
     if (P.tf === "Hour12") candles = resample12h(candles);
     candles = candles.slice(-300);
     P.series.setData(candles);
-    const closes = candles.map(k => k.close);
-    const mas = { ma5: sma(closes, 5), ma10: sma(closes, 10), ma30: sma(closes, 30), ma60: sma(closes, 60) };
-    for (const k of Object.keys(mas)) P.lines[k].setData(candles.map((c, j) => ({ time: c.time, value: mas[k][j] })).filter(pt => pt.value !== null));
+    setIndicators(P.lines, candles, P.tf);
     drawSR(P.series, P.pl, candles);
+    setChip($("cpane" + (i + 1)).querySelector(".chip"), P.symbol, candles[candles.length - 1].close);
     P.chart.timeScale().scrollToRealTime();
 }
 function refreshAllCharts() {
@@ -661,6 +749,8 @@ async function refreshTop() {
     if (S.ws.ok && Date.now() - (S.ws.lastRest || 0) < 30000) return; // WS 실시간 중이면 30초마다만 전체 보정
     S.ws.lastRest = Date.now();
     const all = await pub("ticker", {});
+    all.forEach(x => { if (x && x.symbol) S.chg24[x.symbol] = Number(x.riseFallRate) * 100; });
+    mainChip();
     const t = all.find(x => x.symbol === S.symbol);
     if (!t) return;
     S.last = Number(t.lastPrice);
@@ -770,9 +860,11 @@ async function wsOnMsg(raw) {
         m.data.forEach(t => {
             if (!t || !t.symbol || !(Number(t.lastPrice) > 0)) return;
             S.pxMap[t.symbol] = Number(t.lastPrice);
+            if (t.riseFallRate != null) S.chg24[t.symbol] = Number(t.riseFallRate) * 100;
             if (t.symbol === S.symbol) mine = t;
         });
         if (mine) wsTopTick(mine);
+        mainChip();
         if (S.paper.length) { renderPaper(); renderBank(); }
     } else if (m.channel === "push.deal" && m.symbol === S.symbol && Array.isArray(m.data) && m.data.length) {
         const last = m.data[m.data.length - 1];
@@ -813,14 +905,7 @@ function wsTradeTick(px, tMs) {
 }
 function refreshMALines() {
     if (!S.series || !S.candles || !S.candles.length || !S.lines) return;
-    try {
-        const closes = S.candles.map(k => k.close);
-        [["ma5", 5], ["ma10", 10], ["ma30", 30], ["ma60", 60]].forEach(([k, n]) => {
-            if (!S.lines[k] || closes.length < n) return;
-            const v = sma(closes, n);
-            S.lines[k].setData(S.candles.map((c, i) => ({ time: c.time, value: v[i] })).filter(pt => pt.value !== null));
-        });
-    } catch {}
+    try { setIndicators(S.lines, S.candles, S.tf); mainChip(); } catch {}
 }
 function ticketPx() {
     const type = Number(document.querySelector("#otype .act").dataset.t);
