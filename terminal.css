@@ -1,8 +1,11 @@
 :root{--bg:#1f1e1c;--panel:#282725;--panel2:#31302d;--line:#3b3a36;--txt:#f1eee6;--dim:#a39e94;--up:#2fbf71;--down:#f0575c;--gold:#e0a84a;--input:#232220;--pos:#ffffff;--accent:#d97757;--loss:#4f8ef7}
 [data-theme="light"]{--bg:#f5f4ee;--panel:#fbfaf6;--panel2:#efede5;--line:#e3dfd3;--txt:#1f1e1b;--dim:#74706a;--up:#12a150;--down:#d64545;--gold:#a86f12;--input:#f5f4ee;--pos:#1f1e1b;--accent:#c96442;--loss:#2962ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Pretendard","Malgun Gothic",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Pretendard","Malgun Gothic",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+/* Claude 스타일: 제목·브랜드는 세리프, 클레이는 주요 액션에만 */
+.ticker .home,.modal h3,.ai-config .tabs b,.ai-wide .tabs b,.ko-page h1,.ko-page h2,.cfg-sub,#tLast{font-family:"Source Serif 4",Georgia,"Malgun Gothic",serif;letter-spacing:-.01em}
+.ticker .home{color:var(--accent)}
 .mono{font-variant-numeric:tabular-nums}.dim{color:var(--dim)}
-.ticker{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.ticker{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
 .ticker .home{color:var(--txt);text-decoration:none;font-weight:800}
 .ticker .analysis-link{color:var(--txt);text-decoration:none;font-weight:700;white-space:nowrap;padding:5px 10px;border:1px solid var(--accent);border-radius:6px;background:transparent}
 .ticker .analysis-link:hover{background:var(--accent);color:#fff}
@@ -27,9 +30,9 @@
 .margin-ctrl{display:flex;gap:8px;align-items:center}
 #cfgMargin{flex:1;accent-color:var(--accent)}
 #cfgMarginUsdtIn{width:110px;background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;text-align:right;font-variant-numeric:tabular-nums}
-[data-theme="light"] .paper-card td button,[data-theme="light"] .abtn.add{color:#0b0e14}
-[data-theme="light"] .tfbar button[data-zoom]{color:#0b0e14}
-[data-theme="light"] .symrow,[data-theme="light"] .modal,[data-theme="light"] .modal input{color:#1a2233}
+[data-theme="light"] .paper-card td button,[data-theme="light"] .abtn.add{color:var(--txt)}
+[data-theme="light"] .tfbar button[data-zoom]{color:var(--txt)}
+[data-theme="light"] .symrow,[data-theme="light"] .modal,[data-theme="light"] .modal input{color:var(--txt)}
 #favPanel{overflow:hidden;max-height:0;transition:max-height .25s ease;background:var(--panel);border-bottom:0 solid var(--line)}
 #favPanel.open{max-height:320px;border-bottom:1px solid var(--line)}
 #favPanel .inner{padding:8px 14px;display:grid;gap:4px;max-height:300px;overflow:auto}
@@ -41,19 +44,19 @@
 .sp{flex:1}.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
 .pill.paper{color:var(--gold);border-color:var(--gold)}.pill.live{color:var(--down);border-color:var(--down)}.pill.iso{color:var(--dim)}
 .term{width:100%;min-width:0;min-height:calc(100vh - 62px);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,24vw);gap:10px;padding:10px}
-.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-width:0}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
 .tfbar{display:flex;gap:2px;padding:8px;border-bottom:1px solid var(--line)}
 .tfbar button{background:transparent;border:0;color:var(--dim);padding:5px 10px;cursor:pointer;border-radius:5px;font-weight:600}
-.tfbar button.act{background:var(--panel2);color:var(--txt)}
+.tfbar button.act{background:var(--panel2);color:var(--accent)}
 .zoom-sep{width:1px;align-self:stretch;background:var(--line);margin:4px 2px}
 .tfbar button[data-zoom]{color:var(--txt);font-weight:800}
 #chart{height:520px;position:relative}.legend{padding:8px 12px;font-size:12px;color:var(--dim);border-top:1px solid var(--line)}
 .charts{display:grid;gap:8px}.charts.g1{grid-template-columns:1fr}.charts.g2,.charts.g4,.charts.g8{grid-template-columns:1fr 1fr}
-.cpane{min-width:0;border:1px solid var(--pane,var(--line));border-radius:8px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}.cpane .pchart{flex:1;min-height:300px;position:relative}
+.cpane{min-width:0;border:1px solid var(--pane,var(--line));border-radius:12px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}.cpane .pchart{flex:1;min-height:300px;position:relative}
 /* 분할 시 타일 높이를 맞춰 빈 공간 없이 채운다 (coinchart 분할과 동일) */
 .charts:not(.g1) #chart{height:auto;flex:1}.charts.g2 .pchart,.charts.g2 #chart{min-height:520px}.charts.g4 .pchart,.charts.g4 #chart{min-height:380px}.charts.g8 .pchart,.charts.g8 #chart{min-height:300px}
-#cpane0{--pane:#5b8ff9}
-.chip{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;background:var(--panel2);border:1px solid var(--pane,var(--line));border-left:4px solid var(--pane,var(--accent));border-radius:5px;padding:3px 8px;font-size:12px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+#cpane0{--pane:#c96442}
+.chip{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;background:var(--panel2);border:1px solid var(--pane,var(--line));border-left:4px solid var(--pane,var(--accent));border-radius:5px;padding:3px 8px;font-size:12px;white-space:nowrap;box-shadow:0 1px 2px rgba(31,30,27,.08)}
 .chip b{font-weight:800;color:var(--txt)}.chip .up{color:var(--up)}.chip .down{color:var(--down)}.chip .dim{color:var(--dim);font-size:10px}
 .pmini{flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);border-radius:4px;color:var(--dim);font-size:11px;font-weight:800;padding:2px 7px;cursor:pointer}.pmini:hover{background:var(--pane,var(--accent));border-color:var(--pane,var(--accent));color:#fff}
 .tfbar button.lact{background:var(--panel2);color:var(--txt)}
@@ -63,7 +66,7 @@
 .panehead .ptf{flex:0 0 76px}
 .cpane.focused{outline:2px solid var(--pane,var(--accent));outline-offset:-2px;box-shadow:0 0 0 1px var(--pane,var(--accent))}
 .right{display:flex;flex-direction:column;gap:10px;min-width:0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 .ko-page{max-width:980px;margin:0 auto;padding:20px 16px 60px}
 .ko-page h1{margin:6px 0 8px;font-size:26px}
 .ko-nav{display:flex;gap:14px;margin-bottom:8px}
@@ -108,7 +111,7 @@ input.mini{width:clamp(96px,8vw,140px);background:var(--input);color:var(--txt);
 @media(max-width:1100px){.cfg-grid{grid-template-columns:1fr}.cfg-grid>div:nth-child(2){display:block}}
 .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:6px 0}
 .seg button{flex:1;background:transparent;border:0;color:var(--dim);padding:7px;cursor:pointer}
-.seg button.act{background:var(--panel2);color:var(--txt)}
+.seg button.act{background:var(--panel2);color:var(--accent);font-weight:700}
 .twobtn{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .twobtn button{padding:10px;border-radius:8px;border:0;font-weight:800;cursor:pointer;background:var(--panel2);color:var(--txt)}
 .long{background:var(--up)!important;color:#04120c!important}.short{background:var(--down)!important;color:#fff!important}
@@ -149,9 +152,9 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .paper-card .seg{margin:0}
 .badge{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:5px}
 .badge.long{color:var(--accent);background:rgba(201,100,66,.13)}
-.badge.short{color:var(--down);background:rgba(246,70,93,.13)}
+.badge.short{color:var(--down);background:rgba(214,69,69,.13)}
 .abtn{border:1px solid var(--accent)!important;color:var(--txt)!important;background:transparent!important}
-.abtn.go{border-color:var(--down)!important;color:#ff8f9e!important}
+.abtn.go{border-color:var(--down)!important;color:var(--down)!important}
 .abtn.add{border-color:var(--txt)!important;color:var(--txt)!important}
 /* 차트 이동 링크 버튼 (포지션·스캔 코인명) */
 .linkbtn{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
@@ -162,15 +165,15 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .switch i:after{content:"";position:absolute;top:2px;left:18px;width:14px;height:14px;background:#fff;border-radius:99px;transition:.15s}
 .switch input:not(:checked)+i{background:var(--line)}
 .switch input:not(:checked)+i:after{left:2px}
-#modalOv{position:fixed;inset:0;background:rgba(4,7,14,.72);z-index:100;display:flex;align-items:center;justify-content:center}
+#modalOv{position:fixed;inset:0;background:rgba(31,30,27,.55);z-index:100;display:flex;align-items:center;justify-content:center}
 #modalOv[hidden]{display:none}
-.modal{width:min(430px,calc(100vw - 40px));background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:10px;padding:20px;color:var(--txt)}
+.modal{width:min(430px,calc(100vw - 40px));background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:14px;padding:20px;color:var(--txt)}
 .modal h3{margin:0 0 10px;color:var(--accent);font-size:17px}
 .modal .mbody{font-size:13px;line-height:1.8;margin-bottom:12px;color:var(--txt)}
 .modal label{display:grid;gap:5px;font-size:12px;color:var(--txt);margin-bottom:12px}
 .modal input{background:var(--input);color:var(--txt);border:1px solid var(--accent);border-radius:6px;padding:9px;font:inherit}
 .modal .twobtn button{padding:11px}
 #mOk{background:var(--down)!important;color:#fff!important}
-#mCancel{background:transparent!important;border:1px solid #fff!important;color:var(--txt)!important}
+#mCancel{background:transparent!important;border:1px solid var(--line)!important;color:var(--txt)!important}
 .up{color:var(--up)}.down{color:var(--down)}
 @media(max-width:1100px){.term{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}#chart{height:420px}.charts.g2,.charts.g4,.charts.g8{grid-template-columns:1fr}.cpane .pchart{height:260px}}

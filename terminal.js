@@ -214,7 +214,7 @@ function applyThemeToChart() {
 }
 function loadTheme() {
     let t = "dark";
-    try { t = localStorage.getItem("krta-theme") || "dark"; } catch {}
+    try { t = localStorage.getItem("krta-theme") || "light"; } catch {}
     if (t !== "light") t = "dark";
     document.documentElement.dataset.theme = t;
     const b = $("themeBtn"); if (b) b.textContent = t === "light" ? "☾" : "☀";
@@ -460,8 +460,8 @@ function makeChartSet(el) {
         rightPriceScale: { borderColor: p.border }, timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false } });
     const series = chart.addCandlestickSeries({ upColor: "#12a150", downColor: "#d64545", borderUpColor: "#12a150", borderDownColor: "#d64545", wickUpColor: "#12a150", wickDownColor: "#d64545" });
     const mk = (c, w, st) => chart.addLineSeries({ color: c, lineWidth: w || 1, lineStyle: st || 0, priceLineVisible: false, lastValueVisible: false });
-    const bb = "rgba(0,212,255,.35)";
-    const lines = { ma20: mk("#f0a500"), ma60: mk("#5b8ff9"), ma120: mk("#12a150"), ma200: mk("#a259ff", 2), bbUp: mk(bb), bbLo: mk(bb), vwap: mk("#ff8c42", 2, 2) };
+    const bb = "rgba(138,133,124,.45)";
+    const lines = { ma20: mk("#d4a24c"), ma60: mk("#6a8caf"), ma120: mk("#2aa198"), ma200: mk("#8b6fd6", 2), bbUp: mk(bb), bbLo: mk(bb), vwap: mk("#c96442", 2, 2) };
     new ResizeObserver(() => chart.resize(el.clientWidth, el.clientHeight)).observe(el);
     return { chart, series, lines };
 }
@@ -510,7 +510,7 @@ async function loadChart(fresh) {
     setIndicators(S.lines, candles, S.tf);
     const last = candles[candles.length - 1], m20 = sma(candles.map(k => k.close), 20).pop();
     $("legend").innerHTML = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
-        " C " + fmt.format(last.close) + " · <span style='color:#f0a500'>MA20</span> <span style='color:#5b8ff9'>MA60</span> <span style='color:#12a150'>MA120</span> <span style='color:#a259ff'>MA200</span> <span style='color:#00d4ff'>BB</span> <span style='color:#ff8c42'>VWAP</span>" +
+        " C " + fmt.format(last.close) + " · <span style='color:#d4a24c'>MA20</span> <span style='color:#6a8caf'>MA60</span> <span style='color:#2aa198'>MA120</span> <span style='color:#8b6fd6'>MA200</span> <span style='color:#8a857c'>BB</span> <span style='color:#c96442'>VWAP</span>" +
         (m20 != null ? " · MA20 " + fmt.format(m20) : "");
     setChip($("mainsym"), S.mainSym, last.close, TF_LABEL[S.tf] || S.tf);
     drawSR(S.series, S.mainPL, candles);
@@ -583,11 +583,11 @@ function srLevels(candles) {
     }
     [20, 60, 120, 200].forEach(n => { const v = sma(closes, n).pop(); if (v != null) add(v, "MA" + n, n >= 120 ? 4 : 3); });
     const notPoc = x => !z || Math.abs(x.price - z.poc) / z.poc >= tol;
-    const RC = ["#d64545", "#ff8a3d", "#ffc857"], SC = ["#12a150", "#23a6ff", "#7c5cff"];
+    const RC = ["#d64545", "#c96442", "#b7791f"], SC = ["#12a150", "#2aa198", "#6a8caf"];
     const tier = (arr, name, col) => arr.map((x, i) => ({ ...x, title: (i + 1) + "차 " + name + (x.sources.length > 1 ? " · 근거 " + x.sources.length : ""), color: col[i] }));
     return [
         ...tier(res.filter(notPoc).sort((a, b) => a.price - b.price).slice(0, 3), "저항", RC),
-        ...(z ? [{ price: z.poc, title: "매물대 POC", color: "#c96442", style: 2 }] : []),
+        ...(z ? [{ price: z.poc, title: "매물대 POC", color: "#8b6fd6", style: 2 }] : []),
         ...tier(sup.filter(notPoc).sort((a, b) => b.price - a.price).slice(0, 3), "지지", SC)
     ];
 }
@@ -1052,7 +1052,7 @@ function markSignal(dir) {
     if (!dir) { S.series.setMarkers([]); return; }
     S.series.setMarkers([{ time: S.candles[S.candles.length - 1].time,
         position: dir === "LONG" ? "belowBar" : "aboveBar",
-        color: dir === "LONG" ? "#0ecb81" : "#f6465d",
+        color: dir === "LONG" ? "#12a150" : "#d64545",
         shape: dir === "LONG" ? "arrowUp" : "arrowDown", text: dir }]);
 }
 async function legacyAI() {
@@ -1333,7 +1333,7 @@ async function refreshPrivate() {
             "<tr><td>" + esc(o.symbol) + "</td><td>" + esc(o.side) + "</td><td class='mono'>" + fmt.format(o.price) +
             "</td><td>" + esc(o.quantity) + "</td><td></td></tr>").join("") || "<tr><td colspan='5' class='dim'>미체결 없음</td></tr>";
     } catch (e) {
-        $("wState").innerHTML = "로그인 필요 — <a href='account.html' style='color:#e0b44a'>내 MEXC</a>";
+        $("wState").innerHTML = "로그인 필요 — <a href='account.html' style='color:var(--accent)'>내 MEXC</a>";
     }
     try {
         const st = await priv("trade", "GET");
@@ -1829,7 +1829,7 @@ function applyGithubPagesMode() {
     if (!IS_GITHUB_PAGES) return;
     const notice = document.createElement("div");
     notice.setAttribute("role", "note");
-    notice.style.cssText = "box-sizing:border-box;margin:10px 16px;padding:10px 14px;border:1px solid #2b6cb0;border-radius:10px;background:#10243b;color:#cfe7ff;font-size:13px;line-height:1.55";
+    notice.style.cssText = "box-sizing:border-box;margin:10px 16px;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;background:var(--panel2);color:var(--txt);font-size:13px;line-height:1.55";
     notice.innerHTML = "<b>GitHub Pages 공개 모드</b> · Binance 공개 선물 시세와 로컬 모의거래만 제공합니다. " +
         "계정 조회·API 키 연결·실매매는 서버가 필요한 기능이라 비활성화되어 있습니다.";
     const main = document.querySelector("main");
