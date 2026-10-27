@@ -611,8 +611,11 @@ function renderSRBrief(idx) {
     const tf = idx ? P.tf : S.tf;
     const sym = (idx ? P.symbol : S.mainSym).replace("_USDT", ""), tfl = TF_LABEL[tf] || "";
     const last = candles[candles.length - 1].close, closes = candles.map(k => k.close);
+    // drawSR와 같은 자릿수 규칙 (저가 코인은 유효숫자 기준)
+    const dp = last >= 10000 ? 1 : last >= 100 ? 2 : last >= 1 ? 4 : last > 0 ? Math.min(12, Math.max(6, Math.ceil(-Math.log10(last)) + 3)) : 6;
+    const f = v => v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
     const pct = p => { const d = (p - last) / last * 100; return (d >= 0 ? "+" : "") + d.toFixed(2) + "%"; };
-    const row = (name, p, col, note) => "<div class='br-row'><i style='background:" + col + "'></i><span>" + esc(name) + "</span><b class='mono'>" + fmt.format(p) +
+    const row = (name, p, col, note) => "<div class='br-row'><i style='background:" + col + "'></i><span>" + esc(name) + "</span><b class='mono'>" + f(p) +
         "</b><em class='mono " + (p >= last ? "up" : "down") + "'>" + pct(p) + "</em>" + (note ? "<small>" + esc(note) + "</small>" : "") + "</div>";
     const lv = srLevels(candles);
     const res = lv.filter(l => /저항/.test(l.title)), sup = lv.filter(l => /지지/.test(l.title)), poc = lv.find(l => /POC/.test(l.title));
@@ -628,14 +631,14 @@ function renderSRBrief(idx) {
     const bbPos = sd > 0 ? Math.round((last - (m - 2 * sd)) / (4 * sd) * 100) : null;
     const nr = res[0], ns = sup[0];
     const summary = [
-        nr ? "가장 가까운 저항 " + fmt.format(nr.price) + " (" + pct(nr.price) + ")" : "위쪽 저항 없음",
-        ns ? "지지 " + fmt.format(ns.price) + " (" + pct(ns.price) + ")" : "아래쪽 지지 없음",
+        nr ? "가장 가까운 저항 " + f(nr.price) + " (" + pct(nr.price) + ")" : "위쪽 저항 없음",
+        ns ? "지지 " + f(ns.price) + " (" + pct(ns.price) + ")" : "아래쪽 지지 없음",
         "이평 " + order,
         bbPos != null ? "볼린저 밴드 안 위치 " + bbPos + "%" : ""
     ].filter(Boolean).join(" · ");
     const MA_COL = { 20: "#d4a24c", 60: "#6a8caf", 120: "#2aa198", 200: "#8b6fd6" };
     const lvRow = l => row(l.title.split(" · ")[0], l.price, l.color, "근거: " + l.sources.join(", "));
-    box.innerHTML = "<div class='br-head'><b>" + esc(sym) + "</b><span class='dim'>" + esc(tfl) + " 브리핑</span><span class='mono'>" + fmt.format(last) +
+    box.innerHTML = "<div class='br-head'><b>" + esc(sym) + "</b><span class='dim'>" + esc(tfl) + " 브리핑</span><span class='mono'>" + f(last) +
         "</span><span class='sp'></span><span class='dim'>" + (idx ? (idx + 1) + "번 차트" : "메인 차트") + " · 다른 차트를 클릭하면 바뀝니다</span></div>" +
         "<p class='br-sum'>" + esc(summary) + "</p><div class='br-grid'>" +
         "<div class='br-col'><h4>저항</h4>" + (res.length ? res.slice().reverse().map(lvRow).join("") : "<div class='dim'>현재가 위 구조 없음</div>") + "</div>" +
