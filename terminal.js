@@ -514,6 +514,7 @@ async function loadChart(fresh) {
         (m20 != null ? " · MA20 " + fmt.format(m20) : "");
     setChip($("mainsym"), S.mainSym, last.close, TF_LABEL[S.tf] || S.tf);
     drawSR(S.series, S.mainPL, candles);
+    if (!S.briefIdx) renderSRBrief(0);
     await refreshAI();
     } catch (e) {
         S.chartErr = true;
@@ -599,6 +600,51 @@ function drawSR(series, store, candles) {
     const dp = px >= 10000 ? 1 : px >= 100 ? 2 : px >= 1 ? 4 : px > 0 ? Math.min(12, Math.max(6, Math.ceil(-Math.log10(px)) + 3)) : 6;
     series.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) } });
     store.lines = srLevels(candles).map(l => series.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: l.style || 0, axisLabelVisible: true, title: l.title }));
+}
+// 차트 클릭 → 빈 영역에 지지·저항·지표 브리핑. idx 0 = 메인, n = n번째 분할 패널
+function renderSRBrief(idx) {
+    const box = $("srBrief");
+    const P = idx ? S.panes[idx - 1] : null;
+    const candles = idx ? P && P.candles : S.candles;
+    if (!box || !candles || candles.length < 20) return;
+    S.briefIdx = idx;
+    const tf = idx ? P.tf : S.tf;
+    const sym = (idx ? P.symbol : S.mainSym).replace("_USDT", ""), tfl = TF_LABEL[tf] || "";
+    const last = candles[candles.length - 1].close, closes = candles.map(k => k.close);
+    const pct = p => { const d = (p - last) / last * 100; return (d >= 0 ? "+" : "") + d.toFixed(2) + "%"; };
+    const row = (name, p, col, note) => "<div class='br-row'><i style='background:" + col + "'></i><span>" + esc(name) + "</span><b class='mono'>" + fmt.format(p) +
+        "</b><em class='mono " + (p >= last ? "up" : "down") + "'>" + pct(p) + "</em>" + (note ? "<small>" + esc(note) + "</small>" : "") + "</div>";
+    const lv = srLevels(candles);
+    const res = lv.filter(l => /저항/.test(l.title)), sup = lv.filter(l => /지지/.test(l.title)), poc = lv.find(l => /POC/.test(l.title));
+    const z = volumeZones(candles.slice(-180));
+    const ma = [20, 60, 120, 200].map(n => [n, sma(closes, n).pop()]);
+    const sl = closes.slice(-20), m = sl.reduce((a, b) => a + b, 0) / 20, sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / 20);
+    const A = VWAP_ANCHOR[tf] || 86400, g = Math.floor(candles[candles.length - 1].time / A);
+    let pv = 0, vv = 0;
+    candles.forEach(c => { if (Math.floor(c.time / A) === g) { pv += (c.high + c.low + c.close) / 3 * c.vol; vv += c.vol; } });
+    const vwap = vv > 0 ? pv / vv : null;
+    const mv = ma.map(x => x[1]);
+    const order = mv.every(v => v != null) ? (mv[0] > mv[1] && mv[1] > mv[2] && mv[2] > mv[3] ? "정배열" : mv[0] < mv[1] && mv[1] < mv[2] && mv[2] < mv[3] ? "역배열" : "혼조") : "장기 표본 부족";
+    const bbPos = sd > 0 ? Math.round((last - (m - 2 * sd)) / (4 * sd) * 100) : null;
+    const nr = res[0], ns = sup[0];
+    const summary = [
+        nr ? "가장 가까운 저항 " + fmt.format(nr.price) + " (" + pct(nr.price) + ")" : "위쪽 저항 없음",
+        ns ? "지지 " + fmt.format(ns.price) + " (" + pct(ns.price) + ")" : "아래쪽 지지 없음",
+        "이평 " + order,
+        bbPos != null ? "볼린저 밴드 안 위치 " + bbPos + "%" : ""
+    ].filter(Boolean).join(" · ");
+    const MA_COL = { 20: "#d4a24c", 60: "#6a8caf", 120: "#2aa198", 200: "#8b6fd6" };
+    const lvRow = l => row(l.title.split(" · ")[0], l.price, l.color, "근거: " + l.sources.join(", "));
+    box.innerHTML = "<div class='br-head'><b>" + esc(sym) + "</b><span class='dim'>" + esc(tfl) + " 브리핑</span><span class='mono'>" + fmt.format(last) +
+        "</span><span class='sp'></span><span class='dim'>" + (idx ? (idx + 1) + "번 차트" : "메인 차트") + " · 다른 차트를 클릭하면 바뀝니다</span></div>" +
+        "<p class='br-sum'>" + esc(summary) + "</p><div class='br-grid'>" +
+        "<div class='br-col'><h4>저항</h4>" + (res.length ? res.slice().reverse().map(lvRow).join("") : "<div class='dim'>현재가 위 구조 없음</div>") + "</div>" +
+        "<div class='br-col'><h4>지지</h4>" + (sup.length ? sup.map(lvRow).join("") : "<div class='dim'>현재가 아래 구조 없음</div>") + "</div>" +
+        "<div class='br-col'><h4>매물대 · 지표</h4>" +
+        (poc ? row("매물대 POC", poc.price, "#8b6fd6") : "") + (z ? row("VAH", z.vah, "#b49be0") + row("VAL", z.val, "#b49be0") : "") +
+        ma.filter(x => x[1] != null).map(x => row("MA" + x[0], x[1], MA_COL[x[0]])).join("") +
+        (sd > 0 ? row("BB 상단", m + 2 * sd, "#8a857c") + row("BB 하단", m - 2 * sd, "#8a857c") : "") +
+        (vwap ? row("앵커 VWAP", vwap, "#c96442") : "") + "</div></div>";
 }
 // coinchart식 심볼 칩: 심볼 · 현재가 · 24h 변동률(거래소 티커값, 첫 봉 대비 아님)
 function setChip(el, sym, px, tfl) {
@@ -691,6 +737,7 @@ function ensurePane(i) {
     wrap.addEventListener("click", e => {
         if (e.target.closest("select,input,button")) return;
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
+        renderSRBrief(i + 1);
         if (S.panes[i] && S.panes[i].symbol !== S.symbol) focusSymbol(S.panes[i].symbol);
         else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
     });
@@ -734,6 +781,8 @@ async function loadPane(i) {
     P.series.setData(candles);
     setIndicators(P.lines, candles, P.tf);
     drawSR(P.series, P.pl, candles);
+    P.candles = candles;
+    if (S.briefIdx === i + 1) renderSRBrief(i + 1);
     setChip($("cpane" + (i + 1)).querySelector(".chip"), P.symbol, candles[candles.length - 1].close);
     P.chart.timeScale().scrollToRealTime();
 }
@@ -1520,6 +1569,7 @@ function bind() {
         if (e.target.closest("select")) return;
         // 드래그(팬·줌)는 무시하고 가벼운 클릭만 새로고침한다
         if (S.downPos && Math.hypot(e.clientX - S.downPos[0], e.clientY - S.downPos[1]) > 6) return;
+        renderSRBrief(0);
         log("메인 차트 새로고침: " + S.mainSym.replace("_USDT", "/USDT"));
         loadChart(true).catch(err => log("차트 " + err.message, "down"));
     });
