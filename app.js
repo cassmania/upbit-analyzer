@@ -59,7 +59,7 @@
             hasYear: false,           // 년봉 없음. 월봉이 최장
             quote: "USDT",
             // 바이낸스 봉 표기. 8h·12h가 네이티브라 합성이 필요 없다.
-            iv: { "1h": "1h", "4h": "4h", "8h": "8h", "12h": "12h", "1d": "1d", "1w": "1w", "1M": "1M" }
+            iv: { "5m": "5m", "30m": "30m", "1h": "1h", "4h": "4h", "8h": "8h", "12h": "12h", "1d": "1d", "1w": "1w", "1M": "1M" }
         },
         mexc: {
             name: "MEXC",
@@ -74,7 +74,7 @@
             quote: "USDT",
             // MEXC 봉 표기는 바이낸스와 다르다(실측): 1h가 아니라 60m, 1w가 아니라 1W.
             // 12시간봉은 아예 없어서 4h를 3개 묶는다.
-            iv: { "1h": "60m", "4h": "4h", "8h": "8h", "1d": "1d", "1w": "1W", "1M": "1M" },
+            iv: { "5m": "5m", "30m": "30m", "1h": "60m", "4h": "4h", "8h": "8h", "1d": "1d", "1w": "1W", "1M": "1M" },
             group: { "12h": { from: "4h", n: 3 } }
         }
     };
@@ -118,6 +118,7 @@
     function activeTfs() {
         var e = ex();
         return TFS.filter(function (t) {
+            if (t.chartOnly) return false;
             if (t.key === "1y" && !e.hasYear) return false;
             // 바이낸스 계열은 iv 표에 없는 봉을 못 받는다.
             // MEXC엔 12시간봉이 없지만 group으로 합성하므로 살려둔다.
@@ -238,8 +239,13 @@
      *   년봉은 상장 이래 10개 남짓이라 매물대·스윙을 뽑을 표본이 안 된다.
      *   차트로 보는 건 되지만 레벨 계산에서는 뺀다.
      */
+    // 분봉(chartOnly)은 차트로 볼 때만 받는다. 지표·지지저항·타점 분석에는 넣지 않아
+    // 기존 분석 결과와 호출 수가 그대로다. 바이낸스·MEXC엔 10분봉이 없어 5분봉 2개를 묶는다(bn).
     var TFS = [
-        { key: "1h",  label: "1시간",  path: "candles/minutes/60",  sec: 3600,     levels: true },
+        { key: "5m",  label: "5분",   path: "candles/minutes/5",  sec: 300,  levels: false, chartOnly: true },
+        { key: "10m", label: "10분",  path: "candles/minutes/10", sec: 600,  levels: false, chartOnly: true, bn: { from: "5m", n: 2 } },
+        { key: "30m", label: "30분",  path: "candles/minutes/30", sec: 1800, levels: false, chartOnly: true },
+        { key: "1h",label: "1시간",  path: "candles/minutes/60",  sec: 3600,     levels: true },
         { key: "4h",  label: "4시간",  path: "candles/minutes/240", sec: 14400,    levels: true },
         { key: "8h",  label: "8시간",  path: null, from: "4h", group: 2, sec: 28800,  levels: true },
         { key: "12h", label: "12시간", path: null, from: "4h", group: 3, sec: 43200,  levels: true },
@@ -767,9 +773,13 @@
                     .catch(function () { return []; }));   // 이력 짧은 종목은 여기서 흡수
         });
 
+        var 분봉 = TFS.filter(function (t) { return t.chartOnly && t.key === state.chartTf; })[0];
+        if (분봉) calls.push(fetchChartOnly(market, 분봉));
+
         return Promise.all(calls).then(function (r) {
             var tf = {};
             direct.forEach(function (t, i) { tf[t.key] = r[i + 1] || []; });
+            if (분봉) tf[분봉.key] = r[direct.length + 1] || [];
             // 합성봉(업비트·빗썸의 8h·12h, MEXC의 12h). 바이낸스는 네이티브라 목록이 비어 있다.
             // 원본 봉의 길이를 넘겨야 합성 경계를 절대 시간에 고정할 수 있다.
             groupedTfs().forEach(function (t) {
@@ -777,6 +787,21 @@
                 tf[t.key] = groupCandles(tf[t.from] || [], t.group, 원본 ? 원본.sec : 0);
             });
             return { ticker: r[0], tf: tf };
+        });
+    }
+
+    /** 차트 전용 분봉 한 종류. 실패하면 빈 배열(차트만 비고 분석은 그대로). */
+    function fetchChartOnly(market, t) {
+        var e = ex();
+        if (e.kind !== "binance") {
+            return getJSON(apiUrl(t.path, { market: market, count: 200 }))
+                .then(function (raw) { return toCandles(raw, t); })
+                .catch(function () { return []; });
+        }
+        if (e.iv[t.key]) return bnKlines(market, t.key, 200);
+        var src = TFS.filter(function (x) { return x.key === t.bn.from; })[0];
+        return bnKlines(market, src.key, 200 * t.bn.n).then(function (c) {
+            return groupCandles(c, t.bn.n, src.sec);
         });
     }
 
@@ -1413,6 +1438,10 @@
             analysisTf[tf.key] = CandleUtils.completed(data.tf[tf.key] || []);
         });
         state.analysisTfCandles = analysisTf;
+        if (data.tf[state.chartTf] && !analysisTf[state.chartTf]) {
+            state.analysisTfCandles = Object.assign({}, analysisTf);
+            state.analysisTfCandles[state.chartTf] = CandleUtils.completed(data.tf[state.chartTf]);
+        }
         state.lastPrice = price;
         state.usdPrice = fut && fut.usdPrice ? fut.usdPrice : null;
         state.usdtKrw = usdtKrw || null;     // 김프 기준 환율 (업비트 USDT)
@@ -2862,6 +2891,18 @@
             replaceSection("sec-levels", renderLevels(state.chartLevels, state.dp, state.chartLevelsTf));
             // 봉이 바뀌면 축 범위가 달라지므로 fitContent가 필요하다. 재생성이 맞다.
             buildChart(state.tfCandles[tf], state.chartLevels, state.dp);
+        } else if (state.tfCandles) {
+            // 아직 안 받은 분봉: 그 봉만 받아 와서 다시 그린다. 다음 갱신부터는 fetchAll이 함께 받는다.
+            var 분봉 = TFS.filter(function (x) { return x.key === tf && x.chartOnly; })[0];
+            if (!분봉) return;
+            fetchChartOnly(state.sel, 분봉).then(function (c) {
+                if (state.chartTf !== tf || !state.tfCandles) return;
+                state.tfCandles[tf] = c;
+                var 확정 = {};
+                확정[tf] = CandleUtils.completed(c);
+                state.analysisTfCandles = Object.assign({}, state.analysisTfCandles, 확정);
+                switchTf(tf);
+            });
         }
     }
 
@@ -3008,6 +3049,7 @@
     function syncTfButtons() {
         var 가능 = {};
         activeTfs().forEach(function (t) { 가능[t.key] = true; });
+        TFS.forEach(function (t) { if (t.chartOnly) 가능[t.key] = true; });   // 분봉은 거래소 모두 지원(10분은 합성)
         [].forEach.call(document.querySelectorAll("#tfbar button"), function (b) {
             b.style.display = 가능[b.getAttribute("data-tf")] ? "" : "none";
         });
