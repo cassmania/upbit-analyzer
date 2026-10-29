@@ -709,12 +709,13 @@ function ensurePane(i) {
         "<select class='psym' aria-label='차트" + (i + 2) + " 심볼'></select>" +
         "<select class='ptf' aria-label='차트" + (i + 2) + " 봉'>" +
         TF_OPTS.map(t => "<option value='" + t + "'>" + TF_LABEL[t] + "</option>").join("") + "</select>" +
-        "<button class='pmini' data-pz='in' title='캔들 확대'>+</button><button class='pmini' data-pz='out' title='캔들 축소'>−</button><button class='pmini' data-pz='fit' title='이 차트 전체보기'>전체</button></div>" +
+        "<button class='pmini' data-pz='in' title='캔들 확대'>+</button><button class='pmini' data-pz='out' title='캔들 축소'>−</button><button class='pmini' data-pz='fit' title='이 차트 전체보기'>전체</button><button class='pmini' data-max title='이 차트 전체화면 (Esc로 복귀)'>⛶</button></div>" +
         "<div class='pchart' id='pchart" + (i + 1) + "'></div>";
     $("charts").appendChild(wrap);
     const P = S.panes[i];
     Object.assign(P, makeChartSet(wrap.querySelector(".pchart")));
     wrap.querySelectorAll("[data-pz]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); paneZoom(P.chart, b.dataset.pz); }));
+    bindMax(wrap);
     wrap.querySelector(".psym").addEventListener("change", e => { S.panes[i].symbol = e.target.value; loadPane(i).catch(() => {}); queueSaveUi(); });
     const pq = wrap.querySelector(".pq");
     pq.addEventListener("input", () => {
@@ -745,6 +746,32 @@ function ensurePane(i) {
         else if (S.panes[i]) log("이미 선택 중: " + S.panes[i].symbol.replace("_USDT", "/USDT"));
     });
 }
+// 차트 하나를 화면 전체로 키우고 되돌린다. 차트는 ResizeObserver로 크기를 따라가므로 CSS만 바꾸면 된다.
+// 브라우저 전체화면을 쓸 수 있으면 함께 켜고, 안 되면(iOS 등) 창 안에서만 꽉 채운다.
+function setMax(wrap, on) {
+    document.querySelectorAll("#charts .cpane.maxed").forEach(x => { if (x !== wrap || !on) x.classList.remove("maxed"); });
+    if (on) wrap.classList.add("maxed");
+    document.body.classList.toggle("chart-maxed", on);
+    document.querySelectorAll("#charts [data-max]").forEach(b => {
+        const m = b.closest(".cpane").classList.contains("maxed");
+        b.textContent = b.classList.contains("pmax") ? (m ? "✕ 닫기" : "⛶ 전체화면") : (m ? "✕" : "⛶");
+        b.title = m ? "전체화면 닫기 (Esc)" : "이 차트 전체화면 (Esc로 복귀)";
+    });
+    if (on && wrap.requestFullscreen && !document.fullscreenElement) wrap.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+function bindMax(wrap) {
+    const b = wrap.querySelector("[data-max]");
+    if (b) b.addEventListener("click", e => { e.stopPropagation(); setMax(wrap, !wrap.classList.contains("maxed")); });
+}
+document.addEventListener("fullscreenchange", () => {
+    const m = document.querySelector("#charts .cpane.maxed");
+    if (m && document.fullscreenElement !== m) setMax(m, false);
+});
+document.addEventListener("keydown", e => {
+    const m = document.querySelector("#charts .cpane.maxed");
+    if (e.key === "Escape" && m) setMax(m, false);
+});
 function markFocusedPane() {
     document.querySelectorAll("#charts .cpane").forEach((el, idx) => {
         const sym = idx === 0 ? S.symbol : (S.panes[idx - 1] && S.panes[idx - 1].symbol);
@@ -1567,6 +1594,7 @@ function bind() {
         queueSaveUi();
     });
     $("symbol").addEventListener("change", () => selectSymbol($("symbol").value));
+    bindMax($("cpane0"));
     $("cpane0").addEventListener("mousedown", e => { S.downPos = [e.clientX, e.clientY]; });
     $("cpane0").addEventListener("click", e => {
         if (e.target.closest("select")) return;

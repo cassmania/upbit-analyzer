@@ -227,3 +227,10 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .sig-item.sig-short .sig-badge{background:var(--down)}
 .sig-rsi{display:inline-block;margin-left:6px;color:var(--dim);font-size:12px}
 @media(max-width:1100px){.sigcard{flex:none;height:420px}}
+/* 차트 하나 전체화면 */
+.pmax{position:absolute;top:8px;right:72px;z-index:6}
+.cpane.maxed,#cpane0.maxed{position:fixed;inset:0;z-index:200;border-radius:0;border-width:2px}
+.cpane.maxed .pchart,#cpane0.maxed #chart{flex:1;height:auto;min-height:0}
+body.chart-maxed{overflow:hidden}
+/* 차트 캔버스가 부모 높이를 밀어 올리지 않게 — 전체화면에서 돌아올 때 원래 크기로 줄어든다 */
+.pchart>.tv-lightweight-charts,#chart>.tv-lightweight-charts{position:absolute!important;top:0;left:0}
