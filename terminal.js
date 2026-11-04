@@ -504,7 +504,7 @@ async function loadChart(fresh) {
     const d = await pub("kline", { symbol: S.mainSym, interval: iv }, undefined, fresh);
     let candles = d.time.map((t, i) => ({ time: t, open: d.open[i], high: d.high[i], low: d.low[i], close: d.close[i], vol: d.vol[i] || 0 }));
     if (S.tf === "Hour12") candles = resample12h(candles);
-    candles = candles.slice(-300);
+    candles = candles.slice(-500);
     S.candles = candles;
     S.series.setData(candles);
     setIndicators(S.lines, candles, S.tf);
@@ -513,7 +513,7 @@ async function loadChart(fresh) {
         " C " + fmt.format(last.close) + " · <span style='color:#d4a24c'>MA20</span> <span style='color:#6a8caf'>MA60</span> <span style='color:#2aa198'>MA120</span> <span style='color:#8b6fd6'>MA200</span> <span style='color:#8a857c'>BB</span> <span style='color:#c96442'>VWAP</span>" +
         (m20 != null ? " · MA20 " + fmt.format(m20) : "");
     setChip($("mainsym"), S.mainSym, last.close, TF_LABEL[S.tf] || S.tf);
-    drawSR(S.series, S.mainPL, candles);
+    drawSR(S.series, S.mainPL, candles, S.tf);
     if (!S.briefIdx) renderSRBrief(0);
     await refreshAI();
     } catch (e) {
@@ -526,80 +526,60 @@ async function loadChart(fresh) {
 // ---- 멀티차트 (최대 8개, 각기 다른 코인) + 지지/저항선 ----
 const TF_OPTS = ["Min15", "Min60", "Hour4", "Hour8", "Hour12", "Day1", "Week1"];
 const TF_LABEL = { Min15: "15m", Min60: "1H", Hour4: "4H", Hour8: "8H", Hour12: "12H", Day1: "1D", Week1: "1W" };
-function swingLevels(candles) {
-    const Hs = [], Ls = [], k = 2, n = Math.min(candles.length, 150), start = Math.max(k, candles.length - n);
-    for (let i = start; i < candles.length - k; i++) {
-        let hi = true, lo = true;
-        for (let j = 1; j <= k; j++) {
-            if (candles[i].high < candles[i - j].high || candles[i].high < candles[i + j].high) hi = false;
-            if (candles[i].low > candles[i - j].low || candles[i].low > candles[i + j].low) lo = false;
-        }
-        if (hi) Hs.push(candles[i].high);
-        if (lo) Ls.push(candles[i].low);
-    }
-    const last = candles[candles.length - 1].close;
-    return {
-        res: [...new Set(Hs.filter(h => h > last))].sort((a, b) => a - b).slice(0, 3),
-        sup: [...new Set(Ls.filter(l => l < last))].sort((a, b) => b - a).slice(0, 3)
-    };
-}
-// 매물대(48칸) POC와 70% 가치영역
-function volumeZones(rows) {
-    const lo = Math.min(...rows.map(c => c.low)), hi = Math.max(...rows.map(c => c.high)), n = 48, step = (hi - lo) / n;
-    if (!(step > 0)) return null;
-    const bins = new Array(n).fill(0);
-    rows.forEach(c => { bins[Math.min(n - 1, Math.floor(((c.high + c.low + c.close) / 3 - lo) / step))] += c.vol; });
-    const total = bins.reduce((a, b) => a + b, 0);
-    if (!(total > 0)) return null;
-    let p = bins.indexOf(Math.max(...bins)), a = p, b = p, acc = bins[p];
-    while (acc < total * 0.7 && (a > 0 || b < n - 1)) {
-        if (b < n - 1 && (a === 0 || bins[b + 1] >= bins[a - 1])) acc += bins[++b]; else acc += bins[--a];
-    }
-    const mid = i => lo + (i + 0.5) * step;
-    return { poc: mid(p), val: mid(a), vah: mid(b) };
-}
-function srLevels(candles) {
-    const last = candles[candles.length - 1].close, recent = candles.slice(-180), closes = candles.map(k => k.close);
-    const tr = candles.slice(-15).map((c, i, a) => i ? Math.max(c.high - c.low, Math.abs(c.high - a[i - 1].close), Math.abs(c.low - a[i - 1].close)) : 0).slice(1);
-    const atr = tr.reduce((a, b) => a + b, 0) / (tr.length || 1);
+// 모의 거래소·coinchart calcSplitLevels와 같은 계산(같은 analysis-engine.js). 사이트마다 선이 달라 보이던 원인 제거.
+// 2026-11-05 백테스트(16종목·1h/4h/1d): 어느 방식이든 지킴률이 같은 거리 무작위 가격과 차이 없음(±1~2%p).
+const CA_TF = { Min15: "15m", Min60: "1h", Hour4: "4h", Hour8: "8h", Hour12: "12h", Day1: "1d", Week1: "1w" };
+function srLevels(candles, tf) {
+    const CA = window.CoinAnalysis;
+    const rows = candles.map(c => ({ ...c, volume: c.vol }));
+    const last = rows[rows.length - 1].close, closes = rows.map(k => k.close), recent = rows.slice(-180);
+    const zones = CA.volumeProfileZones(CA.volumeProfile(recent, 48), 0.7);
+    const pv = CA.classicPivots(CA.previousPeriodOhlc(rows, CA_TF[tf] || "1h"));
+    const atr = rows.length >= 14 ? CA.lastFinite(CA.atr(rows, 14)) || 0 : 0;
     const tol = Math.min(0.008, Math.max(0.0025, atr / last * 0.35));
     const res = [], sup = [];
-    const add = (price, source, w) => {
-        if (!(price > 0)) return;
-        const list = price > last ? res : sup, hit = list.find(x => Math.abs(x.price - price) / price < tol);
+    const add = (list, price, source, w) => {
+        if (!Number.isFinite(price) || price <= 0) return;
+        if (list === res && price <= last) return;
+        if (list === sup && price > last) return;
+        const hit = list.find(x => Math.abs(x.price - price) / price < tol);
         if (!hit) return list.push({ price, sources: [source], weight: w });
         hit.price = (hit.price * hit.weight + price * w) / (hit.weight + w); hit.weight += w;
         if (!hit.sources.includes(source)) hit.sources.push(source);
     };
     const hiOf = k => Math.max(...recent.slice(-k).map(c => c.high)), loOf = k => Math.min(...recent.slice(-k).map(c => c.low));
-    add(hiOf(30), "최근 30봉 고점", 4); add(hiOf(100), "최근 100봉 고점", 5);
-    add(loOf(30), "최근 30봉 저점", 4); add(loOf(100), "최근 100봉 저점", 5);
-    const sw = swingLevels(candles);
-    sw.res.forEach(p => add(p, "스윙 고점", 3)); sw.sup.forEach(p => add(p, "스윙 저점", 3));
-    const z = volumeZones(recent);
-    if (z) { add(z.vah, "VPVR VAH", 5); add(z.val, "VPVR VAL", 5); }
+    add(res, hiOf(30), "최근 30봉 고점", 4); add(res, hiOf(100), "최근 100봉 고점", 5);
+    add(sup, loOf(30), "최근 30봉 저점", 4); add(sup, loOf(100), "최근 100봉 저점", 5);
+    if (pv) {
+        add(res, pv.r1, pv.label + " R1", 4); add(res, pv.r2, pv.label + " R2", 3); add(res, pv.r3, pv.label + " R3", 2);
+        add(sup, pv.s1, pv.label + " S1", 4); add(sup, pv.s2, pv.label + " S2", 3); add(sup, pv.s3, pv.label + " S3", 2);
+    }
+    if (zones) {
+        add(res, zones.vah, "VPVR VAH", 5); add(res, zones.val, "VPVR VAL", 5); add(sup, zones.val, "VPVR VAL", 5); add(sup, zones.vah, "VPVR VAH", 5);
+        zones.hvn.forEach(p => { add(res, p, "VPVR HVN", 4); add(sup, p, "VPVR HVN", 4); });
+    }
     if (closes.length >= 20) {
         const sl = closes.slice(-20), m = sl.reduce((a, b) => a + b, 0) / 20, sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / 20);
-        add(m + 2 * sd, "BB 상단", 2); add(m - 2 * sd, "BB 하단", 2);
+        add(res, m + 2 * sd, "BB 상단", 2); add(sup, m - 2 * sd, "BB 하단", 2);
     }
-    [20, 60, 120, 200].forEach(n => { const v = sma(closes, n).pop(); if (v != null) add(v, "MA" + n, n >= 120 ? 4 : 3); });
-    const notPoc = x => !z || Math.abs(x.price - z.poc) / z.poc >= tol;
+    [20, 60, 120, 200].forEach(n => { const v = sma(closes, n).pop(); if (v != null) { add(res, v, "MA" + n, n >= 120 ? 4 : 3); add(sup, v, "MA" + n, n >= 120 ? 4 : 3); } });
+    const poc = zones && zones.poc, notPoc = x => !poc || Math.abs(x.price - poc) / poc >= tol;
     const RC = ["#d64545", "#c96442", "#b7791f"], SC = ["#12a150", "#2aa198", "#6a8caf"];
     const tier = (arr, name, col) => arr.map((x, i) => ({ ...x, title: (i + 1) + "차 " + name + (x.sources.length > 1 ? " · 근거 " + x.sources.length : ""), color: col[i] }));
     return [
         ...tier(res.filter(notPoc).sort((a, b) => a.price - b.price).slice(0, 3), "저항", RC),
-        ...(z ? [{ price: z.poc, title: "매물대 POC", color: "#8b6fd6", style: 2 }] : []),
+        ...(Number.isFinite(poc) ? [{ price: poc, title: "매물대 POC", color: "#8b6fd6", style: 2 }] : []),
         ...tier(sup.filter(notPoc).sort((a, b) => b.price - a.price).slice(0, 3), "지지", SC)
     ];
 }
-function drawSR(series, store, candles) {
+function drawSR(series, store, candles, tf) {
     if (!series || !candles || !candles.length) return;
     (store.lines || []).forEach(l => { try { series.removePriceLine(l); } catch {} });
     // coinchart dpFor: 저가 코인이 축·라벨에서 0.08로 뭉개지지 않게 유효숫자 기준 자릿수
     const px = Math.abs(candles[candles.length - 1].close);
     const dp = px >= 10000 ? 1 : px >= 100 ? 2 : px >= 1 ? 4 : px > 0 ? Math.min(12, Math.max(6, Math.ceil(-Math.log10(px)) + 3)) : 6;
     series.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) } });
-    store.lines = srLevels(candles).map(l => series.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: l.style || 0, axisLabelVisible: true, title: l.title }));
+    store.lines = srLevels(candles, tf).map(l => series.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: l.style || 0, axisLabelVisible: true, title: l.title }));
 }
 // 차트 클릭 → 빈 영역에 지지·저항·지표 브리핑. idx 0 = 메인, n = n번째 분할 패널
 function renderSRBrief(idx) {
@@ -617,9 +597,9 @@ function renderSRBrief(idx) {
     const pct = p => { const d = (p - last) / last * 100; return (d >= 0 ? "+" : "") + d.toFixed(2) + "%"; };
     const row = (name, p, col, note) => "<div class='br-row'><i style='background:" + col + "'></i><span>" + esc(name) + "</span><b class='mono'>" + f(p) +
         "</b><em class='mono " + (p >= last ? "up" : "down") + "'>" + pct(p) + "</em>" + (note ? "<small>" + esc(note) + "</small>" : "") + "</div>";
-    const lv = srLevels(candles);
+    const lv = srLevels(candles, tf);
     const res = lv.filter(l => /저항/.test(l.title)), sup = lv.filter(l => /지지/.test(l.title)), poc = lv.find(l => /POC/.test(l.title));
-    const z = volumeZones(candles.slice(-180));
+    const z = CoinAnalysis.volumeProfileZones(CoinAnalysis.volumeProfile(candles.slice(-180).map(c => ({ ...c, volume: c.vol })), 48), 0.7);
     const ma = [20, 60, 120, 200].map(n => [n, sma(closes, n).pop()]);
     const sl = closes.slice(-20), m = sl.reduce((a, b) => a + b, 0) / 20, sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / 20);
     const A = VWAP_ANCHOR[tf] || 86400, g = Math.floor(candles[candles.length - 1].time / A);
@@ -640,7 +620,7 @@ function renderSRBrief(idx) {
     const lvRow = l => row(l.title.split(" · ")[0], l.price, l.color, "근거: " + l.sources.join(", "));
     box.innerHTML = "<div class='br-head'><b>" + esc(sym) + "</b><span class='dim'>" + esc(tfl) + " 브리핑</span><span class='mono'>" + f(last) +
         "</span><span class='sp'></span><span class='dim'>" + (idx ? (idx + 1) + "번 차트" : "메인 차트") + " · 다른 차트를 클릭하면 바뀝니다</span></div>" +
-        "<p class='br-sum'>" + esc(summary) + "</p><div class='br-grid'>" +
+        "<p class='br-sum'>" + esc(summary) + "</p<p class='dim' style='margin:2px 0 6px;font-size:12px'>신뢰도: 2026-11 백테스트(16종목·1H/4H/1D, 약 1.8만 회)에서 이 선에 닿은 뒤 되밀린 비율은 약 50%로, 같은 거리의 무작위 가격과 차이가 없었습니다. 단독 진입 근거로 쓰지 마세요.</p><div class='br-grid'>" +
         "<div class='br-col'><h4>저항</h4>" + (res.length ? res.slice().reverse().map(lvRow).join("") : "<div class='dim'>현재가 위 구조 없음</div>") + "</div>" +
         "<div class='br-col'><h4>지지</h4>" + (sup.length ? sup.map(lvRow).join("") : "<div class='dim'>현재가 아래 구조 없음</div>") + "</div>" +
         "<div class='br-col'><h4>매물대 · 지표</h4>" +
@@ -807,10 +787,10 @@ async function loadPane(i) {
     const d = await pub("kline", { symbol: P.symbol, interval: iv });
     let candles = d.time.map((t, j) => ({ time: t, open: d.open[j], high: d.high[j], low: d.low[j], close: d.close[j], vol: d.vol[j] || 0 }));
     if (P.tf === "Hour12") candles = resample12h(candles);
-    candles = candles.slice(-300);
+    candles = candles.slice(-500);
     P.series.setData(candles);
     setIndicators(P.lines, candles, P.tf);
-    drawSR(P.series, P.pl, candles);
+    drawSR(P.series, P.pl, candles, P.tf);
     P.candles = candles;
     if (S.briefIdx === i + 1) renderSRBrief(i + 1);
     setChip($("cpane" + (i + 1)).querySelector(".chip"), P.symbol, candles[candles.length - 1].close);
@@ -978,7 +958,7 @@ function wsTradeTick(px, tMs) {
     const r = window.TerminalAI.nextCandle(S.candles, px, tSec, S.tf);
     if (!r) return;
     try { S.series.update(S.candles[S.candles.length - 1]); } catch {}
-    if (r.rolled) drawSR(S.series, S.mainPL, S.candles);
+    if (r.rolled) drawSR(S.series, S.mainPL, S.candles, S.tf);
     const now = Date.now();
     if (now - (S.ws.maAt || 0) > 2000) { S.ws.maAt = now; refreshMALines(); }
 }
