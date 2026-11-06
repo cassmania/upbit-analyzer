@@ -508,7 +508,7 @@ async function loadChart(fresh) {
     S.candles = candles;
     S.series.setData(candles);
     S.tradeMarks = tradeMarkers(candles);
-    S.series.setMarkers(S.tradeMarks.concat(S.aiMark || []).sort((a, b) => a.time - b.time));
+    applyTradeMarks(S.series, S.tradeMarks.concat(S.aiMark || []).sort((a, b) => a.time - b.time), candles);
     setIndicators(S.lines, candles, S.tf);
     const last = candles[candles.length - 1], m20 = sma(candles.map(k => k.close), 20).pop();
     $("legend").innerHTML = "O " + fmt.format(last.open) + " H " + fmt.format(last.high) + " L " + fmt.format(last.low) +
@@ -791,7 +791,7 @@ async function loadPane(i) {
     if (P.tf === "Hour12") candles = resample12h(candles);
     candles = candles.slice(-500);
     P.series.setData(candles);
-    P.series.setMarkers(tradeMarkers(candles));
+    applyTradeMarks(P.series, tradeMarkers(candles), candles);
     setIndicators(P.lines, candles, P.tf);
     drawSR(P.series, P.pl, candles, P.tf);
     P.candles = candles;
@@ -1109,33 +1109,16 @@ function chartZoom(mode) {
     const center = (r.from + r.to) / 2, half = Math.max(6, (r.to - r.from) / 2 * f);
     ts.setVisibleLogicalRange({ from: center - half, to: center + half });
 }
-// 매수·매도·롱·숏 진입 마커: trading-chart 자체 지표 1위 '추세 합의'(백테스트 검증 상위)를
-// 사이트와 같은 규칙(봉 마감 신호 → 다음 봉 시가, 2.5×ATR 손절, 수수료 0.1%)으로 돌린 실제 거래 기록
-function tradeMarkers(candles) {
-    if (!window.Engine || !window.Custom || !candles || candles.length < 260) return [];
-    const n = candles.length, d = Custom.LIST[0], atr = Engine.atr(candles, 14);
-    const built = d.build(candles), r = Custom.run(candles, atr, built, 60, n, { mode: "both", signalEnd: n - 1 }, d.id);
-    const px = v => v.toLocaleString("en-US", { maximumSignificantDigits: 6 }), ms = [];
-    const pct = v => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
-    const entry = (i, dir, p, txt) => ms.push({ time: candles[i].time, position: dir === 1 ? "belowBar" : "aboveBar", shape: dir === 1 ? "arrowUp" : "arrowDown", color: dir === 1 ? "#12a150" : "#d64545", text: txt + " " + px(p) });
-    for (const t of r.trades) {
-        entry(t.entryIdx, t.dir, t.entry, t.dir === 1 ? "매수·롱" : "매도·숏");
-        const stop = t.reason === "stop";
-        ms.push({ time: candles[t.exitIdx].time, position: t.dir === 1 ? "aboveBar" : "belowBar", shape: t.dir === 1 ? "arrowDown" : "arrowUp",
-            color: stop ? "#8a857c" : t.dir === 1 ? "#d64545" : "#12a150", text: (stop ? "손절 " : t.dir === 1 ? "롱 청산 " : "숏 청산 ") + px(t.exit) + " " + pct(t.pnl) });
-    }
-    if (r.open) entry(r.open.idx, r.open.dir, r.open.entry, r.open.dir === 1 ? "롱 보유" : "숏 보유");
-    if (r.pending) ms.push({ time: candles[n - 1].time, position: r.pending.dir === 1 ? "belowBar" : "aboveBar", shape: "circle", color: "#c96442",
-        text: r.pending.type === "exit" ? "청산 신호" : r.pending.dir === 1 ? "롱 진입 신호" : "숏 진입 신호" });
-    return ms.sort((a, b) => a.time - b.time);
-}
+// 매수·매도·롱·숏 타점: trade-marks.js(추세 합의 거래 기록 + 겹치지 않는 글자 배치)
+const tradeMarkers = rows => window.TradeMarks ? TradeMarks.tradeMarkers(rows) : [];
+const applyTradeMarks = (s, m, r) => window.TradeMarks ? TradeMarks.applyTradeMarks(s, m, r) : s.setMarkers(m);
 function markSignal(dir) {
     if (!S.series || !S.candles || !S.candles.length) return;
     S.aiMark = dir ? [{ time: S.candles[S.candles.length - 1].time,
         position: dir === "LONG" ? "belowBar" : "aboveBar",
         color: dir === "LONG" ? "#c96442" : "#c96442",
         shape: dir === "LONG" ? "arrowUp" : "arrowDown", text: "AI " + dir }] : [];
-    S.series.setMarkers((S.tradeMarks || []).concat(S.aiMark).sort((a, b) => a.time - b.time));
+    applyTradeMarks(S.series, (S.tradeMarks || []).concat(S.aiMark).sort((a, b) => a.time - b.time), S.candles);
 }
 async function legacyAI() {
     try {
