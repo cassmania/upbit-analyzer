@@ -88,6 +88,56 @@
             frames: sig.frames || null, asOf: sig.asOf || null, raw: sig };
     }
 
+    /* 검증된 진입 규칙 (2026-11-11, 사이트-백테스트-비교/upbit-lab.js · upbit-tp.js).
+       예전 판정(4h·12h·1d 수렴 + 지지·저항 타점)은 24종목 × 11개월에서 방향 적중 46.7%(기준 51.2%),
+       자동매매 규칙 그대로 −0.105R(같은 손절·목표의 무작위 진입 −0.06R)이었다.
+       새 판정: 4시간봉 확정봉에서 추세 합의 5/5 + ADX 20 이상이 "새로" 충족되고 방향 점수가 같은 쪽일 때만 진입.
+       손절 2.5×ATR(4h), 목표 2R. 학습에 쓰지 않은 구간에서 +0.36R(기존 8종목)·+0.24R(다른 16종목), 승률 약 40%.
+       새로 충족된 그 봉(다음 4시간봉이 마감되기 전)에만 유효하다 — 상태가 이어지는 동안 계속 진입하면 검증한 규칙이 아니다. */
+    var V_STOP_ATR = 2.5, V_TARGET_R = 2;
+    function validatedSignal(deps, h4raw, price) {
+        var CA = deps.CA, EN = deps.EN, CU = deps.CU;
+        if (!CA || !EN || !CU || !CU.LIST || !CU.LIST[0]) return { ok: false, reason: "검증 엔진 미로드" };
+        var rows = dropForming(normalizeFutures(h4raw), 14400, Math.floor(Date.now() / 1000)).slice(-500).map(function (k) {
+            return { time: k.time, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v };
+        });
+        if (rows.length < 260) return { ok: false, reason: "4시간봉 부족 (" + rows.length + "/260)" };
+        var li = rows.length - 1, c1 = CU.LIST[0].build(rows), S = c1.osc.data[li];
+        var adx = EN.adx(rows, 14).adx[li], atr = EN.atr(rows, 14)[li], cs = CA.compositeSignal(rows);
+        var score = cs.ready ? cs.score : null;
+        if (S == null || !isFinite(adx) || !isFinite(atr) || !(atr > 0) || score == null) return { ok: false, reason: "지표 계산 대기" };
+        var dir = S === 5 ? 1 : S === -5 ? -1 : 0, fresh = dir === 1 ? !!c1.long[li] : dir === -1 ? !!c1.short[li] : false;
+        var sgn = function (v, d) { return (v >= 0 ? "+" : "") + v.toFixed(d); };
+        var reason = null;
+        if (!dir) reason = "추세 합의 " + sgn(S, 0) + "/5";
+        else if (!(adx >= 20)) reason = "ADX " + adx.toFixed(0) + " < 20";
+        else if (dir * score < 0) reason = "방향 점수 " + sgn(score, 2) + " 반대";
+        else if (!fresh) reason = "조건 유지 중 · 새 신호 아님";
+        else if (!(price > 0)) reason = "현재가 없음";
+        var entry = reason ? null : {
+            side: dir === 1 ? "LONG" : "SHORT", entry: price, stop: price - dir * V_STOP_ATR * atr,
+            target1: price + dir * V_STOP_ATR * V_TARGET_R * atr, target2: null, risk: V_STOP_ATR * atr, rr: V_TARGET_R,
+            sigTime: rows[li].time
+        };
+        return { ok: true, dir: entry ? entry.side : "관망", entry: entry, reason: reason, agree: S, adx: adx, score: score, atr: atr,
+            want: dir, barTime: rows[li].time, exitHint: S <= -3 ? "롱 보유 중이면 청산" : S >= 3 ? "숏 보유 중이면 청산" : null };
+    }
+    // 화면·자동매매가 쓰는 판정. 예전 파이프라인 결과(TF 수렴·오실레이터·지지저항 계획)는 참고용으로 함께 넘긴다.
+    function runValidated(deps, tfData, price, funding) {
+        var r = runPipeline(deps, tfData, price, funding), v;
+        try { v = validatedSignal(deps, tfData["4h"], price); } catch (e) { v = { ok: false, reason: "검증 규칙 계산 실패" }; }
+        r.plan = r.entry || (r.raw && r.raw.rejected) || null;   // 예전 지지·저항 계획(참고)
+        r.planBlocked = r.blocked || null;
+        r.validated = v;
+        r.ok = !!v.ok;
+        r.entry = v.ok ? v.entry : null;
+        r.dir = r.entry ? r.entry.side : "관망";
+        r.blocked = r.entry ? null : v.reason;
+        r.reason = v.reason;
+        r.agree = null;
+        return r;
+    }
+
     // 거래대금 상위 USDT 선물을 스캔 대상으로 고른다 (유동성 낮은 잡코인 제외)
     function pickTopSymbols(tickers, details, n) {
         var size = {};
@@ -163,8 +213,8 @@
         return { rolled: false };
     }
 
-    var TerminalAI = { VERSION: "1.3.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
-        resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, pickTopSymbols: pickTopSymbols,
+    var TerminalAI = { VERSION: "1.4.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
+        resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, runValidated: runValidated, validatedSignal: validatedSignal, pickTopSymbols: pickTopSymbols,
         openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE, nextCandle: nextCandle, TF_SEC: TF_SEC,
         effOf: effOf, syncMargin: syncMargin };
     global.TerminalAI = TerminalAI;

@@ -11,11 +11,14 @@
   const px = v => v.toLocaleString('en-US', { maximumSignificantDigits: 6 });
   const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 
-  function tradeMarkers(rows) {
+  // gate(i, dir): 있으면 그 봉의 진입 신호를 통과시킬지 정한다(모의 거래소: 방향 점수가 같은 쪽일 때만).
+  function tradeMarkers(rows, gate) {
     const E = root.Engine, C = root.Custom;
     if (!E || !C || !rows || rows.length < 260) return [];
     const n = rows.length, d = C.LIST[0], atr = E.atr(rows, 14);
-    const r = C.run(rows, atr, d.build(rows), 60, n, { mode: 'both', signalEnd: n - 1 }, d.id), ms = [];
+    const built = d.build(rows);
+    if (gate) { built.long = built.long.map((v, i) => v && gate(i, 1)); built.short = built.short.map((v, i) => v && gate(i, -1)); }
+    const r = C.run(rows, atr, built, 60, n, { mode: 'both', signalEnd: n - 1 }, d.id), ms = [];
     const entry = (i, dir, p, txt) => ms.push({ time: rows[i].time, position: dir === 1 ? 'belowBar' : 'aboveBar', shape: dir === 1 ? 'arrowUp' : 'arrowDown', color: dir === 1 ? COL.buy : COL.sell, text: txt + ' ' + px(p) });
     r.trades.forEach(t => {
       entry(t.entryIdx, t.dir, t.entry, t.dir === 1 ? '매수·롱' : '매도·숏');

@@ -6,6 +6,12 @@
   'use strict';
   // 거래소 기본 500봉 응답에서 진행 봉을 뺀 분석 창을 화면·백테스트가 공유한다.
   const COMPOSITE_WINDOW = 499;
+  // 방향 점수 v2 비중(로지스틱 회귀, 학습 구간만 사용). 점수 = 가중합 ÷ 비중 절댓값 합 → −1~+1.
+  // 임계값은 학습 구간 |점수| 상위 30%(약)·10%(강) 지점.
+  const DIRECTION_WEIGHTS = Object.freeze({ maGap: -0.22, supertrend: 0.05, ma200: 0.05, rsi: 0.08, macd: 0.07, band: -0.10, volume: -0.06 });
+  const DIRECTION_WEIGHT_SUM = 0.63;
+  const DIRECTION_WEAK = 0.20;
+  const DIRECTION_STRONG = 0.29;
 
   const TF_SECONDS = Object.freeze({
     '1m': 60,
@@ -579,13 +585,31 @@
     const volume = candleDirection * clamp(volumeRatio / 1.5, 0, 1);
 
     const axes = Object.freeze({ trend, momentum, volatility, volume });
-    const score = averageFinite(Object.values(axes));
+
+    // 방향 점수 v2 (2026-11-10): 예전에는 네 축을 같은 비중으로 평균했는데, 그 점수는
+    // 24봉 뒤 방향 적중이 기준보다 3%p 낮았다. 같은 재료 7개의 비중을 과거 데이터
+    // (8종목 4시간봉 2022-09~2024-10)로만 다시 정했다. 버티는 힘(RSI·MACD·슈퍼트렌드·
+    // 200이평 위)은 더하고, 과열(이평 간격 벌어짐·볼린저 끝·거래량 실린 봉)은 뺀다.
+    // 검증은 학습에 쓰지 않은 기간·봉·종목 — 사이트-백테스트-비교/upgrade-final.js
+    const parts = Object.freeze({
+      maGap: trendParts[0],
+      supertrend: trendParts[1],
+      ma200: finiteNumber(sma200) ? trendParts[2] : 0,
+      rsi: clamp((rsiNow - 50) / 20, -1, 1),
+      macd: clamp(macdHistogram / (atrNow * 0.12), -1, 1),
+      band: bandPosition,
+      volume
+    });
+    const W = DIRECTION_WEIGHTS;
+    const follow = (W.supertrend * parts.supertrend + W.ma200 * parts.ma200 + W.rsi * parts.rsi + W.macd * parts.macd) / DIRECTION_WEIGHT_SUM;
+    const stretch = (W.maGap * parts.maGap + W.band * parts.band + W.volume * parts.volume) / DIRECTION_WEIGHT_SUM;
+    const score = follow + stretch;
     let label = '관망';
     let direction = 'WAIT';
-    if (score >= 0.35) { label = '상승 추세 우위'; direction = 'LONG_BIAS'; }
-    else if (score >= 0.15) { label = '약한 상승 우위'; direction = 'LONG_BIAS'; }
-    else if (score <= -0.35) { label = '하락 추세 우위'; direction = 'SHORT_BIAS'; }
-    else if (score <= -0.15) { label = '약한 하락 우위'; direction = 'SHORT_BIAS'; }
+    if (score >= DIRECTION_STRONG) { label = '상승 우위'; direction = 'LONG_BIAS'; }
+    else if (score >= DIRECTION_WEAK) { label = '약한 상승 우위'; direction = 'LONG_BIAS'; }
+    else if (score <= -DIRECTION_STRONG) { label = '하락 우위'; direction = 'SHORT_BIAS'; }
+    else if (score <= -DIRECTION_WEAK) { label = '약한 하락 우위'; direction = 'SHORT_BIAS'; }
 
     return {
       ready: true,
@@ -595,6 +619,9 @@
       label,
       direction,
       axes,
+      parts,
+      contrib: Object.freeze({ follow, stretch }),
+      strength: Math.abs(score) >= DIRECTION_STRONG ? 'strong' : Math.abs(score) >= DIRECTION_WEAK ? 'weak' : 'none',
       diagnostics: {
         atr: atrNow,
         rsi: rsiNow,
@@ -642,6 +669,9 @@
 
   return Object.freeze({
     COMPOSITE_WINDOW,
+    DIRECTION_WEIGHTS,
+    DIRECTION_WEAK,
+    DIRECTION_STRONG,
     TF_SECONDS,
     finiteNumber,
     lastFinite,

@@ -1027,8 +1027,8 @@ async function refreshAI() {
         try { funding = Number((await pub("funding_rate", { symbol: S.symbol })).fundingRate); } catch { /* 펀딩 실패는 null */ }
         // 부팅 시 loadChart→refreshAI가 refreshTop보다 먼저 돌아 S.last가 0이다. 종목별 시세, 없으면 1h 종가로 대신한다.
         const px = S.pxMap[S.symbol] > 0 ? S.pxMap[S.symbol] : Number(h1 && h1.close && h1.close[h1.close.length - 1]);
-        const r = window.TerminalAI.runPipeline(
-            { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine },
+        const r = window.TerminalAI.runValidated(
+            { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine, CA: window.CoinAnalysis, EN: window.Engine, CU: window.Custom },
             { "1h": h1, "4h": h4, "12h": h1b, "1d": d1 }, px, funding);
         S.ai = r;
         S.funding = (r.raw && Number.isFinite(r.raw.funding)) ? r.raw.funding : (Number.isFinite(funding) ? funding : null);
@@ -1049,11 +1049,18 @@ function renderAiDetail(r) {
     const f0 = (v, d) => (v === null || v === undefined || !isFinite(Number(v))) ? "-" : fmt.format(v);
     if (r.ok && r.entry) {
         const e = r.entry;
-        L.push("<b>" + esc(r.dir) + "</b> 진입 " + f0(e.entry) + " SL " + f0(e.stop) +
-            " TP1 " + f0(e.target1) + " " + (isFinite(e.rr) ? e.rr.toFixed(2) + "R" : "") +
-            (r.agree != null ? " · 합의 " + r.agree + "%" : ""));
+        L.push("<b>" + esc(r.dir) + "</b> 시장가 진입 " + f0(e.entry) + " · SL " + f0(e.stop) +
+            " · TP " + f0(e.target1) + " · " + (isFinite(e.rr) ? e.rr.toFixed(1) + "R" : ""));
     } else {
         L.push("<b>관망</b> · " + esc(r.blocked || r.reason || ""));
+    }
+    const v = r.validated;
+    if (v && v.ok) {
+        const sg = (x, d) => (x >= 0 ? "+" : "") + x.toFixed(d), okc = b => b ? "✓" : "–";
+        L.push("4시간봉 검증 규칙 · " + okc(Math.abs(v.agree) === 5) + " 추세 합의 " + sg(v.agree, 0) + "/5 · " +
+            okc(v.adx >= 20) + " ADX " + v.adx.toFixed(0) + " · " + okc(v.want !== 0 && v.want * v.score >= 0) + " 방향 점수 " + sg(v.score, 2) +
+            (v.exitHint ? " · <b>" + esc(v.exitHint) + "</b>" : ""));
+        L.push("<span class='dim' title='24종목, 학습에 쓰지 않은 구간. 손절 2.5×ATR(4h)·목표 2R·수수료 편도 0.04%. 예전 판정(TF 수렴 + 지지·저항 타점)은 같은 방식으로 −0.11R, 방향 적중 46.7%(기준 51.2%). 과거 결과이며 미래를 보장하지 않습니다'>백테스트 +0.24~0.36R · 승률 약 40% · 신호는 종목당 한 달 2건 안팎</span>");
     }
     const dirInfo = r.raw && r.raw.방향;
     if (dirInfo && Array.isArray(dirInfo.tfs) && dirInfo.tfs.length) {
@@ -1081,10 +1088,10 @@ function renderAiDetail(r) {
             (list[0] ? " — " + esc(list[0].text).slice(0, 46) : "");
         L.push("청산감시 롱(" + fmtEx(exits.long) + ") / 숏(" + fmtEx(exits.short) + ")");
     }
-    if (r.raw && r.raw.rejected) {
-        const p = r.raw.rejected;
-        L.push("보류 계획: " + esc(p.side || r.dir || "") + " 진입 " + f0(p.entry) +
-            (isFinite(p.rr) ? " " + p.rr.toFixed(2) + "R" : "") + " — " + esc(r.blocked || ""));
+    if (r.plan) {
+        const p = r.plan;
+        L.push("<span class='dim'>지지·저항 계획(참고 · 백테스트 −0.11R): " + esc(p.side || "") + " 진입 " + f0(p.entry) + " SL " + f0(p.stop) +
+            " TP " + f0(p.target1) + (isFinite(p.rr) ? " " + p.rr.toFixed(2) + "R" : "") + (r.planBlocked ? " — " + esc(r.planBlocked) : "") + "</span>");
     }
     const meta = [];
     if (r.atr != null && isFinite(r.atr)) meta.push("ATR(4h) " + f0(r.atr));
@@ -1110,7 +1117,10 @@ function chartZoom(mode) {
     ts.setVisibleLogicalRange({ from: center - half, to: center + half });
 }
 // 매수·매도·롱·숏 타점: trade-marks.js(추세 합의 거래 기록 + 겹치지 않는 글자 배치)
-const tradeMarkers = rows => window.TradeMarks ? TradeMarks.tradeMarkers(rows) : [];
+const tradeMarkers = rows => window.TradeMarks ? TradeMarks.tradeMarkers(rows, window.CoinAnalysis ? (i, dir) => {
+    const g = CoinAnalysis.compositeSignal(rows.slice(Math.max(0, i - 498), i + 1).map(c => c.volume === undefined ? { ...c, volume: c.vol } : c));
+    return g.ready && dir * g.score >= 0;
+} : undefined) : [];
 const applyTradeMarks = (s, m, r) => window.TradeMarks ? TradeMarks.applyTradeMarks(s, m, r) : s.setMarkers(m);
 function markSignal(dir) {
     if (!S.series || !S.candles || !S.candles.length) return;
@@ -1462,14 +1472,15 @@ async function scanTick() {
         ]);
         let funding = null;
         try { funding = Number((await pub("funding_rate", { symbol: item.symbol })).fundingRate); } catch { /* 무시 */ }
-        const r = window.TerminalAI.runPipeline(
-            { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine },
+        const r = window.TerminalAI.runValidated(
+            { TA: window.TAEngine, LV: window.LevelEngine, SIG: window.SignalEngine, CA: window.CoinAnalysis, EN: window.Engine, CU: window.Custom },
             { "1h": h1, "4h": h4, "12h": h1, "1d": d1 }, S.pxMap[item.symbol] || item.lastPrice, funding);
         const dir = r.ok && r.entry ? r.entry.side : "관망";
         S.scan.results[item.symbol] = { dir, reason: r.entry ? ("R" + r.entry.rr.toFixed(2)) : (r.blocked || r.reason || ""), at: Date.now() };
         renderScan();
         if (!r.ok || !r.entry) return;
         if (S.paper.some(p => p.symbol === item.symbol)) return; // 종목당 1포지션
+        if (sigUsed(item.symbol, r.entry.sigTime)) return; // 같은 4시간봉 신호로는 한 번만
         if (S.paper.length >= S.cfg.maxPos) return;
         if (Date.now() - (S.scan.cool[item.symbol] || 0) < S.cfg.coolSec * 1000) return;
         const lev = S.cfg.autoLev; // 스캔은 모의 전용이라 상한 없음 (실매매는 별도 경로 없음)
@@ -1481,7 +1492,7 @@ async function scanTick() {
         S.scan.cool[item.symbol] = Date.now();
         const ok = paperFill(long ? 1 : 3, px, vol, lev, true,
             { symbol: item.symbol, cs: item.contractSize, sl: tpsl.sl, tp: tpsl.tp });
-        if (ok) log("스캔 진입 " + item.symbol + " " + r.entry.side + " " + vol + "계약 " + lev + "X");
+        if (ok) { markSigUsed(item.symbol, r.entry.sigTime); log("스캔 진입 " + item.symbol + " " + r.entry.side + " " + vol + "계약 " + lev + "X"); }
     } catch (e) { S.scan.results[item.symbol] = { dir: "오류", reason: e.message, at: Date.now() }; renderScan(); }
 }
 function renderScan() {
@@ -1521,12 +1532,23 @@ async function startScan() {
     }
 }
 
+// 검증 규칙은 "새로 충족된 4시간봉"에서 한 번 진입하는 것이라, 같은 신호 봉으로 다시 들어가지 않게 기억한다(새로고침에도 유지).
+function sigUsed(symbol, sigTime) {
+    if (!sigTime) return false;
+    try { return (JSON.parse(localStorage.getItem("krta-sigused") || "{}") || {})[symbol] === sigTime; } catch { return false; }
+}
+function markSigUsed(symbol, sigTime) {
+    if (!sigTime) return;
+    try { const m = JSON.parse(localStorage.getItem("krta-sigused") || "{}") || {}; m[symbol] = sigTime; localStorage.setItem("krta-sigused", JSON.stringify(m)); } catch { /* 무시 */ }
+}
+
 // ---- 자동매매 루프 ----
 async function autoTick() {
     if (!S.autoPaper && !S.autoLive) return;
     if (Date.now() - S.lastAuto < S.cfg.coolSec * 1000) return;
     const sig = await refreshAI();
     if (sig.dir === "관망" || !sig.entry) return;
+    if (sigUsed(S.symbol, sig.entry.sigTime)) return; // 같은 4시간봉 신호로는 한 번만 진입한다
     if (S.autoLive && !(S.armed && S.tradeEnabled)) { log("실매매 루프: 승인 없음 — 모의로 전환"); }
     const liveLoop = S.autoLive && S.armed && S.tradeEnabled;
     S.lastAuto = Date.now();
@@ -1535,6 +1557,7 @@ async function autoTick() {
     const tpsl = autoTPSL(sig.entry, S.last, sig.dir === "LONG", S.priceScale);
     $("oVol").value = "";
     await submitOrder(side, true, { sl: tpsl.sl, tp: tpsl.tp, lev });
+    markSigUsed(S.symbol, sig.entry.sigTime);
     log("AI " + sig.dir + " " + sig.reason + (liveLoop ? " [실매매" + (lev < S.cfg.autoLev ? " 10x상한" : "") + "]" : " [모의]"));
 }
 
