@@ -1064,7 +1064,7 @@ function renderAiDetail(r) {
         } else if (v.exitHint) {
             T.push("<div class='jkv'><span>보유 중이라면</span><b>" + esc(v.exitHint.replace(" 보유 중이면", "")) + "</b></div>");
         }
-        T.push("<div class='jkv' title='24종목, 학습에 쓰지 않은 구간. 손절 2.5×ATR(4h)·목표 2R·수수료 편도 0.04%. 예전 판정(TF 수렴 + 지지·저항 타점)은 같은 방식으로 −0.11R, 방향 적중 46.7%(기준 51.2%). 과거 결과이며 미래를 보장하지 않습니다'><span>백테스트</span><b>+0.24~0.36R · 승률 약 40%</b></div>");
+        T.push("<div class='jkv' title='24종목, 학습에 쓰지 않은 구간. 손절 2.5×ATR(4h)·목표 2R·수수료 편도 0.04%. 예전 판정(TF 수렴 + 지지·저항 타점)은 같은 방식으로 −0.11R, 방향 적중 46.7%(기준 51.2%). 과거 결과이며 미래를 보장하지 않습니다'><span>백테스트</span><b>" + ((window.INDICATOR_AUDIT && window.INDICATOR_AUDIT.text && window.INDICATOR_AUDIT.text.term4h) || "+0.24~0.36R · 승률 약 40%") + "</b></div>");
     } else {
         T.push("<div class='jrow'><span class='jstate'>관망</span></div><div class='dim'>" + esc(r.blocked || r.reason || "") + "</div>");
     }

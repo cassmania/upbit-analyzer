@@ -11,8 +11,10 @@
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const DEFAULT = ["BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LINK", "AVAX", "SUI", "TRX", "ONDO", "ATOM"];
     const MAX_SYMS = 20, MAX_ITEMS = 50;
+    // 검증 수치는 indicator-audit.js(자동 검증)에서 읽고, 없으면 기본 문구를 쓴다
+    const AUD = (window.INDICATOR_AUDIT && window.INDICATOR_AUDIT.text) || {};
     // look = 처음 열었을 때 되짚어 보여 줄 기간
-    const TF = { "4h": { sec: 14400, name: "4시간봉", lab: "검증 +0.47R", look: 14 * 86400 }, "1h": { sec: 3600, name: "1시간봉", lab: "검증 +0.13R · 약함", look: 2 * 86400 } };
+    const TF = { "4h": { sec: 14400, name: "4시간봉", lab: AUD.feed4h || "검증 +0.47R", look: 14 * 86400 }, "1h": { sec: 3600, name: "1시간봉", lab: AUD.feed1h || "검증 +0.13R · 약함", look: 2 * 86400 } };
 
     const bars = new Map();   // "BTCUSDT|4h" -> 확정봉 배열
     const seen = new Set();   // "BTCUSDT|4h|봉시각" — 같은 신호를 두 번 올리지 않는다
