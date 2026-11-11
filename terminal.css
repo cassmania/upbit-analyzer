@@ -1,11 +1,11 @@
-:root{--bg:#1f1e1c;--panel:#282725;--panel2:#31302d;--line:#3b3a36;--txt:#f1eee6;--dim:#a39e94;--up:#2fbf71;--down:#f0575c;--gold:#e0a84a;--input:#232220;--pos:#ffffff;--accent:#d97757;--loss:#4f8ef7}
-[data-theme="light"]{--bg:#f5f4ee;--panel:#fbfaf6;--panel2:#efede5;--line:#e3dfd3;--txt:#1f1e1b;--dim:#74706a;--up:#12a150;--down:#d64545;--gold:#a86f12;--input:#f5f4ee;--pos:#1f1e1b;--accent:#c96442;--loss:#2962ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Pretendard","Malgun Gothic",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-/* Claude 스타일: 제목·브랜드는 세리프, 클레이는 주요 액션에만 */
-.ticker .home,.modal h3,.ai-config .tabs b,.ai-wide .tabs b,.ko-page h1,.ko-page h2,.cfg-sub,#tLast{font-family:"Source Serif 4",Georgia,"Malgun Gothic",serif;letter-spacing:-.01em}
+/* 2026-11-11 템플릿 A(신호 우선) · Apple 색: 밝은 회색 바탕 + 흰 카드, 다크는 검정 + #1c1c1e. 상승·하락 색과 차트 지표·지지저항 색은 그대로 */
+:root{--bg:#000;--panel:#1c1c1e;--panel2:#2c2c2e;--line:#38383a;--txt:#f5f5f7;--dim:#98989d;--up:#2fbf71;--down:#f0575c;--gold:#e0a84a;--input:#2c2c2e;--pos:#ffffff;--accent:#0a84ff;--loss:#4f8ef7;--bar:rgba(28,28,30,.72);--shadow:0 0 0 .5px rgba(255,255,255,.1)}
+[data-theme="light"]{--bg:#f5f5f7;--panel:#fff;--panel2:#f0f0f3;--line:#e5e5ea;--txt:#1d1d1f;--dim:#6e6e73;--up:#12a150;--down:#d64545;--gold:#a86f12;--input:#f5f5f7;--pos:#1d1d1f;--accent:#0071e3;--loss:#2962ff;--bar:rgba(255,255,255,.72);--shadow:0 0 0 .5px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.04)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo","Pretendard Variable",Pretendard,"Malgun Gothic","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.ticker .home,.modal h3,.ai-config .tabs b,.ko-page h1,.ko-page h2,.cfg-sub,#tLast{letter-spacing:-.018em}
 .ticker .home{color:var(--accent)}
 .mono{font-variant-numeric:tabular-nums}.dim{color:var(--dim)}
-.ticker{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.ticker{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bar);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);border-bottom:.5px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
 .ticker .home{color:var(--txt);text-decoration:none;font-weight:800}
 .ticker .analysis-link{color:var(--txt);text-decoration:none;font-weight:700;white-space:nowrap;padding:5px 10px;border:1px solid var(--accent);border-radius:6px;background:transparent}
 .ticker .analysis-link:hover{background:var(--accent);color:#fff}
@@ -41,10 +41,10 @@
 .favrow .rm{margin-left:auto;background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:14px}
 .favrow .rm:hover{color:var(--down)}
 #tLast{font-size:20px;font-weight:800}.tk{font-size:12px;color:var(--dim)}.tk b{color:var(--txt);font-weight:600}
-.sp{flex:1}.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
+.sp{flex:1}.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--line)}
 .pill.paper{color:var(--gold);border-color:var(--gold)}.pill.live{color:var(--down);border-color:var(--down)}.pill.iso{color:var(--dim)}
 .term{width:100%;min-width:0;min-height:calc(100vh - 62px);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,24vw);gap:10px;padding:10px}
-.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
+.chartbox{background:var(--panel);border:0;box-shadow:var(--shadow);border-radius:16px;overflow:hidden;min-width:0}
 .tfbar{display:flex;gap:2px;padding:8px;border-bottom:1px solid var(--line)}
 .tfbar button{background:transparent;border:0;color:var(--dim);padding:5px 10px;cursor:pointer;border-radius:5px;font-weight:600}
 .tfbar button.act{background:var(--panel2);color:var(--accent)}
@@ -66,7 +66,7 @@
 .panehead .ptf{flex:0 0 76px}
 .cpane.focused{outline:2px solid var(--pane,var(--accent));outline-offset:-2px;box-shadow:0 0 0 1px var(--pane,var(--accent))}
 .right{display:flex;flex-direction:column;gap:10px;min-width:0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card{background:var(--panel);border:0;box-shadow:var(--shadow);border-radius:16px;padding:14px}
 .ko-page{max-width:980px;margin:0 auto;padding:20px 16px 60px}
 .ko-page h1{margin:6px 0 8px;font-size:26px}
 .ko-nav{display:flex;gap:14px;margin-bottom:8px}
@@ -80,7 +80,7 @@
 .ko-page h2{margin:4px 0 6px;font-size:17px}
 .ko-page footer{margin-top:26px;font-size:12px}
 .tabs{display:flex;align-items:center;gap:8px;margin-bottom:8px}.tabs .sp{flex:1}
-.tabs button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
+.tabs button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:999px;padding:4px 10px;cursor:pointer;font-size:12px}
 .ob{display:grid;gap:2px;font-size:12px}.ob div{display:grid;grid-template-columns:1fr 1fr 1fr;text-align:right}
 .ob .a{color:var(--down)}.ob .b{color:var(--up)}
 .mid{font-size:16px;font-weight:800;padding:4px 0}
@@ -102,7 +102,7 @@
 .cfg-grid>div{min-width:0}
 .cfg-grid>div:nth-child(2){display:grid;align-content:start;gap:2px}
 .cfg-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
-.cfg-row b{color:var(--accent)}
+.cfg-row b{color:var(--txt)}
 .cfg-sub{font-weight:800;margin:12px 0 4px;font-size:14px}
 input.mini{width:clamp(96px,8vw,140px);background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
 #cfgMargin{width:100%;accent-color:var(--accent)}
@@ -113,8 +113,9 @@ input.mini{width:clamp(96px,8vw,140px);background:var(--input);color:var(--txt);
 .seg button{flex:1;background:transparent;border:0;color:var(--dim);padding:7px;cursor:pointer}
 .seg button.act{background:var(--panel2);color:var(--accent);font-weight:700}
 .twobtn{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-.twobtn button{padding:10px;border-radius:8px;border:0;font-weight:800;cursor:pointer;background:var(--panel2);color:var(--txt)}
-.long{background:var(--up)!important;color:#04120c!important}.short{background:var(--down)!important;color:#fff!important}
+.twobtn button{padding:10px;border-radius:999px;border:0;font-weight:700;transition:transform .1s ease-out;cursor:pointer;background:var(--panel2);color:var(--txt)}
+.twobtn button:active,.tabs button:active{transform:scale(.97)}
+.long{background:var(--up)!important;color:#fff!important}.short{background:var(--down)!important;color:#fff!important}
 .danger{background:transparent!important;border:1px solid var(--down)!important;color:var(--down)!important}
 .bottom{grid-column:1/-1;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}
 .bottom .paper-card{grid-column:1/-1}
@@ -126,23 +127,31 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .settings label{display:grid;gap:3px;font-size:11px;color:var(--dim)}
 .settings input{background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;width:100%}
 .warn{padding:12px 14px;color:var(--gold);font-size:12px}
-.ai-wide{grid-column:1/-1;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:0;padding:0;font-size:14px}
-.ai-wide>div{padding:18px 22px;min-width:0;display:flex;flex-direction:column;gap:10px}
-.ai-wide>div+div{border-left:1px solid var(--line)}
-.ai-h{display:flex;align-items:center;gap:8px;font-family:"Source Serif 4",Georgia,"Malgun Gothic",serif;font-size:17px;font-weight:700;letter-spacing:-.01em}
+/* 맨 위 판단 카드 3장: AI 전략 · 실시간 매매 신호 · 자동매매 */
+.judge{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:10px}
+.judge>.card{min-width:0;max-height:400px;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+.ai-h{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.jrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.jstate{font-size:20px;font-weight:700;letter-spacing:-.018em}
+.jck{display:flex;gap:8px;align-items:center;padding:2px 0;font-size:13.5px}
+.jck i{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;flex:none;background:var(--panel2);color:var(--dim)}
+.jck i.y{background:color-mix(in srgb,var(--up) 16%,transparent);color:var(--up)}
+.jkv{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--dim);padding-top:4px}.jkv b{color:var(--txt);font-weight:600;text-align:right}
+.jmore{margin-top:6px}.jmore summary{cursor:pointer;font-size:12px;color:var(--dim);font-weight:600}
+.jmore div{font-size:12.5px;line-height:1.7;margin-top:6px}
+#aiDetail{display:grid;gap:4px}
 .ai-note{font-size:12px;color:var(--dim);line-height:1.6}
 #aiMsg:empty{display:none}
 #coinSummary{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.75}
-.ai-wide .twobtn{margin-top:0}
-.ai-wide .twobtn button,.ai-wide #scanN{background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--txt);font-weight:600}
-.ai-wide .twobtn button:hover{border-color:var(--accent)}
+.judge .twobtn{margin-top:0}
+.judge .twobtn button,.judge #scanN{background:var(--panel2);border:1px solid var(--line);border-radius:999px;color:var(--txt);font-weight:600}
+.judge .twobtn button:hover{border-color:var(--accent)}
 #autoPaper.on,#autoLive.on,#scanToggle.on{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important}
 #arm.armed{background:var(--down)!important;border-color:var(--down)!important;color:#fff!important}
-@media(max-width:1100px){.ai-wide>div+div{border-left:0;border-top:1px solid var(--line)}}
 /* 차트 클릭 브리핑 */
 .srbrief{padding:14px 18px 18px;border-top:1px solid var(--line);font-size:13px}
 .br-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.br-head b{font-family:"Source Serif 4",Georgia,"Malgun Gothic",serif;font-size:18px}
+.br-head b{font-size:18px;letter-spacing:-.015em}
 .br-head .mono{font-weight:700;font-size:15px}
 .br-sum{margin:6px 0 12px;color:var(--dim);line-height:1.6}
 .br-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
@@ -154,20 +163,12 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .br-row b{font-weight:700}.br-row em{font-style:normal;font-size:12px;min-width:58px;text-align:right}
 .br-row small{grid-column:2/-1;color:var(--dim);font-size:11px}
 @media(max-width:1100px){.br-grid{grid-template-columns:1fr}}
-.ai-wide .tabs b{font-size:17px}
-.ai-wide #aiSig{font-size:15px;padding:5px 14px}
-.ai-wide #aiDetail{font-size:14px;line-height:1.7}
-.ai-wide .twobtn button{padding:13px;font-size:14px}
-.ai-wide .settings{grid-template-columns:1fr 1fr;gap:8px}
-.ai-wide .settings label{font-size:12px}
-.ai-wide .settings input{padding:8px;font-size:14px}
-.ai-wide #scanList{height:170px;font-size:13px}
-.ai-wide #scanN{background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}
-@media(max-width:1100px){.ai-wide{grid-template-columns:1fr}}
-.paper-card{border-top:2px solid var(--accent)}
-.paper-title{color:var(--accent)}
+.judge .twobtn button{padding:11px;font-size:13.5px;min-height:44px}
+.judge #scanList{height:84px;font-size:12.5px}
+.judge #scanN{background:var(--input);color:var(--txt);border:1px solid var(--line);border-radius:999px;padding:10px;font:inherit}
+.paper-title{color:var(--txt)}
 .paper-bank{color:var(--txt)}
-.paper-card .p-long{color:var(--accent);font-weight:700}
+.paper-card .p-long{color:var(--up);font-weight:700}
 .paper-card .p-short{color:var(--down);font-weight:700}
 .p-pos{color:var(--down);font-weight:700}
 .p-neg{color:var(--loss);font-weight:700}
@@ -176,7 +177,7 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .paper-card td button{background:var(--panel2);border:1px solid var(--accent);color:var(--txt);border-radius:6px;padding:3px 9px;cursor:pointer}
 .paper-card .seg{margin:0}
 .badge{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:5px}
-.badge.long{color:var(--accent);background:rgba(201,100,66,.13)}
+.badge.long{color:var(--up);background:color-mix(in srgb,var(--up) 14%,transparent)}
 .badge.short{color:var(--down);background:rgba(214,69,69,.13)}
 .abtn{border:1px solid var(--accent)!important;color:var(--txt)!important;background:transparent!important}
 .abtn.go{border-color:var(--down)!important;color:var(--down)!important}
@@ -201,13 +202,14 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 #mOk{background:var(--down)!important;color:#fff!important}
 #mCancel{background:transparent!important;border:1px solid var(--line)!important;color:var(--txt)!important}
 .up{color:var(--up)}.down{color:var(--down)}
-@media(max-width:1100px){.term{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}#chart{height:420px}.charts.g2,.charts.g4,.charts.g8{grid-template-columns:1fr}.cpane .pchart{height:260px}}
+.bottom,.bottom>.card{min-width:0}
+@media(max-width:1100px){.term{grid-template-columns:minmax(0,1fr)}.bottom{grid-template-columns:minmax(0,1fr)}#chart{height:420px}.charts.g2,.charts.g4,.charts.g8{grid-template-columns:1fr}.cpane .pchart{height:260px}}
 /* 실시간 매매 신호 — 왼쪽 열(차트 아래)을 오른쪽 열 높이까지 채운다 */
 .leftcol{display:flex;flex-direction:column;gap:10px;min-width:0}
 .leftcol>.chartbox{flex:none}
-.sigcard{flex:1 1 0;min-height:320px;display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+.sigcard{min-height:0}
 .sig-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sig-head b{font-family:"Source Serif 4",Georgia,"Malgun Gothic",serif;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.sig-head b{font-size:12.5px;font-weight:600;color:var(--dim)}
 .sig-ico{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;font-size:13px}
 .sig-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--dim)}
 .sig-state::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--dim)}
@@ -215,7 +217,7 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 #sigClear{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
 #sigClear:hover{border-color:var(--accent)}
 .sig-note{font-size:12px;margin-top:-4px}
-.sig-feed{flex:1 1 0;min-height:200px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;align-content:start;padding-right:2px}
+.sig-feed{flex:1 1 0;min-height:200px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;align-content:start;padding-right:2px}
 .sig-empty{grid-column:1/-1;padding:28px 0;text-align:center;font-size:13px}
 .sig-item{display:flex;flex-direction:column;gap:6px;text-align:left;font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--up);border-radius:10px;padding:10px 12px;cursor:pointer}
 .sig-item.sig-short{border-left-color:var(--down)}
@@ -226,7 +228,10 @@ th{color:var(--dim);font-size:11px}td button{background:var(--panel2);border:1px
 .sig-badge{display:inline-block;margin-right:6px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:var(--up)}
 .sig-item.sig-short .sig-badge{background:var(--down)}
 .sig-rsi{display:inline-block;margin-left:6px;color:var(--dim);font-size:12px}
-@media(max-width:1100px){.sigcard{flex:none;height:420px}}
+/* 좁은 화면 순서: AI 판정 → 차트 → 호가·주문 → 신호 → 자동매매 → 설정 → 포지션 */
+@media(max-width:1100px){.judge{display:contents}.judge>.card{max-height:none}.jai{order:1}.leftcol{order:2}.right{order:3}.judge>.sigcard{order:4;height:340px}.jauto{order:5}.ai-config{order:6}.bottom{order:7}}
+@media(prefers-reduced-transparency:reduce){.ticker{background:var(--panel);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media(prefers-reduced-motion:reduce){.twobtn button{transition:none}.twobtn button:active,.tabs button:active{transform:none}}
 /* 차트 하나 전체화면 */
 .pmax{position:absolute;top:8px;right:72px;z-index:6}
 .cpane.maxed,#cpane0.maxed{position:fixed;inset:0;z-index:200;border-radius:0;border-width:2px}

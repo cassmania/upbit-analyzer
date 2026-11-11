@@ -200,8 +200,8 @@ function cfgPreview() {
 // 테마: 라이트/다크. 차트 색상까지 함께 바꾼다
 function chartPalette() {
     return document.documentElement.dataset.theme === "light"
-        ? { bg: "#fbfaf6", text: "#74706a", grid: "#ece9df", border: "#e3dfd3" }
-        : { bg: "#282725", text: "#a39e94", grid: "#31302d", border: "#3b3a36" };
+        ? { bg: "#ffffff", text: "#6e6e73", grid: "#f0f0f3", border: "#e5e5ea" }
+        : { bg: "#1c1c1e", text: "#98989d", grid: "#2c2c2e", border: "#38383a" };
 }
 function applyThemeToChart() {
     if (!S.chart) return;
@@ -1045,26 +1045,32 @@ async function refreshAI() {
 function renderAiDetail(r) {
     const box = $("aiDetail");
     if (!box) return;
-    const L = [];
-    const f0 = (v, d) => (v === null || v === undefined || !isFinite(Number(v))) ? "-" : fmt.format(v);
-    if (r.ok && r.entry) {
-        const e = r.entry;
-        L.push("<b>" + esc(r.dir) + "</b> 시장가 진입 " + f0(e.entry) + " · SL " + f0(e.stop) +
-            " · TP " + f0(e.target1) + " · " + (isFinite(e.rr) ? e.rr.toFixed(1) + "R" : ""));
-    } else {
-        L.push("<b>관망</b> · " + esc(r.blocked || r.reason || ""));
-    }
+    const f0 = v => (v === null || v === undefined || !isFinite(Number(v))) ? "-" : fmt.format(v);
+    const old = box.querySelector("details"), wasOpen = !!(old && old.open);
+    const T = [], M = [];   // T: 카드에 바로 보이는 줄 · M: '근거 자세히' 안
     const v = r.validated;
     if (v && v.ok) {
-        const sg = (x, d) => (x >= 0 ? "+" : "") + x.toFixed(d), okc = b => b ? "✓" : "–";
-        L.push("4시간봉 검증 규칙 · " + okc(Math.abs(v.agree) === 5) + " 추세 합의 " + sg(v.agree, 0) + "/5 · " +
-            okc(v.adx >= 20) + " ADX " + v.adx.toFixed(0) + " · " + okc(v.want !== 0 && v.want * v.score >= 0) + " 방향 점수 " + sg(v.score, 2) +
-            (v.exitHint ? " · <b>" + esc(v.exitHint) + "</b>" : ""));
-        L.push("<span class='dim' title='24종목, 학습에 쓰지 않은 구간. 손절 2.5×ATR(4h)·목표 2R·수수료 편도 0.04%. 예전 판정(TF 수렴 + 지지·저항 타점)은 같은 방식으로 −0.11R, 방향 적중 46.7%(기준 51.2%). 과거 결과이며 미래를 보장하지 않습니다'>백테스트 +0.24~0.36R · 승률 약 40% · 신호는 종목당 한 달 2건 안팎</span>");
+        const sg = (x, d) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d);
+        const c = [Math.abs(v.agree) === 5, v.adx >= 20, v.want !== 0 && v.want * v.score >= 0, !!v.fresh], n = c.filter(Boolean).length;
+        const side = v.want === 1 ? "롱" : v.want === -1 ? "숏" : "";
+        const ck = (y, t) => "<div class='jck'><i class='" + (y ? "y" : "") + "'>" + (y ? "✓" : "–") + "</i>" + t + "</div>";
+        T.push("<div class='jrow'><span class='jstate " + (r.entry ? (v.want === 1 ? "up" : "down") : "") + "'>" +
+            (r.entry ? side + " 진입" : (c[0] && c[1] && c[2]) ? side + " 추세 유지" : "관망") + "</span><span class='pill'>조건 " + n + " / 4</span></div>");
+        T.push(ck(c[0], "추세 합의 " + sg(v.agree, 0) + " / 5") + ck(c[1], "ADX " + v.adx.toFixed(0) + " (20 이상)") +
+            ck(c[2], "방향 점수 " + sg(v.score, 2) + (v.want ? (c[2] ? " 같은 쪽" : " 반대") : "")) + ck(c[3], "이번 4시간봉에서 새로 충족"));
+        if (r.entry) {
+            const e = r.entry;
+            T.push("<div class='jkv'><span>시장가 " + f0(e.entry) + "</span><b>SL " + f0(e.stop) + " · TP " + f0(e.target1) + " · " + (isFinite(e.rr) ? e.rr.toFixed(1) + "R" : "") + "</b></div>");
+        } else if (v.exitHint) {
+            T.push("<div class='jkv'><span>보유 중이라면</span><b>" + esc(v.exitHint.replace(" 보유 중이면", "")) + "</b></div>");
+        }
+        T.push("<div class='jkv' title='24종목, 학습에 쓰지 않은 구간. 손절 2.5×ATR(4h)·목표 2R·수수료 편도 0.04%. 예전 판정(TF 수렴 + 지지·저항 타점)은 같은 방식으로 −0.11R, 방향 적중 46.7%(기준 51.2%). 과거 결과이며 미래를 보장하지 않습니다'><span>백테스트</span><b>+0.24~0.36R · 승률 약 40%</b></div>");
+    } else {
+        T.push("<div class='jrow'><span class='jstate'>관망</span></div><div class='dim'>" + esc(r.blocked || r.reason || "") + "</div>");
     }
     const dirInfo = r.raw && r.raw.방향;
     if (dirInfo && Array.isArray(dirInfo.tfs) && dirInfo.tfs.length) {
-        L.push("TF수렴 " + dirInfo.tfs.map(t =>
+        M.push("TF수렴 " + dirInfo.tfs.map(t =>
             esc(t.tf) + " " + (t.net >= 0 ? "+" : "") + t.net + "%(" + esc(t.verdict || "") + ")").join(" · ") +
             " → 평균 " + dirInfo.avg + "% · 일치 " + dirInfo.agree + "%(n=" + dirInfo.n + ")");
     }
@@ -1079,27 +1085,27 @@ function renderAiDetail(r) {
         if (o.rsi_divergence) bits.push(esc(o.rsi_divergence));
         if (fr1h.confluence && fr1h.confluence.verdict) bits.push("수렴:" + esc(fr1h.confluence.verdict));
         if (fr1h.volume && fr1h.volume.reliability) bits.push("거래량:" + esc(fr1h.volume.reliability));
-        if (bits.length) L.push("1h 오실레이터 · " + bits.join(" · "));
+        if (bits.length) M.push("1h 오실레이터 · " + bits.join(" · "));
     }
     const exits = r.exits || (r.raw && r.raw.exits);
     if (exits) {
         const fmtEx = (list) => (!list || !list.length) ? "없음" :
             "긴급 " + list.filter(x => x.level === "긴급").length + " · 주의 " + list.filter(x => x.level !== "긴급").length +
             (list[0] ? " — " + esc(list[0].text).slice(0, 46) : "");
-        L.push("청산감시 롱(" + fmtEx(exits.long) + ") / 숏(" + fmtEx(exits.short) + ")");
+        M.push("청산감시 롱(" + fmtEx(exits.long) + ") / 숏(" + fmtEx(exits.short) + ")");
     }
     if (r.plan) {
         const p = r.plan;
-        L.push("<span class='dim'>지지·저항 계획(참고 · 백테스트 −0.11R): " + esc(p.side || "") + " 진입 " + f0(p.entry) + " SL " + f0(p.stop) +
-            " TP " + f0(p.target1) + (isFinite(p.rr) ? " " + p.rr.toFixed(2) + "R" : "") + (r.planBlocked ? " — " + esc(r.planBlocked) : "") + "</span>");
+        M.push("지지·저항 계획(참고 · 백테스트 −0.11R): " + esc(p.side || "") + " 진입 " + f0(p.entry) + " SL " + f0(p.stop) +
+            " TP " + f0(p.target1) + (isFinite(p.rr) ? " " + p.rr.toFixed(2) + "R" : "") + (r.planBlocked ? " — " + esc(r.planBlocked) : ""));
     }
     const meta = [];
     if (r.atr != null && isFinite(r.atr)) meta.push("ATR(4h) " + f0(r.atr));
     const fu = (r.raw && Number.isFinite(r.raw.funding)) ? r.raw.funding : S.funding;
     if (Number.isFinite(fu)) meta.push("펀딩 " + (fu >= 0 ? "+" : "") + (fu * 100).toFixed(4) + "%");
     if (r.asOf) meta.push("데이터 기준 " + new Date(r.asOf * 1000).toLocaleTimeString("ko-KR", { hourCycle: "h23" }));
-    if (meta.length) L.push("<span class='dim'>" + meta.join(" · ") + "</span>");
-    box.innerHTML = L.join("<br>");
+    if (meta.length) M.push(meta.join(" · "));
+    box.innerHTML = T.join("") + (M.length ? "<details class='jmore'" + (wasOpen ? " open" : "") + "><summary>근거 자세히</summary><div class='dim'>" + M.join("<br>") + "</div></details>" : "");
 }
 function chartZoom(mode) {
     if (!S.chart) return;

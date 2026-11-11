@@ -120,7 +120,7 @@
             sigTime: rows[li].time
         };
         return { ok: true, dir: entry ? entry.side : "관망", entry: entry, reason: reason, agree: S, adx: adx, score: score, atr: atr,
-            want: dir, barTime: rows[li].time, exitHint: S <= -3 ? "롱 보유 중이면 청산" : S >= 3 ? "숏 보유 중이면 청산" : null };
+            want: dir, fresh: fresh, barTime: rows[li].time, exitHint: S <= -3 ? "롱 보유 중이면 청산" : S >= 3 ? "숏 보유 중이면 청산" : null };
     }
     // 화면·자동매매가 쓰는 판정. 예전 파이프라인 결과(TF 수렴·오실레이터·지지저항 계획)는 참고용으로 함께 넘긴다.
     function runValidated(deps, tfData, price, funding) {
@@ -213,7 +213,7 @@
         return { rolled: false };
     }
 
-    var TerminalAI = { VERSION: "1.4.0", normalizeFutures: normalizeFutures, dropForming: dropForming,
+    var TerminalAI = { VERSION: "1.4.1", normalizeFutures: normalizeFutures, dropForming: dropForming,
         resample: resample, roundToScale: roundToScale, runPipeline: runPipeline, runValidated: runValidated, validatedSignal: validatedSignal, pickTopSymbols: pickTopSymbols,
         openCalc: openCalc, settleCalc: settleCalc, PAPER_FEE: PAPER_FEE, nextCandle: nextCandle, TF_SEC: TF_SEC,
         effOf: effOf, syncMargin: syncMargin };

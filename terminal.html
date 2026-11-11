@@ -7,10 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <title>AI 선물 터미널 — MEXC 모의·실매매</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23c96442'/%3E%3Ctext x='8' y='29' fill='white' font-size='22'%3EA%3C/text%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="terminal.css?v=10">
+<link rel="stylesheet" href="terminal.css?v=11">
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 <script src="ta_engine.js"></script>
 <script src="analysis-engine.js?v=2"></script>
@@ -20,8 +17,8 @@
 <script src="custom.js?v=1"></script>
 <script src="trade-marks.js?v=2"></script>
 <script src="terminal-signals.js?v=3" defer></script>
-<script src="terminal-ai.js?v=3"></script>
-<script src="terminal.js?v=43-pages" defer></script>
+<script src="terminal-ai.js?v=4"></script>
+<script src="terminal.js?v=44-pages" defer></script>
 </head>
 <body>
 <header class="ticker" id="ticker">
@@ -51,6 +48,45 @@
 <div id="favPanel" aria-label="즐겨찾기 목록"><div class="inner" id="favList"></div></div>
 
 <main class="term">
+  <section class="judge" aria-label="신호 요약">
+    <div class="card jai">
+      <div class="ai-h">AI 전략 · 4시간봉 <span id="aiSig" class="pill">관망</span></div>
+      <div class="mono" id="aiDetail">신호 대기</div>
+      <div class="dim" id="aiMsg" role="status"></div>
+      <div class="mono" id="coinSummary" aria-label="선택 코인 요약">코인 선택 시 포지션·스캔·AI 요약을 표시합니다</div>
+    </div>
+    <section class="card sigcard" aria-label="바이낸스 실시간 매매 신호">
+    <div class="sig-head">
+      <span class="sig-ico" aria-hidden="true">!</span>
+      <b>바이낸스 실시간 매매 신호</b>
+      <span class="pill" id="sigWatch" title="감시 종목">-</span>
+      <span class="pill">신호 <span id="sigCount">0</span></span>
+      <span class="sp"></span>
+      <span class="sig-state" id="sigState">준비 중</span>
+      <button id="sigClear" type="button">지우기</button>
+    </div>
+    <div class="sig-note dim" title="예전 1분봉 신호는 백테스트에서 수수료를 빼면 거래당 −0.99R(무작위 진입과 같음)이라 뺐습니다">바이낸스 선물 4시간봉·1시간봉 확정 시 판정 · 추세 합의 5/5 + 방향 점수 같은 쪽 · 손절 2.5×ATR · 항목을 누르면 그 코인 차트로 이동</div>
+    <div class="sig-feed" id="sigFeed" aria-live="polite"><div class="sig-empty dim">다음 확정봉부터 신호가 쌓입니다</div></div>
+    </section>
+    <div class="card jauto">
+      <div class="ai-h">자동매매</div>
+      <div class="twobtn">
+        <button id="autoPaper">자동매매(모의) OFF</button>
+        <button id="autoLive">자동매매(실매매) OFF</button>
+      </div>
+      <div class="twobtn">
+        <button id="arm">실매매 승인</button>
+        <button id="kill" class="danger">전체 중지</button>
+      </div>
+      <div class="ai-note">증거금·레버리지·손절·목표는 <a class="linkbtn" href="#cfgHead">아래 세부 설정</a>을 따릅니다</div>
+      <div class="ai-h">다종목 스캔</div>
+      <div class="twobtn">
+        <button id="scanToggle">다종목 스캔 OFF</button>
+        <select id="scanN" aria-label="스캔 종목 수"><option>5</option><option selected>10</option><option>20</option></select>
+      </div>
+      <div class="log mono" id="scanList"></div>
+    </div>
+  </section>
   <div class="leftcol">
   <section class="chartbox">
     <div class="tfbar" id="tfbar">
@@ -68,19 +104,6 @@
     </div>
     <div class="legend" id="legend"></div>
     <div class="srbrief" id="srBrief" aria-live="polite"><div class="dim">차트를 클릭하면 지지·저항·지표 브리핑을 여기에 정리합니다</div></div>
-  </section>
-  <section class="card sigcard" aria-label="바이낸스 실시간 매매 신호">
-    <div class="sig-head">
-      <span class="sig-ico" aria-hidden="true">!</span>
-      <b>바이낸스 실시간 매매 신호</b>
-      <span class="pill" id="sigWatch" title="감시 종목">-</span>
-      <span class="pill">신호 <span id="sigCount">0</span></span>
-      <span class="sp"></span>
-      <span class="sig-state" id="sigState">준비 중</span>
-      <button id="sigClear" type="button">지우기</button>
-    </div>
-    <div class="sig-note dim" title="예전 1분봉 신호는 백테스트에서 수수료를 빼면 거래당 −0.99R(무작위 진입과 같음)이라 뺐습니다">바이낸스 선물 4시간봉·1시간봉 확정 시 판정 · 추세 합의 5/5 + 방향 점수 같은 쪽 · 손절 2.5×ATR · 항목을 누르면 그 코인 차트로 이동</div>
-    <div class="sig-feed" id="sigFeed" aria-live="polite"><div class="sig-empty dim">다음 확정봉부터 신호가 쌓입니다</div></div>
   </section>
   </div>
 
@@ -160,35 +183,6 @@
       </div>
     </div>
   </section>
-  <section class="card ai-wide" aria-label="AI 전략">
-    <div class="ai-sig">
-      <div class="ai-h">AI 전략 <span id="aiSig" class="pill">관망</span></div>
-      <div class="mono dim" id="aiDetail">신호 대기</div>
-      <div class="dim" id="aiMsg" role="status"></div>
-      <div class="mono" id="coinSummary" aria-label="선택 코인 요약">코인 선택 시 포지션·스캔·AI 요약을 표시합니다</div>
-    </div>
-    <div class="ai-ctrl">
-      <div class="ai-h">자동매매</div>
-      <div class="twobtn">
-        <button id="autoPaper">자동매매(모의) OFF</button>
-        <button id="autoLive">자동매매(실매매) OFF</button>
-      </div>
-      <div class="twobtn">
-        <button id="arm">실매매 승인</button>
-        <button id="kill" class="danger">전체 중지</button>
-      </div>
-      <div class="ai-note">증거금·레버리지·TP/SL은 위 AI 설정값을 따릅니다</div>
-    </div>
-    <div class="ai-scan">
-      <div class="ai-h">다종목 스캔</div>
-      <div class="twobtn">
-        <button id="scanToggle">다종목 스캔 OFF</button>
-        <select id="scanN" aria-label="스캔 종목 수"><option>5</option><option selected>10</option><option>20</option></select>
-      </div>
-      <div class="log mono" id="scanList"></div>
-    </div>
-  </section>
-
   <section class="bottom">
     <div class="card paper-card">
       <div class="tabs"><b class="paper-title">모의 포지션</b><span class="mono paper-bank" id="paperBankTop">-</span><span class="sp"></span>
