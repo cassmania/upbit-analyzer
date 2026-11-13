@@ -6,10 +6,11 @@ const JSVER = "v23"; // 매매 로그 첫 줄에 표시. 화면이 안 바뀌면
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+const START_BANK = 100000000;
 const S = { symbol: "BTC_USDT", mainSym: "BTC_USDT", mainLocked: true, tf: "Min60", contractSize: 0.0001, priceScale: 1, maxLev: 10,
     last: 0, chart: null, chartErr: false, candles: null, series: null, lines: {}, prices: [], armed: false,
     tradeEnabled: false, autoPaper: false, autoLive: false, lastAuto: 0, paper: [], timer: [],
-    bank: 1000000, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
+    bank: START_BANK, pxMap: {}, csMap: {}, scan: { on: false, list: [], idx: 0, results: {}, cool: {} },
     layout: 1, panes: [], mainPL: { lines: [] }, chg24: {},
     cfg: { notional: 50, ratioPct: 1, maxPos: 5, coolSec: 300, autoLev: 3,
         tpMode: "ai", tpPct: 5, slMode: "ai", slPct: 3, noOverlap: true, lockEff: true }, fav: [], allSymbols: [], hist: [], ptab: "active" };
@@ -1262,7 +1263,7 @@ function sanitizePaper() {
 }
 function savePaper() {
     try { localStorage.setItem("krta-paper", JSON.stringify(S.paper.slice(-50)));
-        localStorage.setItem("krta-bank", JSON.stringify({ bank: S.bank }));
+        localStorage.setItem("krta-bank", JSON.stringify({ bank: S.bank, v: 2 }));
         localStorage.setItem("krta-hist", JSON.stringify(S.hist.slice(-100))); } catch { /* 저장 실패 무시 */ }
 }
 function paperUnreal(p, px) {
@@ -1292,7 +1293,7 @@ function paperEquity(pxMap) {
 function renderBank() {
     const unreal = S.paper.reduce((s, p) => s + paperUnreal(p, S.pxMap[p.symbol]), 0);
     const eq = S.bank + unreal + paperLocked();
-    const pnl = eq - 1000000;
+    const pnl = eq - START_BANK;
     const uCls = unreal >= 0 ? "p-pos" : "p-neg", pCls = pnl >= 0 ? "p-pos" : "p-neg";
     const html = "모의 지갑 $" + fmt.format(Math.round(S.bank)) + " · 미실현 <span class='" + uCls + "'>" +
         (unreal >= 0 ? "+" : "") + fmt.format(Math.round(unreal)) + "</span> · 평가 $" + fmt.format(Math.round(eq)) +
@@ -1686,7 +1687,12 @@ function bind() {
         renderCoinSummary();
         log("전체 실효 맞춤: " + n + "건 완료" + (fail ? ", " + fail + "건 실패(지갑 부족 등)" : ""));
     });
-    $("mOk").addEventListener("click", () => { const cb = modalCb, v = $("mInput").value; closeModal(); if (cb) cb(v); });
+    $("mOk").addEventListener("click", () => {
+        const cb = modalCb, v = $("mInput").value;
+        const err = cb ? cb(v) : null;
+        if (typeof err === "string") { $("mLabel").textContent = err; return; } // 오류면 창을 닫지 않고 모달에 표시
+        closeModal();
+    });
     $("mCancel").addEventListener("click", closeModal);
     $("modalOv").addEventListener("click", e => { if (e.target === $("modalOv")) closeModal(); });
     $("themeBtn").addEventListener("click", () => {
@@ -1763,8 +1769,8 @@ function bindCfgMargin() {
         else if (k === "coolSec") setCoolSec(S.cfg.coolSec + step);
     }));
     $("paperReset").addEventListener("click", () => {
-        S.paper = []; S.bank = 1000000; savePaper(); renderPaper();
-        log("모의자금 리셋 — $1,000,000");
+        S.paper = []; S.bank = START_BANK; savePaper(); renderPaper();
+        log("모의자금 리셋 — $100,000,000");
     });
     document.querySelector("#posT").addEventListener("click", e => {
         const go = e.target.closest("[data-goto]");
@@ -1831,7 +1837,7 @@ function bindCfgMargin() {
         if (ad) {
             const p = S.paper[Number(ad.dataset.add)];
             if (!p) return;
-            const def = Math.round(p.margin * 0.2 * 100) / 100;
+            const def = Math.max(0, Math.min(Math.round(p.margin * 0.2 * 100) / 100, Math.floor(S.bank * 100) / 100));
             const baseNow = p.price * p.vol * (p.cs || S.contractSize);
             const effNow = baseNow / Math.max(p.margin, 1e-9);
             const effAfter = baseNow / Math.max(p.margin + def, 1e-9);
@@ -1841,8 +1847,8 @@ function bindCfgMargin() {
                 (S.cfg.lockEff ? " (실효 고정 중: 수동 추가분은 고정이 풀릴 때까지 실효에 반영됩니다)" : ""),
                 "추가 금액 USDT (기본 20%)", def, "추가", v => {
                     const add = Math.round(Number(v) * 100) / 100;
-                    if (!(add > 0)) { $("oMsg").textContent = "금액을 입력하세요."; return; }
-                    if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return; }
+                    if (!(add > 0)) return "금액을 입력하세요.";
+                    if (add > S.bank) { log("마진 추가 거부 — 잔고 부족", "down"); return "잔고 부족 (가용 $" + fmt.format(Math.round(S.bank)) + ")"; }
                     S.bank = Math.round((S.bank - add) * 100) / 100;
                     p.margin = Math.round((p.margin + add) * 100) / 100;
                     p.added = Math.round(((p.added || 0) + add) * 100) / 100;
@@ -1973,9 +1979,11 @@ async function boot() {
         return;
     }
     try { S.paper = JSON.parse(localStorage.getItem("krta-paper") || "[]");
-        S.bank = Number((JSON.parse(localStorage.getItem("krta-bank") || "{}")).bank) || 1000000;
+        const sb = JSON.parse(localStorage.getItem("krta-bank") || "{}");
+        S.bank = Number(sb.bank) || START_BANK;
+        if (sb.bank && sb.v !== 2) S.bank += START_BANK - 1000000; // 시작 자금 100만→1억 이전(1회)
         S.hist = JSON.parse(localStorage.getItem("krta-hist") || "[]") || [];
-    } catch { S.paper = []; S.bank = 1000000; S.hist = []; }
+    } catch { S.paper = []; S.bank = START_BANK; S.hist = []; }
     loadCfg();
     loadFav();
     loadUi();
